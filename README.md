@@ -199,6 +199,36 @@ app/src/main/res/
 | 0x110 | MAP 进气压力 | raw×10 kPa | 底部文字 |
 | 0x116 | Air Charge 负荷 | 直接% | 底部文字 |
 
+## APK 构建产物
+
+| 类型 | 文件 | 大小 | 用途 |
+|------|------|------|------|
+| Release | `app/build/outputs/apk/release/app-release.apk` | **34 KB** | 实机车机部署 |
+| Debug | `app/build/outputs/apk/debug/app-debug.apk` | 46 KB | 模拟器调试 |
+
+### 零依赖架构
+
+本项目**不依赖任何第三方库**，纯 Android Framework API：
+
+- 无 `androidx.appcompat` — 直接使用 `Activity` + `Theme.NoTitleBar.Fullscreen`
+- 无 `kotlin` 运行时 — 纯 Java
+- 无 `.so` 原生库 — 纯 Java Canvas 绘制
+- R8 代码压缩 + 资源压缩 + 日志剥离
+
+### Release 构建配置
+
+```groovy
+buildTypes {
+    release {
+        minifyEnabled true       // R8 代码压缩
+        shrinkResources true     // 移除未使用资源
+        proguardFiles ...
+    }
+}
+```
+
+> **实机部署注意**: 如果车机 Android 4.2 拒绝安装，将 `app/build.gradle` 中 `targetSdk 28` 改为 `targetSdk 17` 重新构建。
+
 ## 设计风格
 
 - **背景**: 纯黑 #000000
@@ -218,3 +248,9 @@ app/src/main/res/
 - Footer 状态栏 (REC/LOG/ECU/时钟)
 - 三层全屏防御 (主题+代码+回调)
 - BOOST 单位从 kPa 改为 BAR
+
+### V2.1 — 轻量化优化
+- 移除 `androidx.appcompat` 依赖, 改为纯 Framework API
+- APK 从 5.1MB 缩减至 34KB (缩小 150 倍)
+- 启用 R8 代码压缩 + 资源压缩
+- ProGuard 剥离调试日志 (Log.d/v/i)
