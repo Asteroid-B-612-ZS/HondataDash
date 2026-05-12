@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    爆震缸子卡片
+    标签 + 大数值 + 迷你进度条
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center_horizontal"
+    android:background="@drawable/bg_card"
+    android:padding="2dp">
+
+    <TextView
+        android:id="@+id/knockLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="#FF555555"
+        android:textSize="8sp"
+        android:textStyle="bold"/>
+
+    <TextView
+        android:id="@+id/knockValue"
+        android:layout_width="wrap_content"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_gravity="center_horizontal"
+        android:gravity="center"
+        android:textColor="#FF3FB950"
+        android:textSize="22sp"
+        android:textStyle="bold|italic"
+        android:includeFontPadding="false"
+        android:singleLine="true"
+        android:text="0"/>
+
+    <com.hondata.dash.ScaleBarView
+        android:id="@+id/knockBar"
+        android:layout_width="match_parent"
+        android:layout_height="12dp"
+        android:paddingLeft="1dp"
+        android:paddingRight="1dp"/>
+
+</LinearLayout>

@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    传感器卡片 - 硬核科技风格
+    左上: 中文标签 + 英文标签
+    中央: 大数值 + 小单位
+    底部: 带刻度进度条
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/bg_card"
+    android:padding="5dp">
+
+    <!-- 顶部: 双语标签 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/labelCn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FF999999"
+            android:textSize="10sp"
+            android:singleLine="true"/>
+
+        <TextView
+            android:id="@+id/labelEn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FF555555"
+            android:textSize="8sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:letterSpacing="0.05"/>
+    </LinearLayout>
+
+    <!-- 中央: 数值 + 单位 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:gravity="center_vertical|center_horizontal">
+
+        <TextView
+            android:id="@+id/value"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFFFF"
+            android:textSize="32sp"
+            android:textStyle="bold|italic"
+            android:includeFontPadding="false"
+            android:singleLine="true"
+            android:text="--"/>
+
+        <TextView
+            android:id="@+id/unit"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FF777777"
+            android:textSize="10sp"
+            android:layout_marginStart="3dp"
+            android:includeFontPadding="false"
+            android:singleLine="true"
+            android:gravity="bottom"/>
+    </LinearLayout>
+
+    <!-- 底部: 刻度进度条 -->
+    <com.hondata.dash.ScaleBarView
+        android:id="@+id/scaleBar"
+        android:layout_width="match_parent"
+        android:layout_height="22dp"
+        android:paddingLeft="2dp"
+        android:paddingRight="2dp"/>
+
+</LinearLayout>
