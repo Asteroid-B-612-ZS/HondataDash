@@ -70,9 +70,9 @@ adb exec-out screencap -p -d 4619827259835644672 > screenshot.png
 ### 4×2 主数据网格
 
 每个传感器卡片包含:
-- **顶部**: 英文缩写 (18sp, #AAAAAA) + 单位右上角 (18sp, #999999)
-- **中央左**: 核心数值整数部分 (65sp, 白色粗斜体) + 小数部分 (65sp)
-- **中央右**: MAX/MIN 纯数字追踪 (24sp, #999999/#888888)
+- **顶部**: 英文缩写 (18sp, #CCCCCC) + 单位右上角 (18sp, #BBBBBB)
+- **中央左**: 核心数值 — 第1行 75sp / 第2行 60sp (白色粗斜体)
+- **中央右**: MAX/MIN 纯数字追踪 — 第1行 24sp / 第2行 21sp (#BBBBBB/#AAAAAA)
 - **底部**: ScaleBarView 刻度进度条 (37dp)
 
 #### 第1行参数
@@ -201,9 +201,9 @@ app/src/main/res/
 
 - **背景**: 纯黑 #000000
 - **线框**: 极细深灰 #333333 (0.5dp)
-- **主数据**: 白色粗斜体 65sp
-- **标题/单位**: #AAAAAA / #999999, 18sp
-- **MAX/MIN**: #999999 / #888888, 24sp 纯数字
+- **主数据**: 白色粗斜体 — 第1行 75sp / 第2行 60sp
+- **标题/单位**: #CCCCCC / #BBBBBB, 18sp
+- **MAX/MIN**: #BBBBBB / #AAAAAA, 24sp/21sp 纯数字
 - **主色调**: 赛车蓝 #00D8FF, 亮绿 #3FB950, 警告红 #FF4444
 - **字体风格**: 无衬线斜体数字 (系统默认 sans-serif italic)
 
@@ -234,7 +234,24 @@ app/src/main/res/
 - S.TRIM 替换 L.TRIM (PID 0x330)
 - 页脚 ECU 文字更新
 
-### V3.0 — UI 全面优化 (当前版本)
+### V3.0 — UI 全面优化
+- 新增 ShiftLightView 彩虹转速灯条 (15段LED, RPM驱动)
+- 主数据分体显示: 第1行 75sp / 第2行 60sp
+- MAX/MIN 纯数字, 第2行 21sp
+- 单位移至右上角 18sp, 标题 18sp
+- Ethanol 加 E 前缀, BAT/MAP 位置互换
+- ScaleBarView 边缘刻度对齐, A/F 简化刻度 9/14.7/18
+- Footer 移除, Header 改为 Powered by Helijohnny
+- 全局文字对比度提升 (#CCCCCC/#BBBBBB)
+- K.C 55sp, 底部数据 30sp
+- DemoSource 支持 A/F 循环测试模式
+
+### V3.1 — 字体分层与对比度 (当前版本)
+- 第1行(无小数)主数据 75sp, 第2行(有小数)主数据 60sp
+- 第2行 MAX/MIN 缩小至 21sp
+- 值区域比例从 2:1 调整为 3:1 (适配两位数+小数)
+- 全局文字亮度提升: 标题 #CCCCCC, 单位 #BBBBBB, 刻度 #999999
+- ScaleBarView 刻度线 #666666, 刻度文字 #999999
 - 单位移至右上角，与标题同大小 (18sp)
 - 主数据 65sp，整数/小数分体显示
 - MAX/MIN 纯数字 24sp

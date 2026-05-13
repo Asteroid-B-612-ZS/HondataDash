@@ -53,11 +53,11 @@ public class ScaleBarView extends View {
 
         fillPaint.setStyle(Paint.Style.FILL);
 
-        tickPaint.setColor(0xFF444444);
+        tickPaint.setColor(0xFF666666);
         tickPaint.setStrokeWidth(Math.max(1, density * 0.8f));
         tickPaint.setStyle(Paint.Style.STROKE);
 
-        labelPaint.setColor(0xFF555555);
+        labelPaint.setColor(0xFF999999);
         labelPaint.setTextSize(11 * density);
         labelPaint.setTextAlign(Paint.Align.CENTER);
 

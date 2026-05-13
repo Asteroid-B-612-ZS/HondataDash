@@ -19,13 +19,14 @@ public class DemoSource implements DataSource {
     private volatile boolean running;
 
     private float phase = 0;
+    private float afrCycle = 8.6f; // A/F 循环 8.6~17.5, 步进 0.1
 
     private final Runnable tick = new Runnable() {
         @Override
         public void run() {
             if (!running) return;
             if (callback != null) callback.onDataReceived(generate());
-            uiHandler.postDelayed(this, 50); // 20Hz
+            uiHandler.postDelayed(this, 1000); // 1Hz
         }
     };
 
@@ -103,8 +104,10 @@ public class DemoSource implements DataSource {
         d.put(0x130, 2 + rng.nextDouble() * 6);      // Injector ms
         d.put(0x132, 20 + rng.nextDouble() * 60);    // Inj Duty %
 
-        // 空燃比
-        double afr = rpm > 4000 ? (11.5 + rng.nextDouble() * 1.5) : (14.2 + rng.nextDouble() * 1.0);
+        // 空燃比 (循环 8.6~17.5, 步进 0.1)
+        double afr = afrCycle;
+        afrCycle += 0.1f;
+        if (afrCycle > 17.5f) afrCycle = 8.6f;
         d.put(0x320, afr);                           // Air Fuel
         d.put(0x329, afr + 0.1 * rng.nextDouble());  // Wideband
         d.put(0x330, -5 + rng.nextDouble() * 10);    // STFT %

@@ -138,6 +138,17 @@ public class MainActivity extends Activity implements DataSource.Callback {
             if (labelEnViews[i] != null) labelEnViews[i].setText(CARD_EN[i]);
             if (unitViews[i] != null) unitViews[i].setText(CARD_UNIT[i]);
 
+            // 第1行(0-3): 无小数, 字体放大; 第2行(4-7): 有小数, 字体缩小
+            if (i < 4) {
+                if (valueIntViews[i] != null) valueIntViews[i].setTextSize(75);
+                if (valueDecViews[i] != null) valueDecViews[i].setTextSize(75);
+            } else {
+                if (valueIntViews[i] != null) valueIntViews[i].setTextSize(60);
+                if (valueDecViews[i] != null) valueDecViews[i].setTextSize(60);
+                if (maxValueViews[i] != null) maxValueViews[i].setTextSize(21);
+                if (minValueViews[i] != null) minValueViews[i].setTextSize(21);
+            }
+
             configureScaleBar(i);
         }
 
