@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    爆震缸子卡片
-    标签 + 大数值 + 迷你进度条
+    爆震缸子卡片 - 无进度条
+    标签 + 大数值
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -15,8 +15,8 @@
         android:id="@+id/knockLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:textColor="#FF555555"
-        android:textSize="8sp"
+        android:textColor="#FF999999"
+        android:textSize="10sp"
         android:textStyle="bold"/>
 
     <TextView
@@ -27,17 +27,10 @@
         android:layout_gravity="center_horizontal"
         android:gravity="center"
         android:textColor="#FF3FB950"
-        android:textSize="22sp"
+        android:textSize="33sp"
         android:textStyle="bold|italic"
         android:includeFontPadding="false"
         android:singleLine="true"
         android:text="0"/>
-
-    <com.hondata.dash.ScaleBarView
-        android:id="@+id/knockBar"
-        android:layout_width="match_parent"
-        android:layout_height="12dp"
-        android:paddingLeft="1dp"
-        android:paddingRight="1dp"/>
 
 </LinearLayout>

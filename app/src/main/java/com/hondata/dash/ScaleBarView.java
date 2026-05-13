@@ -10,8 +10,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 带刻度线的赛车风格进度条。
- * 支持: 刻度标记 + 数字标签 + 颜色区间 + 锚点填充。
+ * 赛车风格刻度进度条。
+ * 刻度标记在数据条上方, 数据条加粗。
  */
 public class ScaleBarView extends View {
 
@@ -58,7 +58,7 @@ public class ScaleBarView extends View {
         tickPaint.setStyle(Paint.Style.STROKE);
 
         labelPaint.setColor(0xFF555555);
-        labelPaint.setTextSize(7 * density);
+        labelPaint.setTextSize(11 * density);
         labelPaint.setTextAlign(Paint.Align.CENTER);
 
         indicatorPaint.setColor(0xFFFFFFFF);
@@ -96,56 +96,75 @@ public class ScaleBarView extends View {
         float pT = getPaddingTop(), pB = getPaddingBottom();
         float barW = getWidth() - pL - pR;
         float barLeft = pL;
-        float barH = 3 * density;
-        float barTop = pT;
 
-        // Background bar
-        canvas.drawRect(barLeft, barTop, barLeft + barW, barTop + barH, bgPaint);
+        // 数据条在底部, 高度加倍
+        float barH = 10 * density;
+        float barBottom = getHeight() - pB;
+        float barTop = barBottom - barH;
 
-        // Zone backgrounds (subtle)
+        // 刻度线在数据条上方
+        float tickLen = 5 * density;
+        float tickBottom = barTop - density;
+        float tickTop = tickBottom - tickLen;
+
+        // 刻度数字在刻度线上方
+        float labelY = tickTop - density;
+
+        // 1. 先画刻度数字和刻度线 (上方)
+        for (int i = 0; i < ticks.length; i++) {
+            float x = valToX(ticks[i], barLeft, barW);
+
+            if (showLabels && tickLabels != null && i < tickLabels.length
+                    && tickLabels[i] != null && !tickLabels[i].isEmpty()) {
+                // 边缘刻度文字对齐修正: 左边界靠左对齐, 右边界靠右对齐
+                Paint.Align saved = labelPaint.getTextAlign();
+                float tw = labelPaint.measureText(tickLabels[i]);
+                if (x - tw / 2 < pL) {
+                    labelPaint.setTextAlign(Paint.Align.LEFT);
+                } else if (x + tw / 2 > getWidth() - pR) {
+                    labelPaint.setTextAlign(Paint.Align.RIGHT);
+                }
+                canvas.drawText(tickLabels[i], x, labelY, labelPaint);
+                labelPaint.setTextAlign(saved);
+            }
+
+            canvas.drawLine(x, tickTop, x, tickBottom, tickPaint);
+        }
+
+        // 2. 数据条背景
+        canvas.drawRect(barLeft, barTop, barLeft + barW, barBottom, bgPaint);
+
+        // 3. 颜色区间背景 (半透明)
         for (Zone z : zones) {
             float x1 = valToX(Math.max(z.start, minVal), barLeft, barW);
             float x2 = valToX(Math.min(z.end, maxVal), barLeft, barW);
             zoneBgPaint.setColor(z.color);
             zoneBgPaint.setAlpha(25);
-            canvas.drawRect(x1, barTop, x2, barTop + barH, zoneBgPaint);
+            canvas.drawRect(x1, barTop, x2, barBottom, zoneBgPaint);
         }
         zoneBgPaint.setAlpha(255);
 
-        // Zone boundary lines
+        // 区间分界线
         for (int i = 0; i < zones.size() - 1; i++) {
             float x = valToX(zones.get(i).end, barLeft, barW);
             zoneLinePaint.setColor(zones.get(i + 1).color);
             zoneLinePaint.setAlpha(80);
-            canvas.drawLine(x, barTop - density, x, barTop + barH + density, zoneLinePaint);
+            canvas.drawLine(x, barTop, x, barBottom, zoneLinePaint);
         }
         zoneLinePaint.setAlpha(255);
 
-        // Filled bar from anchor to current value
+        // 4. 填充条 (锚点到当前值)
         if (!Float.isNaN(curVal)) {
             float clamped = Math.max(minVal, Math.min(maxVal, curVal));
             float ax = valToX(Math.max(minVal, Math.min(maxVal, anchorVal)), barLeft, barW);
             float vx = valToX(clamped, barLeft, barW);
             fillPaint.setColor(zoneColor(curVal));
             fillPaint.setAlpha(200);
-            canvas.drawRect(Math.min(ax, vx), barTop, Math.max(ax, vx), barTop + barH, fillPaint);
+            canvas.drawRect(Math.min(ax, vx), barTop, Math.max(ax, vx), barBottom, fillPaint);
             fillPaint.setAlpha(255);
 
-            // Value indicator (bright vertical line)
-            canvas.drawLine(vx, barTop - density, vx, barTop + barH + density, indicatorPaint);
-        }
-
-        // Tick marks and labels
-        float tickLen = 3 * density;
-        for (int i = 0; i < ticks.length; i++) {
-            float x = valToX(ticks[i], barLeft, barW);
-            canvas.drawLine(x, barTop - tickLen, x, barTop + barH + tickLen, tickPaint);
-
-            if (showLabels && tickLabels != null && i < tickLabels.length
-                    && tickLabels[i] != null && !tickLabels[i].isEmpty()) {
-                canvas.drawText(tickLabels[i], x,
-                        barTop + barH + tickLen + 7 * density, labelPaint);
-            }
+            // 当前值指示线
+            canvas.drawLine(vx, barTop, vx, barBottom, indicatorPaint);
         }
     }
 }

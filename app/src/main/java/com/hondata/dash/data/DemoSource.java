@@ -72,14 +72,16 @@ public class DemoSource implements DataSource {
         d.timestamp = System.currentTimeMillis();
         phase += 0.04f;
 
-        // RPM: 800 ~ 6500 波动
-        double rpm = 800 + 2800 * (0.5 + 0.5 * Math.sin(phase)) + rng.nextInt(80);
+        // RPM: 800 ~ 7000 波动
+        double rpm = 800 + 5400 * (0.5 + 0.5 * Math.sin(phase)) + rng.nextInt(80);
         d.put(0x100, rpm);
         d.put(0x101, rpm / 65.0);                 // Speed km/h
         d.put(0x102, 3);                           // Gear
 
         // 压力
-        d.put(0x110, 101 + rng.nextDouble() * 5);  // MAP kPa
+        double mapVal = rpm > 3000 ? 120 + (rpm - 3000) * 0.04 + rng.nextDouble() * 30 : 40 + rng.nextDouble() * 60;
+        d.put(0x110, mapVal);                       // MAP kPa
+        d.put(0x112, 20 + rng.nextDouble() * 180);  // AFM g/s
         double boost = Math.max(0, (rpm - 2000) * 0.08 + rng.nextDouble() * 8);
         d.put(0x114, boost);                        // Boost kPa
         d.put(0x170, 101 + rng.nextDouble());       // 大气压力
@@ -89,11 +91,13 @@ public class DemoSource implements DataSource {
         d.put(0x122, 18 + rng.nextDouble() * 50);   // TP Plate %
 
         // 温度
-        d.put(0x150, 30 + 6 * Math.sin(phase * 0.3) + rng.nextDouble()); // IAT
+        d.put(0x150, 30 + 6 * Math.sin(phase * 0.3) + rng.nextDouble()); // IAT 1
+        d.put(0x151, 32 + 5 * Math.sin(phase * 0.3) + rng.nextDouble()); // IAT 2
         d.put(0x160, 85 + 4 * Math.sin(phase * 0.1) + rng.nextDouble()); // ECT
+        d.put(0x161, 86 + 3 * Math.sin(phase * 0.1) + rng.nextDouble()); // ECT 2
 
-        // 点火
-        d.put(0x140, 12 + rng.nextDouble() * 22);   // Ignition °
+        // 点火 (确保始终有小数)
+        d.put(0x140, 12.5 + rng.nextDouble() * 22);   // Ignition °
 
         // 喷油
         d.put(0x130, 2 + rng.nextDouble() * 6);      // Injector ms
@@ -104,16 +108,16 @@ public class DemoSource implements DataSource {
         d.put(0x320, afr);                           // Air Fuel
         d.put(0x329, afr + 0.1 * rng.nextDouble());  // Wideband
         d.put(0x330, -5 + rng.nextDouble() * 10);    // STFT %
-        d.put(0x332, -3 + rng.nextDouble() * 6);     // LTFT %
+        d.put(0x332, -2.5 + rng.nextDouble() * 5);     // LTFT %
 
-        // 电气
-        d.put(0x180, 13.6 + rng.nextDouble() * 0.8); // Battery V
+        // 电气 (确保始终有小数)
+        d.put(0x180, 13.1 + rng.nextDouble() * 0.8); // Battery V
 
         // 负荷
         d.put(0x116, 30 + rng.nextDouble() * 60);    // Air Charge %
 
         // 爆震
-        d.put(0x601, (double) rng.nextInt(10));        // Knock Level
+        d.put(0x601, rng.nextDouble() * 50);            // Knock Control %
         d.put(0x603, rng.nextDouble() * 2);            // Knock Retard °
         d.put(0x604, (double) rng.nextInt(3));         // Knock CYL1
         d.put(0x605, (double) rng.nextInt(3));         // Knock CYL2
@@ -122,6 +126,7 @@ public class DemoSource implements DataSource {
 
         // 燃油
         d.put(0xB03, 85);                            // Ethanol %
+        d.put(0xB04, 45 + rng.nextDouble() * 10);     // Fuel Level %
         d.put(0x191, 200 + rng.nextDouble() * 200);  // DI FP kPa
         d.put(0x192, 30 + rng.nextDouble() * 40);    // Fuel Duty %
 

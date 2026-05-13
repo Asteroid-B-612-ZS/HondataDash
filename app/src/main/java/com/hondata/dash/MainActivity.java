@@ -21,13 +21,13 @@ import java.util.Date;
 import java.util.Locale;
 
 /**
- * 主界面 - 硬核科技风格车载仪表盘。
+ * 主界面 - 硬核科技风格车载仪表盘 V2.3。
  *
- * 4x2 HUD 网格 (每个卡片带刻度进度条):
- *   乙醇含量 | 水温    | 进气温度 | 电压
- *   涡轮压力 | 点火角度 | 空燃比   | 长期燃油调整
+ * 4x2 HUD 网格 (英文缩写 + 刻度进度条 + MAX/MIN):
+ *   Ethanol | ECT | IAT | BAT
+ *   MAP     | IGN | A/F | L.TRIM
  *
- * 底部: 爆震控制值 + CYL1-4 + 四轮图标 (左3/4) | 辅助数据 (右1/4)
+ * 底部: KNOCK CTRL + CYL1-4 + L.TRIM + AFM + FUEL + WheelView
  * 页脚: REC | LOG | ECU | Time
  */
 public class MainActivity extends Activity implements DataSource.Callback {
@@ -37,78 +37,67 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private DataSource dataSource;
     private TextView statusText;
     private TextView sourceName;
-    private TextView timeText;
 
     // 主卡片 (4x2 = 8个)
-    private final TextView[] labelCnViews = new TextView[8];
     private final TextView[] labelEnViews = new TextView[8];
-    private final TextView[] valueViews = new TextView[8];
+    private final TextView[] valueIntViews = new TextView[8];
+    private final TextView[] valueDecViews = new TextView[8];
     private final TextView[] unitViews = new TextView[8];
     private final ScaleBarView[] scaleBars = new ScaleBarView[8];
 
+    // MAX / MIN 追踪
+    private final TextView[] maxValueViews = new TextView[8];
+    private final TextView[] minValueViews = new TextView[8];
+    private final float[] maxTrack = new float[8];
+    private final float[] minTrack = new float[8];
+    private final boolean[] hasValue = new boolean[8];
+
     // 爆震缸 (4个)
     private final TextView[] knockValues = new TextView[4];
-    private final ScaleBarView[] knockBars = new ScaleBarView[4];
 
-    // 爆震控制值 (底部)
+    // 爆震控制值
     private TextView knockRetValue;
-    private ScaleBarView knockRetBar;
 
     // 四轮图标
     private WheelView wheelView;
 
-    // 底部右侧文本
-    private TextView throttleValue;
-    private TextView mapTextValue;
-    private TextView afrTextValue;
-    private TextView loadTextValue;
+    // 彩虹转速灯条
+    private ShiftLightView shiftLight;
 
-    private final Handler clockHandler = new Handler(Looper.getMainLooper());
-    private final SimpleDateFormat timeFmt = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
+    // 底部数据文本
+    private TextView bottomTrimValue;
+    private TextView bottomAfmValue;
+    private TextView bottomFuelValue;
 
-    // ===== 卡片配置 =====
-    // 第2行第3张卡片 (index 6): 原KNOCK RETARD → 现在改为 AFR 空燃比
+    // ===== 卡片配置 (BAT和MAP互换位置) =====
     private static final int[] CARD_PIDS = {
-        0xB03, 0x160, 0x150, 0x180,   // 第1行
-        0x114, 0x140, 0x320, 0x332    // 第2行 (card6=AFR)
-    };
-
-    private static final String[] CARD_CN = {
-        "乙醇含量", "水温", "进气温度", "电压",
-        "涡轮压力", "点火角度", "空燃比", "长期燃油调整"
+        0xB03, 0x161, 0x151, 0x110,   // 第1行: Ethanol, ECT2, IAT2, MAP
+        0x180, 0x140, 0x320, 0x332    // 第2行: BAT, IGN, A/F, LTFT
     };
 
     private static final String[] CARD_EN = {
-        "ETHANOL", "WATER TEMP", "IAT", "VOLTAGE",
-        "BOOST", "IGNITION ADV", "AIR FUEL RATIO", "LT FUEL TRIM"
+        "Ethanol", "ECT", "IAT", "MAP",
+        "BAT", "IGN", "A/F", "L.TRIM"
     };
 
     private static final String[] CARD_FMT = {
-        "%.0f", "%.0f", "%.0f", "%.1f",
-        "%.2f", "%.1f", "%.1f", "%+.1f"
+        "%.0f", "%.0f", "%.0f", "%.0f",
+        "%.1f", "%.1f", "%.1f", "%+.1f"
     };
 
     private static final String[] CARD_UNIT = {
-        "%", "\u00B0C", "\u00B0C", "V",
-        "BAR", "\u00B0", "", "%"
+        "%", "\u00B0C", "\u00B0C", "kPa",
+        "V", "\u00B0", "", "%"
     };
 
     // 爆震缸 PID
     private static final int[] KNOCK_PIDS = {0x604, 0x605, 0x606, 0x607};
 
+    // 爆震控制 PID (Knock Control %)
+    private static final int KNOCK_CTRL_PID = 0x601;
+
     // 轮速差 PID: FL, FR, RL, RR
     private static final int[] WHEEL_SLIP_PIDS = {0x710, 0x711, 0x712, 0x713};
-
-    // 时钟更新
-    private final Runnable clockTick = new Runnable() {
-        @Override
-        public void run() {
-            if (timeText != null) {
-                timeText.setText(timeFmt.format(new Date()));
-            }
-            clockHandler.postDelayed(this, 1000);
-        }
-    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -123,7 +112,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
         statusText = (TextView) findViewById(R.id.statusText);
         sourceName = (TextView) findViewById(R.id.sourceName);
-        timeText = (TextView) findViewById(R.id.timeText);
+
+        // 初始化 MAX/MIN 追踪
+        for (int i = 0; i < 8; i++) {
+            hasValue[i] = false;
+        }
 
         // 初始化 8 个主卡片
         int[] cardIds = {
@@ -134,13 +127,14 @@ public class MainActivity extends Activity implements DataSource.Callback {
         for (int i = 0; i < cardIds.length; i++) {
             View card = findViewById(cardIds[i]);
 
-            labelCnViews[i] = (TextView) card.findViewById(R.id.labelCn);
             labelEnViews[i] = (TextView) card.findViewById(R.id.labelEn);
-            valueViews[i] = (TextView) card.findViewById(R.id.value);
+            valueIntViews[i] = (TextView) card.findViewById(R.id.valueInt);
+            valueDecViews[i] = (TextView) card.findViewById(R.id.valueDec);
             unitViews[i] = (TextView) card.findViewById(R.id.unit);
             scaleBars[i] = (ScaleBarView) card.findViewById(R.id.scaleBar);
+            maxValueViews[i] = (TextView) card.findViewById(R.id.maxValue);
+            minValueViews[i] = (TextView) card.findViewById(R.id.minValue);
 
-            if (labelCnViews[i] != null) labelCnViews[i].setText(CARD_CN[i]);
             if (labelEnViews[i] != null) labelEnViews[i].setText(CARD_EN[i]);
             if (unitViews[i] != null) unitViews[i].setText(CARD_UNIT[i]);
 
@@ -149,17 +143,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
         // 初始化底部: 爆震控制值
         knockRetValue = (TextView) findViewById(R.id.knockRetValue);
-        knockRetBar = (ScaleBarView) findViewById(R.id.knockRetBar);
-        if (knockRetBar != null) {
-            knockRetBar.setRange(-15, 5);
-            knockRetBar.setTicks(
-                new float[]{-15, -10, -5, 0, 5},
-                new String[]{"", "", "", "0", ""});
-            knockRetBar.addZone(-15, 0, 0xFF3FB950);
-            knockRetBar.addZone(0, 5, 0xFF3FB950);
-            knockRetBar.setAnchor(0);
-            knockRetBar.setShowLabels(false);
-        }
 
         // 初始化 4 个爆震缸
         int[] knockIds = {R.id.knock0, R.id.knock1, R.id.knock2, R.id.knock3};
@@ -168,27 +151,21 @@ public class MainActivity extends Activity implements DataSource.Callback {
         for (int i = 0; i < knockIds.length; i++) {
             View k = findViewById(knockIds[i]);
             knockValues[i] = (TextView) k.findViewById(R.id.knockValue);
-            knockBars[i] = (ScaleBarView) k.findViewById(R.id.knockBar);
 
             TextView kl = (TextView) k.findViewById(R.id.knockLabel);
             if (kl != null) kl.setText(knockLabels[i]);
-
-            knockBars[i].setRange(0, 20);
-            knockBars[i].setAnchor(0);
-            knockBars[i].setShowLabels(false);
         }
 
         // 四轮图标
         wheelView = (WheelView) findViewById(R.id.wheelView);
 
-        // 底部右侧文本
-        throttleValue = (TextView) findViewById(R.id.throttleValue);
-        mapTextValue = (TextView) findViewById(R.id.mapValue);
-        afrTextValue = (TextView) findViewById(R.id.afrValue);
-        loadTextValue = (TextView) findViewById(R.id.loadValue);
+        // 彩虹转速灯条
+        shiftLight = (ShiftLightView) findViewById(R.id.shiftLight);
 
-        // 启动时钟
-        clockHandler.post(clockTick);
+        // 底部数据文本
+        bottomTrimValue = (TextView) findViewById(R.id.bottomTrimValue);
+        bottomAfmValue = (TextView) findViewById(R.id.bottomAfmValue);
+        bottomFuelValue = (TextView) findViewById(R.id.bottomFuelValue);
 
         // 数据源
         if (USE_DEMO) {
@@ -214,7 +191,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
         if (bar == null) return;
 
         switch (i) {
-            case 0: // 乙醇含量: 0-100%, 绿色
+            case 0: // Ethanol: 0-100%, 绿色
                 bar.setRange(0, 100);
                 bar.setTicks(
                     new float[]{0, 50, 100},
@@ -223,7 +200,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 bar.setAnchor(0);
                 break;
 
-            case 1: // 水温: 40-120C, 蓝<100, 红>100
+            case 1: // ECT: 40-120C, 蓝<100, 红>100
                 bar.setRange(40, 120);
                 bar.setTicks(
                     new float[]{40, 60, 80, 100, 120},
@@ -233,7 +210,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 bar.setAnchor(40);
                 break;
 
-            case 2: // 进气温度: 20-100C, 蓝色
+            case 2: // IAT: 20-100C, 蓝色
                 bar.setRange(20, 100);
                 bar.setTicks(
                     new float[]{20, 40, 60, 80, 100},
@@ -242,7 +219,18 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 bar.setAnchor(20);
                 break;
 
-            case 3: // 电压: 10-18V, 蓝色
+            case 3: // MAP: -30到250 kPa, 负压区间加大
+                bar.setRange(-30, 250);
+                bar.setTicks(
+                    new float[]{-30, 0, 50, 100, 150, 200, 250},
+                    new String[]{"-30", "0", "50", "100", "150", "200", "250"});
+                bar.addZone(-30, 0, 0xFF00D8FF);
+                bar.addZone(0, 100, 0xFF0088FF);
+                bar.addZone(100, 250, 0xFFFF4444);
+                bar.setAnchor(0);
+                break;
+
+            case 4: // BAT: 10-18V, 蓝色
                 bar.setRange(10, 18);
                 bar.setTicks(
                     new float[]{10, 12, 14, 16, 18},
@@ -251,37 +239,26 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 bar.setAnchor(10);
                 break;
 
-            case 4: // 涡轮压力: -1到2 BAR
-                bar.setRange(-1, 2);
+            case 5: // IGN: -40到40
+                bar.setRange(-40, 40);
                 bar.setTicks(
-                    new float[]{-1, 0, 0.5f, 1, 1.5f, 2},
-                    new String[]{"-1", "0", ".5", "1", "1.5", "2"});
-                bar.addZone(-1, 0, 0xFF00D8FF);
-                bar.addZone(0, 1, 0xFF0088FF);
-                bar.addZone(1, 2, 0xFFFF4444);
+                    new float[]{-40, -20, 0, 20, 40},
+                    new String[]{"-40", "-20", "0", "20", "40"});
+                bar.addZone(-40, 40, 0xFF00D8FF);
                 bar.setAnchor(0);
                 break;
 
-            case 5: // 点火角度: -10到40
-                bar.setRange(-10, 40);
+            case 6: // A/F: 9-18, 14.7居中
+                bar.setRange(9, 18);
                 bar.setTicks(
-                    new float[]{-10, 0, 10, 20, 30, 40},
-                    new String[]{"-10", "0", "10", "20", "30", "40"});
-                bar.addZone(-10, 40, 0xFF00D8FF);
-                bar.setAnchor(-10);
-                break;
-
-            case 6: // 空燃比: 10-18, 富油绿/稀油红
-                bar.setRange(10, 18);
-                bar.setTicks(
-                    new float[]{10, 12, 14, 14.7f, 16, 18},
-                    new String[]{"10", "12", "14", "14.7", "16", "18"});
-                bar.addZone(10, 14.7f, 0xFF3FB950);  // 富油 (安全)
+                    new float[]{9, 14.7f, 18},
+                    new String[]{"9", "14.7", "18"});
+                bar.addZone(9, 14.7f, 0xFF3FB950);  // 富油 (安全)
                 bar.addZone(14.7f, 18, 0xFFFF4444);   // 稀油 (危险)
-                bar.setAnchor(10);
+                bar.setAnchor(14.7f);
                 break;
 
-            case 7: // 长期燃油调整: -25到+25%, 负红正蓝
+            case 7: // L.TRIM: -25到+25%, 负红正蓝
                 bar.setRange(-25, 25);
                 bar.setTicks(
                     new float[]{-25, -12.5f, 0, 12.5f, 25},
@@ -297,7 +274,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
-            // 防御性重新应用全屏 (车载机休眠/唤醒后状态栏可能恢复)
             getWindow().setFlags(
                 WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
@@ -323,7 +299,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        clockHandler.removeCallbacks(clockTick);
         dataSource.disconnect();
     }
 
@@ -356,7 +331,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
             @Override public void run() {
                 // 更新 8 个主卡片
                 for (int i = 0; i < 8; i++) {
-                    if (valueViews[i] == null) continue;
+                    if (valueIntViews[i] == null) continue;
 
                     int pid = CARD_PIDS[i];
                     String fmt = CARD_FMT[i];
@@ -364,36 +339,64 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
                     if (raw != null) {
                         double val = raw;
+                        float fVal = (float) val;
 
-                        // 涡轮压力: kPa -> BAR
-                        if (i == 4) {
-                            val = raw / 100.0;
-                        }
-
-                        valueViews[i].setText(String.format(Locale.US, fmt, val));
+                        // 格式化并拆分整数/小数部分
+                        String formatted = String.format(Locale.US, fmt, val);
+                        splitSetValue(i, formatted);
 
                         if (scaleBars[i] != null) {
-                            scaleBars[i].setValue((float) val);
+                            scaleBars[i].setValue(fVal);
                         }
 
-                        // 乙醇含量: 数值用亮绿色
+                        // MAX / MIN 追踪
+                        if (!hasValue[i]) {
+                            maxTrack[i] = fVal;
+                            minTrack[i] = fVal;
+                            hasValue[i] = true;
+                        } else {
+                            if (fVal > maxTrack[i]) maxTrack[i] = fVal;
+                            if (fVal < minTrack[i]) minTrack[i] = fVal;
+                        }
+
+                        if (maxValueViews[i] != null) {
+                            maxValueViews[i].setText(String.format(Locale.US,
+                                fmt, maxTrack[i]));
+                        }
+                        if (minValueViews[i] != null) {
+                            minValueViews[i].setText(String.format(Locale.US,
+                                fmt, minTrack[i]));
+                        }
+
+                        // Ethanol: 整数部分前加E标识, 亮绿色
                         if (i == 0) {
-                            valueViews[i].setTextColor(0xFF3FB950);
+                            valueIntViews[i].setText("E" + formatted);
+                            valueIntViews[i].setTextColor(0xFF3FB950);
+                            if (valueDecViews[i] != null) {
+                                valueDecViews[i].setTextColor(0xFF3FB950);
+                            }
                         }
                     } else {
-                        valueViews[i].setText("--");
+                        valueIntViews[i].setText("--");
+                        if (valueDecViews[i] != null) valueDecViews[i].setText("");
                         if (scaleBars[i] != null) {
                             scaleBars[i].setValue(Float.NaN);
                         }
                     }
                 }
 
-                // 更新底部: 爆震控制值 (KNOCK RETARD)
-                Double kr = data.get(0x603);
-                if (kr != null && knockRetValue != null) {
-                    knockRetValue.setText(String.format(Locale.US, "%.1f\u00B0", kr));
-                    if (knockRetBar != null) {
-                        knockRetBar.setValue(kr.floatValue());
+                // 更新爆震控制值 (Knock Control %)
+                Double kc = data.get(KNOCK_CTRL_PID);
+                if (kc != null && knockRetValue != null) {
+                    int pct = kc.intValue();
+                    knockRetValue.setText(String.valueOf(pct));
+
+                    if (pct < 30) {
+                        knockRetValue.setTextColor(0xFF3FB950);
+                    } else if (pct < 60) {
+                        knockRetValue.setTextColor(0xFFD29922);
+                    } else {
+                        knockRetValue.setTextColor(0xFFFF4444);
                     }
                 }
 
@@ -413,14 +416,29 @@ public class MainActivity extends Activity implements DataSource.Callback {
                         } else {
                             knockValues[i].setTextColor(0xFFFF4444);
                         }
-
-                        if (knockBars[i] != null) {
-                            knockBars[i].setValue((float) knock);
-                        }
                     } else {
                         knockValues[i].setText("--");
                         knockValues[i].setTextColor(0xFF555555);
                     }
+                }
+
+                // 更新底部数据
+                // S.TRIM 短期燃油调整 (PID 0x330)
+                Double stft = data.get(0x330);
+                if (stft != null && bottomTrimValue != null) {
+                    bottomTrimValue.setText(String.format(Locale.US, "%+.0f", stft));
+                }
+
+                // AFM (PID 0x112)
+                Double afm = data.get(0x112);
+                if (afm != null && bottomAfmValue != null) {
+                    bottomAfmValue.setText(String.format(Locale.US, "%.0f", afm));
+                }
+
+                // FUEL 燃油剩余 (PID 0xB04)
+                Double fuel = data.get(0xB04);
+                if (fuel != null && bottomFuelValue != null) {
+                    bottomFuelValue.setText(String.format(Locale.US, "%.0f", fuel));
                 }
 
                 // 更新四轮图标
@@ -432,28 +450,36 @@ public class MainActivity extends Activity implements DataSource.Callback {
                     wheelView.setSlip(fl, fr, rl, rr);
                 }
 
-                // 更新底部右侧文本
-                Double tp = data.get(0x122);
-                if (tp != null) {
-                    throttleValue.setText(String.format(Locale.US, "%.1f%%", tp));
-                }
-
-                Double map = data.get(0x110);
-                if (map != null) {
-                    mapTextValue.setText(String.format(Locale.US, "%.0f kPa", map));
-                }
-
-                Double afr = data.get(0x320);
-                if (afr != null) {
-                    afrTextValue.setText(String.format(Locale.US, "%.1f", afr));
-                }
-
-                Double load = data.get(0x116);
-                if (load != null) {
-                    loadTextValue.setText(String.format(Locale.US, "%.0f%%", load));
+                // 更新彩虹转速灯条
+                if (shiftLight != null) {
+                    Double rpmVal = data.get(0x100);
+                    if (rpmVal != null) {
+                        shiftLight.setRpm(rpmVal.floatValue());
+                    }
                 }
             }
         });
+    }
+
+    /**
+     * 将格式化后的字符串拆分为整数部分和小数部分, 分别设置到两个TextView。
+     * 例如 "14.2" -> valueInt="14", valueDec=".2"
+     * 例如 "85" -> valueInt="85", valueDec=""
+     * 例如 "-3.5" -> valueInt="-3", valueDec=".5"
+     */
+    private void splitSetValue(int i, String formatted) {
+        int dotPos = formatted.indexOf('.');
+        if (dotPos >= 0) {
+            valueIntViews[i].setText(formatted.substring(0, dotPos));
+            if (valueDecViews[i] != null) {
+                valueDecViews[i].setText(formatted.substring(dotPos));
+            }
+        } else {
+            valueIntViews[i].setText(formatted);
+            if (valueDecViews[i] != null) {
+                valueDecViews[i].setText("");
+            }
+        }
     }
 
     private float getFloat(SensorData data, int pid) {

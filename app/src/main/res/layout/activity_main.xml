@@ -17,47 +17,59 @@
     android:orientation="vertical"
     android:background="#FF000000">
 
+    <!-- ===== 彩虹转速灯条 ===== -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="14dp"
+        android:orientation="horizontal">
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"/>
+
+        <com.hondata.dash.ShiftLightView
+            android:id="@+id/shiftLight"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="2"/>
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"/>
+    </LinearLayout>
+
     <!-- ===== 顶部 Header ===== -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="30dp"
+        android:layout_height="26dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:background="#FF080808"
         android:paddingStart="8dp"
         android:paddingEnd="8dp">
 
-        <View
-            android:layout_width="60dp"
-            android:layout_height="1dp"
-            android:background="#FFFF0000"/>
-
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="HONDA RACING"
+            android:text="Powered by Helijohnny"
             android:textColor="#FFFF0000"
-            android:textSize="14sp"
-            android:textStyle="bold|italic"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp"/>
+            android:textSize="11sp"
+            android:textStyle="bold|italic"/>
 
         <View
             android:layout_width="0dp"
             android:layout_height="1dp"
             android:layout_weight="1"
-            android:background="#33FF0000"/>
-
-        <View
-            android:layout_width="30dp"
-            android:layout_height="1dp"
-            android:background="#FFFF0000"/>
+            android:background="#33FF0000"
+            android:layout_marginStart="8dp"/>
 
         <TextView
             android:id="@+id/sourceName"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textColor="#FF444444"
+            android:textColor="#FF777777"
             android:textSize="9sp"
             android:layout_marginStart="10dp"/>
 
@@ -135,321 +147,199 @@
             android:layout_weight="1"/>
     </LinearLayout>
 
-    <!-- ===== 底部行: 爆震控制(左3/4) + 辅助数据(右1/4) ===== -->
+    <!-- ===== 底部行: 爆震数据 + 防滑 (59dp) ===== -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="88dp"
+        android:layout_height="59dp"
         android:orientation="horizontal">
 
-        <!-- 左侧: 爆震控制区域 -->
+        <!-- K.C 爆震控制 (weight=2) -->
         <LinearLayout
+            android:id="@+id/knockRetCard"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="3"
-            android:orientation="vertical"
+            android:layout_weight="2"
+            android:orientation="horizontal"
             android:background="@drawable/bg_card"
-            android:padding="3dp">
+            android:layout_margin="1dp"
+            android:padding="2dp">
 
-            <LinearLayout
-                android:layout_width="match_parent"
+            <TextView
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="2dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="爆震控制"
-                    android:textColor="#FF888888"
-                    android:textSize="9sp"/>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text=" / "
-                    android:textColor="#FF444444"
-                    android:textSize="8sp"/>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="KNOCK CONTROL"
-                    android:textColor="#FF444444"
-                    android:textSize="8sp"
-                    android:textStyle="bold"/>
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
                 android:layout_weight="1"
-                android:orientation="horizontal">
-
-                <!-- 爆震控制值 (KNOCK RETARD) -->
-                <LinearLayout
-                    android:id="@+id/knockRetCard"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:gravity="center_horizontal"
-                    android:background="@drawable/bg_card"
-                    android:layout_margin="1dp"
-                    android:paddingTop="2dp"
-                    android:paddingBottom="2dp"
-                    android:paddingLeft="3dp"
-                    android:paddingRight="3dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="爆震控制"
-                        android:textColor="#FF888888"
-                        android:textSize="8sp"/>
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="KNOCK RET"
-                        android:textColor="#FF444444"
-                        android:textSize="7sp"
-                        android:textStyle="bold"/>
-
-                    <TextView
-                        android:id="@+id/knockRetValue"
-                        android:layout_width="wrap_content"
-                        android:layout_height="0dp"
-                        android:layout_weight="1"
-                        android:layout_gravity="center"
-                        android:gravity="center"
-                        android:textColor="#FF3FB950"
-                        android:textSize="20sp"
-                        android:textStyle="bold|italic"
-                        android:includeFontPadding="false"
-                        android:text="0.0"/>
-
-                    <com.hondata.dash.ScaleBarView
-                        android:id="@+id/knockRetBar"
-                        android:layout_width="match_parent"
-                        android:layout_height="10dp"
-                        android:paddingLeft="1dp"
-                        android:paddingRight="1dp"/>
-                </LinearLayout>
-
-                <!-- 4个爆震缸 (半宽) -->
-                <include layout="@layout/item_knock_cyl"
-                    android:id="@+id/knock0"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="0.5"
-                    android:layout_margin="1dp"/>
-
-                <include layout="@layout/item_knock_cyl"
-                    android:id="@+id/knock1"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="0.5"
-                    android:layout_margin="1dp"/>
-
-                <include layout="@layout/item_knock_cyl"
-                    android:id="@+id/knock2"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="0.5"
-                    android:layout_margin="1dp"/>
-
-                <include layout="@layout/item_knock_cyl"
-                    android:id="@+id/knock3"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="0.5"
-                    android:layout_margin="1dp"/>
-
-                <!-- 四轮动态图标 -->
-                <com.hondata.dash.WheelView
-                    android:id="@+id/wheelView"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="2"
-                    android:background="@drawable/bg_card"
-                    android:layout_margin="1dp"/>
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- 右侧: 辅助数据列表 -->
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:orientation="vertical"
-            android:background="@drawable/bg_card"
-            android:paddingStart="6dp"
-            android:paddingEnd="6dp"
-            android:paddingTop="4dp"
-            android:paddingBottom="4dp"
-            android:gravity="center_vertical">
+                android:layout_gravity="top"
+                android:gravity="top|start"
+                android:paddingStart="2dp"
+                android:paddingTop="2dp"
+                android:text="K.C"
+                android:textColor="#FFAAAAAA"
+                android:textSize="20sp"
+                android:textStyle="bold"/>
 
             <LinearLayout
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
+                android:layout_gravity="center_vertical"
                 android:gravity="center_vertical">
 
                 <TextView
+                    android:id="@+id/knockRetValue"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="油门开度"
-                    android:textColor="#FF666666"
-                    android:textSize="8sp"/>
-
-                <View
-                    android:layout_width="0dp"
-                    android:layout_height="1dp"
-                    android:layout_weight="1"/>
-
-                <TextView
-                    android:id="@+id/throttleValue"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="--%"
-                    android:textColor="#FFFFFFFF"
-                    android:textSize="11sp"
-                    android:textStyle="bold"/>
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginTop="3dp">
+                    android:textColor="#FF3FB950"
+                    android:textSize="55sp"
+                    android:textStyle="bold|italic"
+                    android:includeFontPadding="false"
+                    android:text="0"/>
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="进气压力"
-                    android:textColor="#FF666666"
-                    android:textSize="8sp"/>
-
-                <View
-                    android:layout_width="0dp"
-                    android:layout_height="1dp"
-                    android:layout_weight="1"/>
-
-                <TextView
-                    android:id="@+id/mapValue"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="-- kPa"
-                    android:textColor="#FFFFFFFF"
-                    android:textSize="11sp"
-                    android:textStyle="bold"/>
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginTop="3dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="空燃比"
-                    android:textColor="#FF666666"
-                    android:textSize="8sp"/>
-
-                <View
-                    android:layout_width="0dp"
-                    android:layout_height="1dp"
-                    android:layout_weight="1"/>
-
-                <TextView
-                    android:id="@+id/afrValue"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="--"
-                    android:textColor="#FFFFFFFF"
-                    android:textSize="11sp"
-                    android:textStyle="bold"/>
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginTop="3dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="发动机负荷"
-                    android:textColor="#FF666666"
-                    android:textSize="8sp"/>
-
-                <View
-                    android:layout_width="0dp"
-                    android:layout_height="1dp"
-                    android:layout_weight="1"/>
-
-                <TextView
-                    android:id="@+id/loadValue"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="--%"
-                    android:textColor="#FFFFFFFF"
-                    android:textSize="11sp"
-                    android:textStyle="bold"/>
+                    android:text="%"
+                    android:textColor="#FF999999"
+                    android:textSize="14sp"
+                    android:layout_marginStart="1dp"/>
             </LinearLayout>
         </LinearLayout>
-    </LinearLayout>
 
-    <!-- ===== 底部 Footer 状态栏 ===== -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="24dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:background="#FF080808"
-        android:paddingStart="10dp"
-        android:paddingEnd="10dp">
-
-        <TextView
-            android:id="@+id/recText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="\u25CF REC"
-            android:textColor="#FFFF0000"
-            android:textSize="9sp"
-            android:textStyle="bold"/>
-
-        <TextView
-            android:id="@+id/logText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="LOG: ON"
-            android:textColor="#FF3FB950"
-            android:textSize="9sp"
-            android:layout_marginStart="12dp"/>
-
-        <TextView
+        <!-- CYL 1-4 (each weight=1) -->
+        <include layout="@layout/item_knock_cyl"
+            android:id="@+id/knock0"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:layout_weight="1"
-            android:gravity="center"
-            android:text="ECU: Hondata"
-            android:textColor="#FF551111"
-            android:textSize="9sp"/>
+            android:layout_margin="1dp"/>
 
-        <TextView
-            android:id="@+id/timeText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textColor="#FF777777"
-            android:textSize="9sp"
-            android:textStyle="bold"/>
+        <include layout="@layout/item_knock_cyl"
+            android:id="@+id/knock1"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"/>
+
+        <include layout="@layout/item_knock_cyl"
+            android:id="@+id/knock2"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"/>
+
+        <include layout="@layout/item_knock_cyl"
+            android:id="@+id/knock3"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"/>
+
+        <!-- L.TRIM 短期燃油调整 (weight=1) -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/bg_card"
+            android:layout_margin="1dp"
+            android:padding="1dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="S.TRIM"
+                android:textColor="#FF999999"
+                android:textSize="10sp"
+                android:textStyle="bold"/>
+
+            <TextView
+                android:id="@+id/bottomTrimValue"
+                android:layout_width="wrap_content"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:textColor="#FFFFFFFF"
+                android:textSize="30sp"
+                android:textStyle="bold"
+                android:includeFontPadding="false"
+                android:singleLine="true"
+                android:text="--"/>
+        </LinearLayout>
+
+        <!-- AFM (weight=1) -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/bg_card"
+            android:layout_margin="1dp"
+            android:padding="1dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="AFM"
+                android:textColor="#FF999999"
+                android:textSize="10sp"
+                android:textStyle="bold"/>
+
+            <TextView
+                android:id="@+id/bottomAfmValue"
+                android:layout_width="wrap_content"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:textColor="#FFFFFFFF"
+                android:textSize="30sp"
+                android:textStyle="bold"
+                android:includeFontPadding="false"
+                android:singleLine="true"
+                android:text="--"/>
+        </LinearLayout>
+
+        <!-- FUEL 燃油剩余 (weight=1) -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/bg_card"
+            android:layout_margin="1dp"
+            android:padding="1dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="FUEL %"
+                android:textColor="#FF999999"
+                android:textSize="10sp"
+                android:textStyle="bold"/>
+
+            <TextView
+                android:id="@+id/bottomFuelValue"
+                android:layout_width="wrap_content"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:textColor="#FFFFFFFF"
+                android:textSize="30sp"
+                android:textStyle="bold"
+                android:includeFontPadding="false"
+                android:singleLine="true"
+                android:text="--"/>
+        </LinearLayout>
+
+        <!-- 四轮防滑图标 (weight=3) -->
+        <com.hondata.dash.WheelView
+            android:id="@+id/wheelView"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="3"
+            android:background="@drawable/bg_card"
+            android:layout_margin="1dp"/>
     </LinearLayout>
 
 </LinearLayout>
