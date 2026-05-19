@@ -2,6 +2,7 @@ package com.hondata.dash;
 
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
@@ -58,46 +59,109 @@ public class MainActivity extends Activity implements DataSource.Callback {
     // 爆震控制值
     private TextView knockRetValue;
 
-    // 四轮图标
-    private WheelView wheelView;
-
     // 彩虹转速灯条
     private ShiftLightView shiftLight;
 
-    // 底部数据文本
-    private TextView bottomTrimValue;
-    private TextView bottomAfmValue;
-    private TextView bottomFuelValue;
+    // 温度 & A/F 闪烁控制
+    private final Handler flashHandler = new Handler(Looper.getMainLooper());
+    private boolean flashVisible = true;
+    private boolean ectFlashing = false;
+    private boolean iatFlashing = false;
+    private boolean afFlashing = false;
+    private boolean kcFlashing = false;
+    private float lastEctVal = 0;
+    private float lastIatVal = 0;
+    private float lastAfVal = 14.7f;
+    private float lastTpPlate = 0;  // 节气门开度, 用于排除滑行/换挡
+    private final Runnable flashTick = new Runnable() {
+        @Override
+        public void run() {
+            flashVisible = !flashVisible;
+            // ECT闪烁 (>100)
+            if (ectFlashing) {
+                int alpha = flashVisible ? 255 : 40;
+                int color = 0xFFB040FF;
+                valueIntViews[1].setTextColor(color);
+                valueIntViews[1].setAlpha(alpha / 255f);
+                if (valueDecViews[1] != null) {
+                    valueDecViews[1].setTextColor(color);
+                    valueDecViews[1].setAlpha(alpha / 255f);
+                }
+            }
+            // IAT闪烁 (>=65)
+            if (iatFlashing) {
+                int alpha = flashVisible ? 255 : 40;
+                int color = 0xFFB040FF;
+                valueIntViews[2].setTextColor(color);
+                valueIntViews[2].setAlpha(alpha / 255f);
+                if (valueDecViews[2] != null) {
+                    valueDecViews[2].setTextColor(color);
+                    valueDecViews[2].setAlpha(alpha / 255f);
+                }
+            }
+            // A/F闪烁 (红色区间 + 踩油门状态)
+            if (afFlashing) {
+                int alpha = flashVisible ? 255 : 40;
+                int color = 0xFFFF4444;
+                valueIntViews[4].setTextColor(color);
+                valueIntViews[4].setAlpha(alpha / 255f);
+                if (valueDecViews[4] != null) {
+                    valueDecViews[4].setTextColor(color);
+                    valueDecViews[4].setAlpha(alpha / 255f);
+                }
+            }
+            // K.C闪烁 (>65)
+            if (kcFlashing && knockRetValue != null) {
+                int alpha = flashVisible ? 255 : 40;
+                knockRetValue.setTextColor(0xFFFF4444);
+                knockRetValue.setAlpha(alpha / 255f);
+            }
+            if (ectFlashing || iatFlashing || afFlashing || kcFlashing) {
+                flashHandler.postDelayed(this, 500); // 1Hz闪烁
+            }
+        }
+    };
 
-    // ===== 卡片配置 (BAT和MAP互换位置) =====
+    // 底部数据文本
+    private TextView bottomTrimValue;   // K.R
+    private TextView bottomAfmValue;    // K.L
+    private TextView bottomBatValue;    // BAT
+    private TextView bottomFpValue;     // F.P (Fuel Pressure)
+    private TextView bottomWgValue;     // W.G (Wastegate)
+    private TextView bottomTpValue;     // T.P (Throttle Plate)
+
+    // ===== 卡片配置 =====
     private static final int[] CARD_PIDS = {
-        0xB03, 0x161, 0x151, 0x110,   // 第1行: Ethanol, ECT2, IAT2, MAP
-        0x180, 0x140, 0x320, 0x332    // 第2行: BAT, IGN, A/F, LTFT
+        0xB03, 0x160, 0x151, 0x110,   // 第1行: Ethanol, ECT, IAT2, MAP
+        0x320, 0x140, 0x330, 0x332    // 第2行: A/F, IGN, S.TRIM, L.TRIM
     };
 
     private static final String[] CARD_EN = {
         "Ethanol", "ECT", "IAT", "MAP",
-        "BAT", "IGN", "A/F", "L.TRIM"
+        "A/F", "IGN", "S.TRIM", "L.TRIM"
     };
 
     private static final String[] CARD_FMT = {
-        "%.0f", "%.0f", "%.0f", "%.0f",
-        "%.1f", "%.1f", "%.1f", "%+.1f"
+        "%.0f", "%.0f", "%.0f", "%.1f",
+        "%.1f", "%.1f", "%+.1f", "%+.1f"
     };
 
     private static final String[] CARD_UNIT = {
-        "%", "\u00B0C", "\u00B0C", "kPa",
-        "V", "\u00B0", "", "%"
+        "%", "\u00B0C", "\u00B0C", "bar",
+        "", "\u00B0", "%", "%"
     };
 
-    // 爆震缸 PID
-    private static final int[] KNOCK_PIDS = {0x604, 0x605, 0x606, 0x607};
+    // 爆震缸 PID (Knock Count 1-4)
+    private static final int[] KNOCK_PIDS = {0x421, 0x422, 0x423, 0x424};
 
     // 爆震控制 PID (Knock Control %)
-    private static final int KNOCK_CTRL_PID = 0x601;
+    private static final int KNOCK_CTRL_PID = 0x412;
 
-    // 轮速差 PID: FL, FR, RL, RR
-    private static final int[] WHEEL_SLIP_PIDS = {0x710, 0x711, 0x712, 0x713};
+    // 底部 PID
+    private static final int BAT_PID = 0x180;
+    private static final int FP_PID = 0x191;    // Fuel Pressure kPa
+    private static final int WG_PID = 0x1A0;    // Wastegate CMD %
+    private static final int TP_PID = 0x122;    // Throttle Plate %
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -136,15 +200,20 @@ public class MainActivity extends Activity implements DataSource.Callback {
             minValueViews[i] = (TextView) card.findViewById(R.id.minValue);
 
             if (labelEnViews[i] != null) labelEnViews[i].setText(CARD_EN[i]);
-            if (unitViews[i] != null) unitViews[i].setText(CARD_UNIT[i]);
+            if (unitViews[i] != null) {
+                String u = CARD_UNIT[i];
+                unitViews[i].setText(u.isEmpty() ? "" : "(" + u + ")");
+            }
 
-            // 第1行(0-3): 无小数, 字体放大; 第2行(4-7): 有小数, 字体缩小
+            // 第1行(0-3): 字高×1.2, 字宽不变; 第2行(4-7): 字高×1.4, 字宽不变
             if (i < 4) {
-                if (valueIntViews[i] != null) valueIntViews[i].setTextSize(75);
-                if (valueDecViews[i] != null) valueDecViews[i].setTextSize(75);
+                float scale = 1.2f;
+                if (valueIntViews[i] != null) { valueIntViews[i].setTextSize(75 * scale); valueIntViews[i].setTextScaleX(1f / scale); }
+                if (valueDecViews[i] != null) { valueDecViews[i].setTextSize(75 * scale); valueDecViews[i].setTextScaleX(1f / scale); }
             } else {
-                if (valueIntViews[i] != null) valueIntViews[i].setTextSize(60);
-                if (valueDecViews[i] != null) valueDecViews[i].setTextSize(60);
+                float scale = 1.4f;
+                if (valueIntViews[i] != null) { valueIntViews[i].setTextSize(60 * scale); valueIntViews[i].setTextScaleX(1f / scale); }
+                if (valueDecViews[i] != null) { valueDecViews[i].setTextSize(60 * scale); valueDecViews[i].setTextScaleX(1f / scale); }
                 if (maxValueViews[i] != null) maxValueViews[i].setTextSize(21);
                 if (minValueViews[i] != null) minValueViews[i].setTextSize(21);
             }
@@ -167,22 +236,24 @@ public class MainActivity extends Activity implements DataSource.Callback {
             if (kl != null) kl.setText(knockLabels[i]);
         }
 
-        // 四轮图标
-        wheelView = (WheelView) findViewById(R.id.wheelView);
-
         // 彩虹转速灯条
         shiftLight = (ShiftLightView) findViewById(R.id.shiftLight);
 
         // 底部数据文本
         bottomTrimValue = (TextView) findViewById(R.id.bottomTrimValue);
         bottomAfmValue = (TextView) findViewById(R.id.bottomAfmValue);
-        bottomFuelValue = (TextView) findViewById(R.id.bottomFuelValue);
+        bottomBatValue = (TextView) findViewById(R.id.bottomBatValue);
+        bottomFpValue = (TextView) findViewById(R.id.bottomFpValue);
+        bottomWgValue = (TextView) findViewById(R.id.bottomWgValue);
+        bottomTpValue = (TextView) findViewById(R.id.bottomTpValue);
 
         // 数据源
         if (USE_DEMO) {
             dataSource = new DemoSource();
         } else {
-            dataSource = new BluetoothSource();
+            BluetoothSource btSource = new BluetoothSource();
+            btSource.setExportContext(this);
+            dataSource = btSource;
         }
         dataSource.setCallback(this);
         sourceName.setText(dataSource.getName());
@@ -230,24 +301,28 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 bar.setAnchor(20);
                 break;
 
-            case 3: // MAP: -30到250 kPa, 负压区间加大
-                bar.setRange(-30, 250);
+            case 3: // MAP: -0.3到2.0 bar
+                bar.setRange(-0.3f, 2.0f);
                 bar.setTicks(
-                    new float[]{-30, 0, 50, 100, 150, 200, 250},
-                    new String[]{"-30", "0", "50", "100", "150", "200", "250"});
-                bar.addZone(-30, 0, 0xFF00D8FF);
-                bar.addZone(0, 100, 0xFF0088FF);
-                bar.addZone(100, 250, 0xFFFF4444);
+                    new float[]{-0.3f, 0, 0.5f, 1.0f, 1.5f, 2.0f},
+                    new String[]{"-0.3", "0", "0.5", "1.0", "1.5", "2.0"});
+                bar.addZone(-0.3f, 0, 0xFF00D8FF);
+                bar.addZone(0, 1.0f, 0xFF0088FF);
+                bar.addZone(1.0f, 2.0f, 0xFFFF4444);
                 bar.setAnchor(0);
                 break;
 
-            case 4: // BAT: 10-18V, 蓝色
-                bar.setRange(10, 18);
+            case 4: // A/F: 9-18
+                bar.setRange(9, 18);
                 bar.setTicks(
-                    new float[]{10, 12, 14, 16, 18},
-                    new String[]{"10", "12", "14", "16", "18"});
-                bar.addZone(10, 18, 0xFF00D8FF);
-                bar.setAnchor(10);
+                    new float[]{9, 11, 14.5f, 15.5f, 18},
+                    new String[]{"9", "11", "14.5", "15.5", "18"});
+                bar.addZone(9, 11, 0xFFFF4444);       // 极浓 红色
+                bar.addZone(11, 14.5f, 0xFFD29922);   // 偏浓 黄色
+                bar.addZone(14.5f, 15.5f, 0xFF3FB950);// 理想 绿色
+                bar.addZone(15.5f, 18, 0xFFFF4444);   // 偏稀 红色
+                bar.setAnchor(14.7f);
+                bar.setExpand(14.5f, 15.5f, 2.5f);   // 绿色区间放大2.5倍
                 break;
 
             case 5: // IGN: -40到40
@@ -259,14 +334,14 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 bar.setAnchor(0);
                 break;
 
-            case 6: // A/F: 9-18, 14.7居中
-                bar.setRange(9, 18);
+            case 6: // S.TRIM: -25到+25%
+                bar.setRange(-25, 25);
                 bar.setTicks(
-                    new float[]{9, 14.7f, 18},
-                    new String[]{"9", "14.7", "18"});
-                bar.addZone(9, 14.7f, 0xFF3FB950);  // 富油 (安全)
-                bar.addZone(14.7f, 18, 0xFFFF4444);   // 稀油 (危险)
-                bar.setAnchor(14.7f);
+                    new float[]{-25, 0, 25},
+                    new String[]{"-25", "0", "25"});
+                bar.addZone(-25, 0, 0xFFFF4444);
+                bar.addZone(0, 25, 0xFF0088FF);
+                bar.setAnchor(0);
                 break;
 
             case 7: // L.TRIM: -25到+25%, 负红正蓝
@@ -350,6 +425,17 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
                     if (raw != null) {
                         double val = raw;
+
+                        // A/F 卡片: Lambda → A/F ratio (×14.7)
+                        if (i == 4) {
+                            val = val * 14.7;
+                        }
+
+                        // MAP 卡片: kPa → bar (÷100)
+                        if (i == 3) {
+                            val = val / 100.0;
+                        }
+
                         float fVal = (float) val;
 
                         // 格式化并拆分整数/小数部分
@@ -387,6 +473,91 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                 valueDecViews[i].setTextColor(0xFF3FB950);
                             }
                         }
+
+                        // ECT: 温度变色 <80蓝 80~95白 96~100红 >100紫闪烁
+                        if (i == 1) {
+                            lastEctVal = fVal;
+                            boolean shouldFlash = fVal > 100;
+                            if (shouldFlash != ectFlashing) {
+                                ectFlashing = shouldFlash;
+                                updateFlashState();
+                            }
+                            if (!ectFlashing) {
+                                int color;
+                                if (fVal < 80) {
+                                    color = 0xFF00D8FF; // 蓝色
+                                } else if (fVal <= 95) {
+                                    color = 0xFFFFFFFF; // 白色
+                                } else {
+                                    color = 0xFFFF4444; // 红色 (96~100)
+                                }
+                                valueIntViews[i].setTextColor(color);
+                                valueIntViews[i].setAlpha(1f);
+                                if (valueDecViews[i] != null) {
+                                    valueDecViews[i].setTextColor(color);
+                                    valueDecViews[i].setAlpha(1f);
+                                }
+                            }
+                        }
+
+                        // IAT: 进气温度变色 <35绿 35~45白 45~55黄 55~65红 >=65紫闪烁
+                        if (i == 2) {
+                            lastIatVal = fVal;
+                            boolean shouldFlash = fVal >= 65;
+                            if (shouldFlash != iatFlashing) {
+                                iatFlashing = shouldFlash;
+                                updateFlashState();
+                            }
+                            if (!iatFlashing) {
+                                int color;
+                                if (fVal < 35) {
+                                    color = 0xFF3FB950; // 绿色
+                                } else if (fVal < 45) {
+                                    color = 0xFFFFFFFF; // 白色
+                                } else if (fVal < 55) {
+                                    color = 0xFFD29922; // 黄色
+                                } else {
+                                    color = 0xFFFF4444; // 红色 (55~64)
+                                }
+                                valueIntViews[i].setTextColor(color);
+                                valueIntViews[i].setAlpha(1f);
+                                if (valueDecViews[i] != null) {
+                                    valueDecViews[i].setTextColor(color);
+                                    valueDecViews[i].setAlpha(1f);
+                                }
+                            }
+                        }
+
+                        // A/F: 9~11红(极浓) 11~14.5黄(偏浓) 14.5~15.5绿(理想) 15.5~18红(偏稀)
+                        // 红色区间 + 踩油门状态才闪烁
+                        if (i == 4) {
+                            lastAfVal = fVal;
+                            boolean inRedZone = fVal < 11 || fVal > 15.5f;
+                            boolean isOnThrottle = lastTpPlate > 5; // TP>5% 视为踩油门
+                            boolean shouldFlash = inRedZone && isOnThrottle;
+                            if (shouldFlash != afFlashing) {
+                                afFlashing = shouldFlash;
+                                updateFlashState();
+                            }
+                            if (!afFlashing) {
+                                int color;
+                                if (fVal < 11) {
+                                    color = 0xFFFF4444; // 红色 极浓
+                                } else if (fVal < 14.5f) {
+                                    color = 0xFFD29922; // 黄色 偏浓
+                                } else if (fVal <= 15.5f) {
+                                    color = 0xFF3FB950; // 绿色 理想
+                                } else {
+                                    color = 0xFFFF4444; // 红色 偏稀
+                                }
+                                valueIntViews[i].setTextColor(color);
+                                valueIntViews[i].setAlpha(1f);
+                                if (valueDecViews[i] != null) {
+                                    valueDecViews[i].setTextColor(color);
+                                    valueDecViews[i].setAlpha(1f);
+                                }
+                            }
+                        }
                     } else {
                         valueIntViews[i].setText("--");
                         if (valueDecViews[i] != null) valueDecViews[i].setText("");
@@ -402,12 +573,18 @@ public class MainActivity extends Activity implements DataSource.Callback {
                     int pct = kc.intValue();
                     knockRetValue.setText(String.valueOf(pct));
 
-                    if (pct < 30) {
-                        knockRetValue.setTextColor(0xFF3FB950);
-                    } else if (pct < 60) {
-                        knockRetValue.setTextColor(0xFFD29922);
-                    } else {
-                        knockRetValue.setTextColor(0xFFFF4444);
+                    boolean shouldFlash = pct > 65;
+                    if (shouldFlash != kcFlashing) {
+                        kcFlashing = shouldFlash;
+                        updateFlashState();
+                    }
+                    if (!kcFlashing) {
+                        if (pct < 55) {
+                            knockRetValue.setTextColor(0xFF3FB950); // 绿色
+                        } else {
+                            knockRetValue.setTextColor(0xFFD29922); // 黄色 (55~65)
+                        }
+                        knockRetValue.setAlpha(1f);
                     }
                 }
 
@@ -434,31 +611,43 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 }
 
                 // 更新底部数据
-                // S.TRIM 短期燃油调整 (PID 0x330)
-                Double stft = data.get(0x330);
-                if (stft != null && bottomTrimValue != null) {
-                    bottomTrimValue.setText(String.format(Locale.US, "%+.0f", stft));
+                // Knock Retard (PID 0x410)
+                Double kr = data.get(0x410);
+                if (kr != null && bottomTrimValue != null) {
+                    bottomTrimValue.setText(String.format(Locale.US, "%.1f", kr));
                 }
 
-                // AFM (PID 0x112)
-                Double afm = data.get(0x112);
-                if (afm != null && bottomAfmValue != null) {
-                    bottomAfmValue.setText(String.format(Locale.US, "%.0f", afm));
+                // Knock Limit (PID 0x411)
+                Double kl = data.get(0x411);
+                if (kl != null && bottomAfmValue != null) {
+                    bottomAfmValue.setText(String.format(Locale.US, "%.1f", kl));
                 }
 
-                // FUEL 燃油剩余 (PID 0xB04)
-                Double fuel = data.get(0xB04);
-                if (fuel != null && bottomFuelValue != null) {
-                    bottomFuelValue.setText(String.format(Locale.US, "%.0f", fuel));
+                // BAT 电压 (PID 0x180)
+                Double bat = data.get(BAT_PID);
+                if (bat != null && bottomBatValue != null) {
+                    bottomBatValue.setText(String.format(Locale.US, "%.1f", bat));
                 }
 
-                // 更新四轮图标
-                if (wheelView != null) {
-                    float fl = getFloat(data, WHEEL_SLIP_PIDS[0]);
-                    float fr = getFloat(data, WHEEL_SLIP_PIDS[1]);
-                    float rl = getFloat(data, WHEEL_SLIP_PIDS[2]);
-                    float rr = getFloat(data, WHEEL_SLIP_PIDS[3]);
-                    wheelView.setSlip(fl, fr, rl, rr);
+                // F.P Fuel Pressure (PID 0x191 kPa → bar)
+                Double fp = data.get(FP_PID);
+                if (fp != null && bottomFpValue != null) {
+                    bottomFpValue.setText(String.format(Locale.US, "%.1f", fp / 100.0));
+                }
+
+                // W.G Wastegate (PID 0x1A0 %)
+                Double wg = data.get(WG_PID);
+                if (wg != null && bottomWgValue != null) {
+                    bottomWgValue.setText(String.format(Locale.US, "%.0f", wg));
+                }
+
+                // T.P Throttle Plate (PID 0x122 %)
+                Double tp = data.get(TP_PID);
+                if (tp != null) {
+                    lastTpPlate = tp.floatValue();
+                    if (bottomTpValue != null) {
+                        bottomTpValue.setText(String.format(Locale.US, "%.0f", tp));
+                    }
                 }
 
                 // 更新彩虹转速灯条
@@ -470,6 +659,17 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 }
             }
         });
+    }
+
+    /**
+     * 管理温度闪烁定时器的启停。
+     */
+    private void updateFlashState() {
+        flashHandler.removeCallbacks(flashTick);
+        if (ectFlashing || iatFlashing) {
+            flashVisible = true;
+            flashHandler.post(flashTick);
+        }
     }
 
     /**
@@ -519,12 +719,67 @@ public class MainActivity extends Activity implements DataSource.Callback {
             startActivity(new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE));
             return;
         }
+
+        statusText.setText("搜索中...");
+
+        // 先查已配对
         String addr = BluetoothSource.findFlashPro();
         if (addr != null) {
+            statusText.setText("连接中...");
             dataSource.connect(addr);
         } else {
-            statusText.setText("未找到FlashPro");
-            Toast.makeText(this, "请先在蓝牙设置中配对 FlashPro", Toast.LENGTH_LONG).show();
+            // 启动蓝牙扫描发现
+            Toast.makeText(this, "已配对列表未找到, 开始扫描...", Toast.LENGTH_SHORT).show();
+            startDiscoveryAndConnect();
         }
+    }
+
+    /**
+     * 启动蓝牙扫描发现 FlashPro 并自动连接
+     */
+    private void startDiscoveryAndConnect() {
+        final BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+        adapter.cancelDiscovery();
+
+        final android.content.BroadcastReceiver receiver = new android.content.BroadcastReceiver() {
+            @Override
+            public void onReceive(android.content.Context context, android.content.Intent intent) {
+                String action = intent.getAction();
+                if (BluetoothDevice.ACTION_FOUND.equals(action)) {
+                    BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                    if (device != null) {
+                        String name = device.getName();
+                        if (name != null && (name.toLowerCase().contains("flashpro")
+                                || name.toLowerCase().contains("hondata"))) {
+                            // 找到了! 停止扫描并连接
+                            adapter.cancelDiscovery();
+                            try { unregisterReceiver(this); } catch (Exception ignored) {}
+                            final String addr = device.getAddress();
+                            runOnUiThread(new Runnable() {
+                                @Override public void run() {
+                                    statusText.setText("连接中...");
+                                    dataSource.connect(addr);
+                                }
+                            });
+                        }
+                    }
+                } else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
+                    try { unregisterReceiver(this); } catch (Exception ignored) {}
+                    runOnUiThread(new Runnable() {
+                        @Override public void run() {
+                            if (!dataSource.isConnected()) {
+                                statusText.setText("未找到FlashPro");
+                            }
+                        }
+                    });
+                }
+            }
+        };
+
+        android.content.IntentFilter filter = new android.content.IntentFilter();
+        filter.addAction(BluetoothDevice.ACTION_FOUND);
+        filter.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
+        registerReceiver(receiver, filter);
+        adapter.startDiscovery();
     }
 }

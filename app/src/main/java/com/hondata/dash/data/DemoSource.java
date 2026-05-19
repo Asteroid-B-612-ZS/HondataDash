@@ -19,14 +19,13 @@ public class DemoSource implements DataSource {
     private volatile boolean running;
 
     private float phase = 0;
-    private float afrCycle = 8.6f; // A/F 循环 8.6~17.5, 步进 0.1
 
     private final Runnable tick = new Runnable() {
         @Override
         public void run() {
             if (!running) return;
             if (callback != null) callback.onDataReceived(generate());
-            uiHandler.postDelayed(this, 1000); // 1Hz
+            uiHandler.postDelayed(this, 50); // 20Hz
         }
     };
 
@@ -73,8 +72,8 @@ public class DemoSource implements DataSource {
         d.timestamp = System.currentTimeMillis();
         phase += 0.04f;
 
-        // RPM: 800 ~ 7000 波动
-        double rpm = 800 + 5400 * (0.5 + 0.5 * Math.sin(phase)) + rng.nextInt(80);
+        // RPM: 800 ~ 7200 波动 (覆盖全部灯条阶段, 包括≥6400闪烁)
+        double rpm = 800 + 5800 * (0.5 + 0.5 * Math.sin(phase)) + rng.nextInt(100);
         d.put(0x100, rpm);
         d.put(0x101, rpm / 65.0);                 // Speed km/h
         d.put(0x102, 3);                           // Gear
@@ -104,14 +103,12 @@ public class DemoSource implements DataSource {
         d.put(0x130, 2 + rng.nextDouble() * 6);      // Injector ms
         d.put(0x132, 20 + rng.nextDouble() * 60);    // Inj Duty %
 
-        // 空燃比 (循环 8.6~17.5, 步进 0.1)
-        double afr = afrCycle;
-        afrCycle += 0.1f;
-        if (afrCycle > 17.5f) afrCycle = 8.6f;
-        d.put(0x320, afr);                           // Air Fuel
-        d.put(0x329, afr + 0.1 * rng.nextDouble());  // Wideband
+        // 空燃比 (Lambda)
+        double lambda = rpm > 4000 ? (0.78 + rng.nextDouble() * 0.10) : (0.97 + rng.nextDouble() * 0.06);
+        d.put(0x320, lambda);                          // Lambda (MainActivity 会 ×14.7)
+        d.put(0x329, lambda + 0.01 * rng.nextDouble());  // Wideband Lambda
         d.put(0x330, -5 + rng.nextDouble() * 10);    // STFT %
-        d.put(0x332, -2.5 + rng.nextDouble() * 5);     // LTFT %
+        d.put(0x332, -2.5 + rng.nextDouble() * 5);   // LTFT %
 
         // 电气 (确保始终有小数)
         d.put(0x180, 13.1 + rng.nextDouble() * 0.8); // Battery V
@@ -119,13 +116,14 @@ public class DemoSource implements DataSource {
         // 负荷
         d.put(0x116, 30 + rng.nextDouble() * 60);    // Air Charge %
 
-        // 爆震
-        d.put(0x601, rng.nextDouble() * 50);            // Knock Control %
-        d.put(0x603, rng.nextDouble() * 2);            // Knock Retard °
-        d.put(0x604, (double) rng.nextInt(3));         // Knock CYL1
-        d.put(0x605, (double) rng.nextInt(3));         // Knock CYL2
-        d.put(0x606, (double) rng.nextInt(3));         // Knock CYL3
-        d.put(0x607, (double) rng.nextInt(3));         // Knock CYL4
+        // 爆震 (PID 与 MainActivity 一致)
+        d.put(0x412, rng.nextDouble() * 50);            // Knock Control % (K.C)
+        d.put(0x410, rng.nextDouble() * 2);             // Knock Retard ° (K.R)
+        d.put(0x411, 2 + rng.nextDouble() * 8);         // Knock Limit ° (K.L)
+        d.put(0x421, (double) rng.nextInt(3));          // Knock CYL1
+        d.put(0x422, (double) rng.nextInt(3));          // Knock CYL2
+        d.put(0x423, (double) rng.nextInt(3));          // Knock CYL3
+        d.put(0x424, (double) rng.nextInt(3));          // Knock CYL4
 
         // 燃油
         d.put(0xB03, 85);                            // Ethanol %

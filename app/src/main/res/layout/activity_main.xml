@@ -17,71 +17,67 @@
     android:orientation="vertical"
     android:background="#FF000000">
 
-    <!-- ===== 彩虹转速灯条 ===== -->
-    <LinearLayout
+    <!-- ===== 6-LED 转速灯条 + Header 叠加 ===== -->
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="14dp"
-        android:orientation="horizontal">
+        android:layout_height="42dp">
 
-        <View
-            android:layout_width="0dp"
+        <!-- LED 灯条 -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_weight="1"/>
+            android:gravity="center_vertical"
+            android:paddingStart="150dp"
+            android:paddingEnd="150dp">
 
-        <com.hondata.dash.ShiftLightView
-            android:id="@+id/shiftLight"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="2"/>
+            <com.hondata.dash.ShiftLightView
+                android:id="@+id/shiftLight"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"/>
+        </LinearLayout>
 
-        <View
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"/>
-    </LinearLayout>
-
-    <!-- ===== 顶部 Header ===== -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="26dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:background="#FF080808"
-        android:paddingStart="8dp"
-        android:paddingEnd="8dp">
-
-        <TextView
-            android:layout_width="wrap_content"
+        <!-- Header 文字贴底, 与 LED 底部齐平 -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Powered by Helijohnny"
-            android:textColor="#FFFF0000"
-            android:textSize="11sp"
-            android:textStyle="bold|italic"/>
+            android:layout_gravity="bottom"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="1dp">
 
-        <View
-            android:layout_width="0dp"
-            android:layout_height="1dp"
-            android:layout_weight="1"
-            android:background="#33FF0000"
-            android:layout_marginStart="8dp"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Powered by Helijohnny"
+                android:textColor="#FFFF0000"
+                android:textSize="10sp"
+                android:textStyle="bold|italic"/>
 
-        <TextView
-            android:id="@+id/sourceName"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textColor="#FF777777"
-            android:textSize="9sp"
-            android:layout_marginStart="10dp"/>
+            <View
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1"/>
 
-        <TextView
-            android:id="@+id/statusText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="未连接"
-            android:textColor="#FFFF4444"
-            android:textSize="10sp"
-            android:layout_marginStart="6dp"/>
-    </LinearLayout>
+            <TextView
+                android:id="@+id/sourceName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#FF777777"
+                android:textSize="8sp"
+                android:layout_marginStart="10dp"/>
+
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="未连接"
+                android:textColor="#FFFF4444"
+                android:textSize="9sp"
+                android:layout_marginStart="6dp"/>
+        </LinearLayout>
+    </FrameLayout>
 
     <!-- ===== 第一行: ETHANOL | WATER | IAT | VOLTAGE ===== -->
     <LinearLayout
@@ -247,7 +243,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="S.TRIM"
+                android:text="K.R"
                 android:textColor="#FF999999"
                 android:textSize="10sp"
                 android:textStyle="bold"/>
@@ -266,7 +262,7 @@
                 android:text="--"/>
         </LinearLayout>
 
-        <!-- AFM (weight=1) -->
+        <!-- Knock Limit (weight=1) -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="match_parent"
@@ -280,7 +276,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="AFM"
+                android:text="K.L"
                 android:textColor="#FF999999"
                 android:textSize="10sp"
                 android:textStyle="bold"/>
@@ -299,7 +295,7 @@
                 android:text="--"/>
         </LinearLayout>
 
-        <!-- FUEL 燃油剩余 (weight=1) -->
+        <!-- BAT (weight=1) -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="match_parent"
@@ -313,13 +309,13 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="FUEL %"
+                android:text="BAT(V)"
                 android:textColor="#FF999999"
                 android:textSize="10sp"
                 android:textStyle="bold"/>
 
             <TextView
-                android:id="@+id/bottomFuelValue"
+                android:id="@+id/bottomBatValue"
                 android:layout_width="wrap_content"
                 android:layout_height="0dp"
                 android:layout_weight="1"
@@ -332,14 +328,104 @@
                 android:text="--"/>
         </LinearLayout>
 
-        <!-- 四轮防滑图标 (weight=3) -->
-        <com.hondata.dash.WheelView
-            android:id="@+id/wheelView"
+        <!-- F.P Fuel Pressure (weight=1) -->
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="3"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
             android:background="@drawable/bg_card"
-            android:layout_margin="1dp"/>
+            android:layout_margin="1dp"
+            android:padding="1dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="F.P(bar)"
+                android:textColor="#FF999999"
+                android:textSize="10sp"
+                android:textStyle="bold"/>
+
+            <TextView
+                android:id="@+id/bottomFpValue"
+                android:layout_width="wrap_content"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:textColor="#FFFFFFFF"
+                android:textSize="30sp"
+                android:textStyle="bold"
+                android:includeFontPadding="false"
+                android:singleLine="true"
+                android:text="--"/>
+        </LinearLayout>
+
+        <!-- W Wastegate (weight=1) -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/bg_card"
+            android:layout_margin="1dp"
+            android:padding="1dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="W.G(%)"
+                android:textColor="#FF999999"
+                android:textSize="10sp"
+                android:textStyle="bold"/>
+
+            <TextView
+                android:id="@+id/bottomWgValue"
+                android:layout_width="wrap_content"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:textColor="#FFFFFFFF"
+                android:textSize="30sp"
+                android:textStyle="bold"
+                android:includeFontPadding="false"
+                android:singleLine="true"
+                android:text="--"/>
+        </LinearLayout>
+
+        <!-- T.P Throttle Plate (weight=1) -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/bg_card"
+            android:layout_margin="1dp"
+            android:padding="1dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="T.P(%)"
+                android:textColor="#FF999999"
+                android:textSize="10sp"
+                android:textStyle="bold"/>
+
+            <TextView
+                android:id="@+id/bottomTpValue"
+                android:layout_width="wrap_content"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:textColor="#FFFFFFFF"
+                android:textSize="30sp"
+                android:textStyle="bold"
+                android:includeFontPadding="false"
+                android:singleLine="true"
+                android:text="--"/>
+        </LinearLayout>
     </LinearLayout>
 
 </LinearLayout>

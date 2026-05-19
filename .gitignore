@@ -9,3 +9,11 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# 调试/临时文件
+*.png
+*.cfa
+analyze_apk.py
+hondatamobile.apk
+ui_simulator.html
+tools/

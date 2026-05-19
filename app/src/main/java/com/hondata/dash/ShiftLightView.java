@@ -10,23 +10,32 @@ import android.util.AttributeSet;
 import android.view.View;
 
 /**
- * 彩虹转速灯条 - 根据转速从左到右逐渐亮起。
- * 5500 RPM 后全亮并闪烁。
+ * 6-LED 转速灯条 - 三阶段渐进 + 断油闪烁。
+ *
+ * 阶段0: <4000 全灭（极暗轮廓）
+ * 阶段1: 4000-4999 LED1@4000 LED2@4500 绿色
+ * 阶段2: 5000-5999 LED3@5000 LED4@5500 黄色
+ * 阶段3: 6000-6399 LED5@6000 LED6@6200 红色
+ * 阶段4: ≥6400  全亮 10Hz闪烁
  */
 public class ShiftLightView extends View {
 
-    private static final int LED_COUNT = 15;
-    private static final float RPM_MIN = 1000;
-    private static final float RPM_FLASH = 5500;
-    private static final long FLASH_MS = 120;
+    private static final int LED_COUNT = 6;
 
+    // 各 LED 点亮的 RPM 阈值
+    private static final float[] RPM_THRESHOLDS = {
+        4000, 4500, 5000, 5500, 6000, 6200
+    };
+
+    // 阶段4: 全部闪烁
+    private static final float RPM_FLASH = 6400;
+    private static final long FLASH_MS = 50; // 10Hz
+
+    // LED 颜色: 绿 绿 黄 黄 红 红
     private static final int[] LED_COLORS = {
-        0xFF3FB950, 0xFF3FB950, 0xFF3FB950, 0xFF3FB950,  // green
-        0xFF7BC840, 0xFF7BC840,                             // lime
-        0xFFD29922, 0xFFD29922,                             // yellow
-        0xFFFF8800, 0xFFFF8800,                             // orange
-        0xFFFF4422, 0xFFFF4422,                             // red-orange
-        0xFFFF0000, 0xFFFF0000, 0xFFFF0000                  // red
+        0xFF3FB950, 0xFF3FB950,
+        0xFFD29922, 0xFFD29922,
+        0xFFFF2200, 0xFFFF2200
     };
 
     private float rpm;
@@ -65,6 +74,7 @@ public class ShiftLightView extends View {
         if (shouldFlash && !flashing) {
             flashing = true;
             flashOn = true;
+            handler.removeCallbacks(flashTick);
             handler.post(flashTick);
         } else if (!shouldFlash && flashing) {
             flashing = false;
@@ -87,48 +97,57 @@ public class ShiftLightView extends View {
         float w = getWidth() - pL - pR;
         float h = getHeight() - pT - pB;
 
-        float gap = 2 * density;
+        // 大间距 + 大灯珠
+        float gap = 4 * density;
         float ledW = (w - (LED_COUNT - 1) * gap) / LED_COUNT;
-        float radius = Math.min(ledW, h) / 2;
+        float ledH = h;
+        float radius = Math.min(ledW, ledH) / 2;
 
-        int litCount;
-        if (rpm >= RPM_FLASH) {
-            litCount = LED_COUNT;
-        } else if (rpm <= RPM_MIN) {
-            litCount = 0;
-        } else {
-            litCount = Math.round((rpm - RPM_MIN) / (RPM_FLASH - RPM_MIN) * LED_COUNT);
-            litCount = Math.max(0, Math.min(LED_COUNT, litCount));
+        // 计算每颗 LED 是否点亮
+        boolean[] lit = new boolean[LED_COUNT];
+        for (int i = 0; i < LED_COUNT; i++) {
+            lit[i] = rpm >= RPM_THRESHOLDS[i];
         }
+
+        // 阶段4: 全亮（闪烁由 flashOn 控制）
+        boolean allLit = rpm >= RPM_FLASH;
 
         for (int i = 0; i < LED_COUNT; i++) {
             float x = pL + i * (ledW + gap);
-            boolean isLit = i < litCount;
+            rect.set(x, pT, x + ledW, pT + ledH);
 
-            rect.set(x, pT, x + ledW, pT + h);
+            boolean isLit = allLit || lit[i];
 
             if (isLit) {
                 int color = LED_COLORS[i];
-                boolean showBright = !(rpm >= RPM_FLASH && !flashOn);
+
+                // 闪烁时: flashOn 控制亮/灭
+                boolean showBright;
+                if (allLit) {
+                    showBright = flashOn;
+                } else {
+                    showBright = true;
+                }
 
                 if (showBright) {
-                    // glow
-                    float gp = 2 * density;
-                    glowRect.set(x - gp, pT - gp, x + ledW + gp, pT + h + gp);
+                    // 光晕
+                    float gp = 3 * density;
+                    glowRect.set(x - gp, pT - gp, x + ledW + gp, pT + ledH + gp);
                     glowPaint.setColor(color);
-                    glowPaint.setAlpha(60);
+                    glowPaint.setAlpha(80);
                     canvas.drawRoundRect(glowRect, radius + gp, radius + gp, glowPaint);
 
-                    // LED
+                    // LED 亮
                     ledPaint.setColor(color);
                     ledPaint.setAlpha(255);
                 } else {
-                    // flash off: dim
+                    // 闪烁灭: 暗
                     ledPaint.setColor(color);
-                    ledPaint.setAlpha(40);
+                    ledPaint.setAlpha(30);
                 }
             } else {
-                ledPaint.setColor(0xFF444444);
+                // 未点亮: 极暗轮廓
+                ledPaint.setColor(0xFF333333);
                 ledPaint.setAlpha(255);
             }
 

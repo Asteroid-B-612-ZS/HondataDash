@@ -23,6 +23,10 @@ public class ScaleBarView extends View {
     private boolean showLabels = true;
     private final List<Zone> zones = new ArrayList<>();
 
+    // 区间放大: expandStart~expandEnd 在视觉上放大 expandFactor 倍
+    private float expandStart = Float.NaN, expandEnd = Float.NaN;
+    private float expandFactor = 1f;
+
     private final Paint bgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint tickPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -77,9 +81,28 @@ public class ScaleBarView extends View {
     public void setAnchor(float a) { anchorVal = a; }
     public void setValue(float v) { curVal = v; invalidate(); }
     public void setShowLabels(boolean show) { showLabels = show; invalidate(); }
+    public void setExpand(float start, float end, float factor) {
+        expandStart = start; expandEnd = end; expandFactor = factor; invalidate();
+    }
 
     private float valToX(float v, float left, float w) {
-        float ratio = (v - minVal) / (maxVal - minVal);
+        if (Float.isNaN(expandStart) || expandFactor <= 1f) {
+            float ratio = (v - minVal) / (maxVal - minVal);
+            return left + ratio * w;
+        }
+        // 分段线性: 放大区间 expandStart~expandEnd 视觉宽度 × expandFactor
+        float segBefore = expandStart - minVal;
+        float segExpand = expandEnd - expandStart;
+        float segAfter = maxVal - expandEnd;
+        float totalWeight = segBefore + segExpand * expandFactor + segAfter;
+        float ratio;
+        if (v <= expandStart) {
+            ratio = (v - minVal) / totalWeight;
+        } else if (v <= expandEnd) {
+            ratio = (segBefore + (v - expandStart) * expandFactor) / totalWeight;
+        } else {
+            ratio = (segBefore + segExpand * expandFactor + (v - expandEnd)) / totalWeight;
+        }
         return left + ratio * w;
     }
 
