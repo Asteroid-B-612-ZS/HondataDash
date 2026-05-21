@@ -1,29 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 主背景 -->
     <color name="bg_main">#000000</color>
-    <color name="bg_card">#0D0D0D</color>
-    <color name="bg_card_border">#2A2A2A</color>
-
-    <!-- 文字 -->
-    <color name="text_value">#FFFFFF</color>
-    <color name="text_label">#999999</color>
-    <color name="text_unit">#666666</color>
-
-    <!-- 进度条颜色 -->
-    <color name="bar_green">#3FB950</color>
-    <color name="bar_red">#F85149</color>
-    <color name="bar_blue">#58A6FF</color>
-    <color name="bar_yellow">#D29922</color>
-    <color name="bar_orange">#E0824A</color>
-    <color name="bar_cyan">#39C5CF</color>
-    <color name="bar_track">#1A1A1A</color>
-
-    <!-- 状态 -->
-    <color name="status_connected">#3FB950</color>
-    <color name="status_disconnected">#F85149</color>
-    <color name="accent_red">#CC0000</color>
-
-    <!-- 顶栏/底栏 -->
-    <color name="bar_bg">#0A0A0A</color>
 </resources>
