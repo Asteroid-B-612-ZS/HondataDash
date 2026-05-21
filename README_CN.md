@@ -19,7 +19,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.hondata.dash/.MainActivity
 ```
 
-## 界面布局 (V1.2)
+## 界面布局 (V1.1)
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -99,7 +99,7 @@ adb shell am start -n com.hondata.dash/.MainActivity
 - **区间放大**: A/F 绿色区间(14.5~15.5)视觉放大 2.5 倍，突出安全范围
 - 边缘刻度文字自动对齐
 
-## 数据处理管线 (V1.2)
+## 数据处理管线 (V1.1)
 
 ### 引擎状态检测
 
@@ -172,10 +172,10 @@ app/src/main/java/com/hondata/dash/
 └── data/
     ├── DataSource.java        # 数据源接口 (Callback)
     ├── BluetoothSource.java   # 蓝牙SPP (FlashPro, 自动重连)
-    ├── EngineStateTracker.java # 引擎状态检测 (V1.2: 多条件瞬态+滞回)
+    ├── EngineStateTracker.java # 引擎状态检测 (V1.1: 多条件瞬态+滞回)
     ├── HondataProtocol.java   # Hondata 协议解析+缩放公式
     ├── SensorData.java        # PID→Double Map
-    └── DemoSource.java        # 模拟数据源 (V1.2: 6阶段+EXTREME)
+    └── DemoSource.java        # 模拟数据源 (V1.1: 6阶段+EXTREME)
 
 app/src/main/res/
 ├── layout/
@@ -227,37 +227,25 @@ Android 无原生字高缩放，通过 `textSize × scale` + `textScaleX = 1/sca
 
 ## 版本历史
 
-### V1.2 (2026-05-21) — 数据管线深度优化
-
-- **TRANSIENT 多条件检测**: dTP/dt>50%/s OR dRPM/dt>1200rpm/s OR dMAP/dt>300kPa/s，任一触发
-- **状态优先级系统**: DFCO > TRANSIENT > WOT > IDLE > NORMAL
-- **滞回防抖动**: 各状态独立的进入/退出延时，防止快速抖动
-- **自适应滤波**: A/F 在 WOT/TRANSIENT 时 α=0.7+20Hz，NORMAL 时 α=0.3+10Hz
-- **Boost 动态释放**: NORMAL 0.15, TRANSIENT 0.05, DFCO 0.02
-- **范围验证**: 8 个参数独立的物理极限检查，超范围丢弃
-- **NaN 保护**: EMA 滤波前检查，防止传感器异常帧污染状态
-- **IGN 负荷门控**: TP<3% 时降低 α，松油时 IGN 快速归零
-- **信心系统**: TRANSIENT 下 A/F、S.TRIM、L.TRIM 透明度降至 45%
-- **Ethanol 慢滤波**: α=0.05，过滤 Flex Fuel 传感器噪声
-- **MAP 近零钳位**: |value|<0.05 时归零，消除 "-0" 显示
-- **转速灯条下移**: 阈值 3000/3500/4000/4500/5000/5500，适配 1.5T 动力区间
-- **蓝牙自动重连**: 断线后指数退避重连（1s→2s→4s→8s），无需手动重启
-- **读取超时**: 单帧 3 秒超时，超时视为断线触发重连
-- **DemoSource EXTREME 阶段**: 正弦波扫满全部 ScaleBar 量程
-
 ### V1.1 (2026-05-21) — 数据处理管线升级
 
-- MAP → Boost 相对压力（减去大气压）
-- Boost 范围改为 -1.0~2.0 bar，4 区颜色
-- Ethanol 4 级变色：<E20 白 / E20-40 绿 / E40-60 黄 / >E60 红
-- 引擎状态检测：IDLE / NORMAL / WOT / DFCO / TRANSIENT
-- DFCO 处理：A/F 显示"DFCO"，S.TRIM/L.TRIM 冻结
-- EMA 信号滤波，各参数独立 α 系数
-- Boost 不对称滤波（增压快攻击/泄压慢释放）
-- Rate Limiting 各参数独立更新频率
-- Last-Valid 缓存，蓝牙丢包时保留最后有效值
-- MAX/MIN 颜色区分正负（蓝正红负）
-- DemoSource 状态循环模拟
+- **引擎状态检测**: EngineStateTracker 5 状态优先级机 (DFCO > TRANSIENT > WOT > IDLE > NORMAL) + 滞回防抖动
+- **TRANSIENT 三重检测**: dTP/dt>50%/s OR dRPM/dt>1200rpm/s OR dMAP/dt>300kPa/s (MT 车必备)
+- **MAP → Boost 相对压力**（减去大气压），范围 -1.0~2.0 bar
+- **Ethanol 4 级变色**: <E20 白 / E20-40 绿 / E40-60 黄 / >E60 红
+- **DFCO 处理**: A/F 显示"DFCO"，S.TRIM/L.TRIM 冻结
+- **EMA 信号滤波**: 各参数独立 α 系数 (Ethanol 0.05, ECT/IAT 0.05, A/F 0.3, IGN 0.3)
+- **自适应滤波**: A/F WOT/TRANSIENT α=0.7+20Hz, NORMAL α=0.3+10Hz
+- **Boost 不对称滤波**: 快攻击 α=0.6，动态释放 (NORMAL 0.15, TRANSIENT 0.05, DFCO 0.02)
+- **范围验证**: 8 参数物理极限检查 + NaN 保护
+- **IGN 负荷门控**: TP<3% 时降低 α
+- **信心系统**: TRANSIENT 下 A/F/S.TRIM/L.TRIM 透明度降至 45%
+- **MAP 近零钳位**: 消除 "-0" 显示
+- **蓝牙自动重连**: 指数退避 (1s→2s→4s→8s) + 3s 读取超时
+- **转速灯条下移**: 3000/3500/4000/4500/5000/5500，≥5500 闪烁
+- **DemoSource EXTREME**: 正弦波扫满 ScaleBar 全量程
+- **Last-Valid 缓存**: 蓝牙丢包时保留最后有效值
+- **MAX/MIN 颜色区分正负**（蓝正红负）
 
 ### V1.0 (2026-05-19) — 首个上车版本
 

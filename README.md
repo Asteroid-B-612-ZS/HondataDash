@@ -19,7 +19,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.hondata.dash/.MainActivity
 ```
 
-## UI Layout (V1.2)
+## UI Layout (V1.1)
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -99,7 +99,7 @@ Each sensor card contains:
 - **Zone expansion**: A/F green zone (14.5~15.5) visually expanded 2.5× to highlight safe range
 - Auto-alignment for edge tick labels
 
-## Data Processing Pipeline (V1.2)
+## Data Processing Pipeline (V1.1)
 
 ### Engine State Detection
 
@@ -172,10 +172,10 @@ app/src/main/java/com/hondata/dash/
 └── data/
     ├── DataSource.java        # Data source interface (Callback)
     ├── BluetoothSource.java   # Bluetooth SPP (FlashPro, auto-reconnect)
-    ├── EngineStateTracker.java # Engine state detection (V1.2: multi-condition transient + hysteresis)
+    ├── EngineStateTracker.java # Engine state detection (V1.1: multi-condition transient + hysteresis)
     ├── HondataProtocol.java   # Protocol parsing + scaling formulas
     ├── SensorData.java        # PID→Double Map
-    └── DemoSource.java        # Demo source with 6-phase cycling + EXTREME (V1.2)
+    └── DemoSource.java        # Demo source with 6-phase cycling + EXTREME (V1.1)
 
 app/src/main/res/
 ├── layout/
@@ -227,37 +227,25 @@ Pure Android Framework API, no third-party libraries:
 
 ## Version History
 
-### V1.2 (2026-05-21) — Data Pipeline Deep Optimization
-
-- **TRANSIENT multi-condition detection**: dTP/dt>50%/s OR dRPM/dt>1200rpm/s OR dMAP/dt>300kPa/s, any trigger
-- **State priority system**: DFCO > TRANSIENT > WOT > IDLE > NORMAL
-- **Hysteresis anti-bounce**: Independent enter/exit delays per state
-- **Adaptive filtering**: A/F α=0.7 at 20Hz during WOT/TRANSIENT, α=0.3 at 10Hz during NORMAL
-- **Boost dynamic release**: NORMAL 0.15, TRANSIENT 0.05, DFCO 0.02
-- **Range validation**: Per-parameter physical limit checks, out-of-range values discarded
-- **NaN protection**: Pre-EMA check prevents sensor anomaly contamination
-- **IGN load gating**: Reduced α when TP<3%, fast return-to-zero on throttle lift
-- **Confidence system**: A/F, S.TRIM, L.TRIM opacity reduced to 45% during TRANSIENT
-- **Ethanol slow filter**: α=0.05, smoothing Flex Fuel sensor noise
-- **MAP near-zero clamp**: |value|<0.05 → 0, eliminates "-0" display
-- **Shift light thresholds lowered**: 3000/3500/4000/4500/5000/5500, tuned for 1.5T powerband
-- **Bluetooth auto-reconnect**: Exponential backoff (1s→2s→4s→8s), no manual restart needed
-- **Read timeout**: 3-second per-frame timeout triggers reconnect
-- **DemoSource EXTREME phase**: Sine sweep across all ScaleBar ranges
-
 ### V1.1 (2026-05-21) — Data Pipeline Upgrade
 
-- MAP → Boost (relative pressure, MAP - Barometric)
-- Boost range changed to -1.0~2.0 bar with 4-zone color
-- Ethanol 4-level color: <E20 white, E20-40 green, E40-60 yellow, >E60 red
-- Engine state detection: IDLE / NORMAL / WOT / DFCO / TRANSIENT
-- DFCO handling: A/F shows "DFCO", S.TRIM/L.TRIM frozen
-- EMA signal filtering with per-parameter α coefficients
-- Boost asymmetric filter (fast attack/slow release)
-- Rate limiting per parameter (Boost 20Hz, A/F 10Hz, temps 2Hz)
-- Last-valid-value cache for Bluetooth dropouts
-- MAX/MIN color-coded ± (blue positive, red negative)
-- DemoSource state cycle simulation
+- **Engine state detection**: EngineStateTracker 5-state priority machine (DFCO > TRANSIENT > WOT > IDLE > NORMAL) + hysteresis anti-bounce
+- **TRANSIENT triple detection**: dTP/dt>50%/s OR dRPM/dt>1200rpm/s OR dMAP/dt>300kPa/s (essential for MT)
+- **MAP → Boost** (relative pressure, MAP - Barometric), range -1.0~2.0 bar
+- **Ethanol 4-level color**: <E20 white, E20-40 green, E40-60 yellow, >E60 red
+- **DFCO handling**: A/F shows "DFCO", S.TRIM/L.TRIM frozen
+- **EMA signal filtering**: Per-parameter α (Ethanol 0.05, ECT/IAT 0.05, A/F 0.3, IGN 0.3)
+- **Adaptive filtering**: A/F WOT/TRANSIENT α=0.7+20Hz, NORMAL α=0.3+10Hz
+- **Boost asymmetric filter**: Fast attack α=0.6, dynamic release (NORMAL 0.15, TRANSIENT 0.05, DFCO 0.02)
+- **Range validation**: 8-parameter physical limits + NaN protection
+- **IGN load gating**: Reduced α when TP<3%
+- **Confidence system**: A/F/S.TRIM/L.TRIM opacity 45% during TRANSIENT
+- **MAP near-zero clamp**: Eliminates "-0" display
+- **Bluetooth auto-reconnect**: Exponential backoff (1s→2s→4s→8s) + 3s read timeout
+- **Shift light thresholds lowered**: 3000/3500/4000/4500/5000/5500, ≥5500 flash
+- **DemoSource EXTREME**: Sine sweep across all ScaleBar ranges
+- **Last-valid cache**: Retains last value during Bluetooth dropout
+- **MAX/MIN color-coded ±** (blue positive, red negative)
 
 ### V1.0 (2026-05-19) — First Release
 
