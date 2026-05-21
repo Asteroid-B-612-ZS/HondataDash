@@ -214,11 +214,18 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 unitViews[i].setText(u.isEmpty() ? "" : "(" + u + ")");
             }
 
-            // 第1行(0-3): 字高×1.2, 字宽不变; 第2行(4-7): 字高×1.4, 字宽不变
-            if (i < 4) {
+            // 第1行(0-2): 字高×1.2; 第1行(3) Boost带小数用小字号; 第2行(4-7): 字高×1.4
+            if (i < 3) {
                 float scale = 1.2f;
                 if (valueIntViews[i] != null) { valueIntViews[i].setTextSize(75 * scale); valueIntViews[i].setTextScaleX(1f / scale); }
                 if (valueDecViews[i] != null) { valueDecViews[i].setTextSize(75 * scale); valueDecViews[i].setTextScaleX(1f / scale); }
+            } else if (i == 3) {
+                // Boost: 和第2行一样的小字号, 留空间给小数部分
+                float scale = 1.4f;
+                if (valueIntViews[i] != null) { valueIntViews[i].setTextSize(60 * scale); valueIntViews[i].setTextScaleX(1f / scale); }
+                if (valueDecViews[i] != null) { valueDecViews[i].setTextSize(60 * scale); valueDecViews[i].setTextScaleX(1f / scale); }
+                if (maxValueViews[i] != null) maxValueViews[i].setTextSize(21);
+                if (minValueViews[i] != null) minValueViews[i].setTextSize(21);
             } else {
                 float scale = 1.4f;
                 if (valueIntViews[i] != null) { valueIntViews[i].setTextSize(60 * scale); valueIntViews[i].setTextScaleX(1f / scale); }

@@ -19,7 +19,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.hondata.dash/.MainActivity
 ```
 
-## 界面布局 (V1.1)
+## 界面布局 (V1.2)
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -99,7 +99,7 @@ adb shell am start -n com.hondata.dash/.MainActivity
 - **区间放大**: A/F 绿色区间(14.5~15.5)视觉放大 2.5 倍，突出安全范围
 - 边缘刻度文字自动对齐
 
-## 数据处理管线 (V1.1)
+## 数据处理管线 (V1.2)
 
 ### 引擎状态检测
 
@@ -172,10 +172,10 @@ app/src/main/java/com/hondata/dash/
 └── data/
     ├── DataSource.java        # 数据源接口 (Callback)
     ├── BluetoothSource.java   # 蓝牙SPP (FlashPro, 自动重连)
-    ├── EngineStateTracker.java # 引擎状态检测 (V1.1: 多条件瞬态+滞回)
+    ├── EngineStateTracker.java # 引擎状态检测 (V1.2: 多条件瞬态+滞回)
     ├── HondataProtocol.java   # Hondata 协议解析+缩放公式
     ├── SensorData.java        # PID→Double Map
-    └── DemoSource.java        # 模拟数据源 (V1.1: 6阶段+EXTREME)
+    └── DemoSource.java        # 模拟数据源 (V1.2: 6阶段+EXTREME)
 
 app/src/main/res/
 ├── layout/
@@ -226,6 +226,13 @@ Android 无原生字高缩放，通过 `textSize × scale` + `textScaleX = 1/sca
 - Debug APK: **89 KB**
 
 ## 版本历史
+
+### V1.2 (2026-05-21) — UI 修复 + 仓库清理
+
+- **Boost 卡片字号修正**: 从第1行大字号(90sp)改为第2行小字号(84sp)，解决小数部分被遮挡问题
+- **仓库清理**: 移除旧代码(GaugeView/WheelView/PidRegistry)、旧布局、开发截图、旧APK
+- **精简 colors.xml**: 仅保留实际使用的颜色资源
+- **MAC 地址脱敏**: 替换为占位符，保护隐私
 
 ### V1.1 (2026-05-21) — 数据处理管线升级
 

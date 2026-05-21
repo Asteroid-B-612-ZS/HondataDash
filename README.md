@@ -19,7 +19,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.hondata.dash/.MainActivity
 ```
 
-## UI Layout (V1.1)
+## UI Layout (V1.2)
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -99,7 +99,7 @@ Each sensor card contains:
 - **Zone expansion**: A/F green zone (14.5~15.5) visually expanded 2.5× to highlight safe range
 - Auto-alignment for edge tick labels
 
-## Data Processing Pipeline (V1.1)
+## Data Processing Pipeline (V1.2)
 
 ### Engine State Detection
 
@@ -172,10 +172,10 @@ app/src/main/java/com/hondata/dash/
 └── data/
     ├── DataSource.java        # Data source interface (Callback)
     ├── BluetoothSource.java   # Bluetooth SPP (FlashPro, auto-reconnect)
-    ├── EngineStateTracker.java # Engine state detection (V1.1: multi-condition transient + hysteresis)
+    ├── EngineStateTracker.java # Engine state detection (V1.2: multi-condition transient + hysteresis)
     ├── HondataProtocol.java   # Protocol parsing + scaling formulas
     ├── SensorData.java        # PID→Double Map
-    └── DemoSource.java        # Demo source with 6-phase cycling + EXTREME (V1.1)
+    └── DemoSource.java        # Demo source with 6-phase cycling + EXTREME (V1.2)
 
 app/src/main/res/
 ├── layout/
@@ -226,6 +226,13 @@ Pure Android Framework API, no third-party libraries:
 - Debug APK: **89 KB**
 
 ## Version History
+
+### V1.2 (2026-05-21) — UI Fix + Repo Cleanup
+
+- **Boost card font fix**: Changed from row-1 large font (90sp) to row-2 smaller font (84sp) to fix decimal part being clipped
+- **Repo cleanup**: Removed unused code (GaugeView/WheelView/PidRegistry), old layouts, dev screenshots, old APK
+- **Trimmed colors.xml**: Kept only actually-used color resources
+- **MAC sanitization**: Replaced with placeholder for privacy
 
 ### V1.1 (2026-05-21) — Data Pipeline Upgrade
 
