@@ -81,11 +81,11 @@
 
         </LinearLayout>
 
-        <!-- MAX / MIN (右侧, MAX靠上 MIN靠下) -->
+        <!-- MAX / MIN (右侧右对齐, MAX靠上 MIN靠下) -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1"
+            android:layout_weight="1.5"
             android:orientation="vertical"
             android:gravity="end"
             android:paddingEnd="2dp">

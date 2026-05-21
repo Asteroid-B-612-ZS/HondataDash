@@ -15,6 +15,7 @@ import android.widget.Toast;
 import com.hondata.dash.data.BluetoothSource;
 import com.hondata.dash.data.DataSource;
 import com.hondata.dash.data.DemoSource;
+import com.hondata.dash.data.EngineStateTracker;
 import com.hondata.dash.data.SensorData;
 
 import java.text.SimpleDateFormat;
@@ -33,7 +34,7 @@ import java.util.Locale;
  */
 public class MainActivity extends Activity implements DataSource.Callback {
 
-    private static final boolean USE_DEMO = true;
+    private static final boolean USE_DEMO = false;
 
     private DataSource dataSource;
     private TextView statusText;
@@ -73,6 +74,14 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private float lastIatVal = 0;
     private float lastAfVal = 14.7f;
     private float lastTpPlate = 0;  // 节气门开度, 用于排除滑行/换挡
+    private float lastBaro = 101.3f; // 大气压力 kPa, 用于 Boost 相对压力
+
+    // 引擎状态检测
+    private final EngineStateTracker engineState = new EngineStateTracker();
+
+    // 最后有效值缓存 (DFCO 冻结 + 丢包保留)
+    private final float[] lastValidValue = new float[8];
+    private final boolean[] hasValidValue = new boolean[8];
     private final Runnable flashTick = new Runnable() {
         @Override
         public void run() {
@@ -142,8 +151,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
     };
 
     private static final String[] CARD_FMT = {
-        "%.0f", "%.0f", "%.0f", "%.1f",
-        "%.1f", "%.1f", "%+.1f", "%+.1f"
+        "%.0f", "%.0f", "%.0f", "%+.1f",
+        "%.1f", "%+.1f", "%+.1f", "%+.1f"
     };
 
     private static final String[] CARD_UNIT = {
@@ -273,12 +282,15 @@ public class MainActivity extends Activity implements DataSource.Callback {
         if (bar == null) return;
 
         switch (i) {
-            case 0: // Ethanol: 0-100%, 绿色
+            case 0: // Ethanol: 0-100%, 分区颜色
                 bar.setRange(0, 100);
                 bar.setTicks(
-                    new float[]{0, 50, 100},
-                    new String[]{"0", "50", "100"});
-                bar.addZone(0, 100, 0xFF3FB950);
+                    new float[]{0, 20, 40, 60, 100},
+                    new String[]{"0", "20", "40", "60", "100"});
+                bar.addZone(0, 20, 0xFF888888);      // 灰 低乙醇
+                bar.addZone(20, 40, 0xFF3FB950);     // 绿 E20-40
+                bar.addZone(40, 60, 0xFFD29922);     // 黄 E40-60
+                bar.addZone(60, 100, 0xFFFF4444);    // 红 >E60
                 bar.setAnchor(0);
                 break;
 
@@ -301,14 +313,15 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 bar.setAnchor(20);
                 break;
 
-            case 3: // MAP: -0.3到2.0 bar
-                bar.setRange(-0.3f, 2.0f);
+            case 3: // Boost: -1.0到2.0 bar (相对压力)
+                bar.setRange(-1.0f, 2.0f);
                 bar.setTicks(
-                    new float[]{-0.3f, 0, 0.5f, 1.0f, 1.5f, 2.0f},
-                    new String[]{"-0.3", "0", "0.5", "1.0", "1.5", "2.0"});
-                bar.addZone(-0.3f, 0, 0xFF00D8FF);
-                bar.addZone(0, 1.0f, 0xFF0088FF);
-                bar.addZone(1.0f, 2.0f, 0xFFFF4444);
+                    new float[]{-1.0f, 0, 0.5f, 1.0f, 1.5f, 2.0f},
+                    new String[]{"-1.0", "0", "0.5", "1.0", "1.5", "2.0"});
+                bar.addZone(-1.0f, 0, 0xFF00D8FF);    // 负压 蓝色
+                bar.addZone(0, 0.5f, 0xFF0088FF);     // 低增压
+                bar.addZone(0.5f, 1.5f, 0xFF3FB950);  // 中增压 绿色
+                bar.addZone(1.5f, 2.0f, 0xFFFF4444);  // 高增压 红色
                 bar.setAnchor(0);
                 break;
 
@@ -411,10 +424,58 @@ public class MainActivity extends Activity implements DataSource.Callback {
         });
     }
 
+    // Rate Limit: 各参数更新间隔 (ms) — A/F/IGN 由自适应动态覆盖
+    private static final long[] UPDATE_INTERVAL = {
+        500,   // Ethanol: 2Hz (Flex Fuel 传感器更新慢)
+        500,   // ECT: 2Hz
+        500,   // IAT: 2Hz
+        50,    // Boost: 20Hz
+        100,   // A/F: 10Hz (WOT 自适应提升至 20Hz)
+        100,   // IGN: 10Hz (WOT 自适应提升至 20Hz)
+        200,   // S.TRIM: 5Hz
+        1000   // L.TRIM: 1Hz (ECU 长期学习值, 极慢)
+    };
+    private final long[] lastUpdateTime = new long[8];
+
+    // EMA 滤波: 各参数 alpha 系数 — A/F 由自适应动态覆盖
+    private static final float[] EMA_ALPHA = {
+        0.05f, // Ethanol: 极慢 (Flex Fuel 传感器更新慢, 稳定显示)
+        0.1f,  // ECT: 极慢
+        0.05f, // IAT: 极慢
+        0f,    // Boost: 用不对称滤波
+        0.3f,  // A/F: 中等 (WOT 自适应 α=0.7)
+        0.4f,  // IGN: 中等
+        0.2f,  // S.TRIM: 较慢
+        1.0f   // L.TRIM: 不过滤 (ECU 长期学习值本身已平滑)
+    };
+    private final float[] filteredValue = new float[8];
+    private final boolean[] hasFiltered = new boolean[8];
+
+    // P1: 范围校验 (转换后的合法范围, 超出视为传感器异常)
+    private static final float[][] VALID_RANGE = {
+        {0, 100},       // 0: Ethanol %
+        {-20, 130},     // 1: ECT °C
+        {-20, 130},     // 2: IAT °C
+        {-1.5f, 3.0f},  // 3: MAP relative bar
+        {8, 25},        // 4: A/F ratio
+        {-25, 55},      // 5: IGN °
+        {-30, 30},      // 6: S.TRIM %
+        {-30, 30},      // 7: L.TRIM %
+    };
+
     @Override
     public void onDataReceived(final SensorData data) {
         runOnUiThread(new Runnable() {
             @Override public void run() {
+                // 更新大气压力 (用于 Boost 相对压力计算)
+                Double baro = data.get(0x170);
+                if (baro != null) lastBaro = baro.floatValue();
+
+                // 检测引擎状态
+                EngineStateTracker.State state = engineState.update(data);
+                boolean isDfco = (state == EngineStateTracker.State.DFCO);
+                long now = System.currentTimeMillis();
+
                 // 更新 8 个主卡片
                 for (int i = 0; i < 8; i++) {
                     if (valueIntViews[i] == null) continue;
@@ -431,22 +492,96 @@ public class MainActivity extends Activity implements DataSource.Callback {
                             val = val * 14.7;
                         }
 
-                        // MAP 卡片: kPa → bar (÷100)
+                        // Boost 卡片: kPa → bar (相对压力, 减去大气压)
                         if (i == 3) {
-                            val = val / 100.0;
+                            val = (val - lastBaro) / 100.0;
                         }
 
                         float fVal = (float) val;
 
-                        // 格式化并拆分整数/小数部分
-                        String formatted = String.format(Locale.US, fmt, val);
-                        splitSetValue(i, formatted);
-
-                        if (scaleBars[i] != null) {
-                            scaleBars[i].setValue(fVal);
+                        // P1: 范围校验 — 超出物理范围视为异常, 跳过处理
+                        float[] range = VALID_RANGE[i];
+                        if (fVal < range[0] || fVal > range[1]) {
+                            if (hasValidValue[i]) {
+                                valueIntViews[i].setAlpha(0.4f);
+                                if (valueDecViews[i] != null) valueDecViews[i].setAlpha(0.4f);
+                            } else {
+                                valueIntViews[i].setText("--");
+                                if (valueDecViews[i] != null) valueDecViews[i].setText("");
+                            }
+                            if (scaleBars[i] != null) scaleBars[i].setValue(Float.NaN);
+                            continue;
                         }
 
-                        // MAX / MIN 追踪
+                        // DFCO 冻结: A/F / S.TRIM / L.TRIM
+                        if (isDfco && (i == 4 || i == 6 || i == 7)) {
+                            // A/F 显示 DFCCO 标识
+                            if (i == 4) {
+                                valueIntViews[i].setText("DFCO");
+                                valueIntViews[i].setTextColor(0xFF888888);
+                                valueIntViews[i].setAlpha(1f);
+                                if (valueDecViews[i] != null) {
+                                    valueDecViews[i].setText("");
+                                }
+                                if (scaleBars[i] != null) {
+                                    scaleBars[i].setValue(Float.NaN);
+                                }
+                            }
+                            // S.TRIM / L.TRIM 冻结最后有效值
+                            continue;
+                        }
+
+                        // NaN 保护: 传感器异常值使用上次有效滤波值
+                        if (Float.isNaN(fVal) && hasFiltered[i]) {
+                            fVal = filteredValue[i];
+                        }
+
+                        // 自适应参数: 根据引擎工况动态调整滤波和刷新率
+                        float effectiveAlpha = EMA_ALPHA[i];
+                        long effectiveInterval = UPDATE_INTERVAL[i];
+                        boolean isWot = (state == EngineStateTracker.State.WOT);
+                        boolean isTransient = (state == EngineStateTracker.State.TRANSIENT);
+                        boolean needFast = isWot || isTransient;
+                        // A/F: WOT/TRANSIENT 快速响应 α=0.7/20Hz, 巡航稳定 α=0.3/10Hz
+                        if (i == 4) {
+                            effectiveAlpha = needFast ? 0.7f : 0.3f;
+                            effectiveInterval = needFast ? 50L : 100L;
+                        }
+                        // IGN: WOT/TRANSIENT 高速刷新 20Hz
+                        if (i == 5) {
+                            effectiveInterval = needFast ? 50L : 100L;
+                        }
+
+                        // EMA 滤波
+                        if (effectiveAlpha > 0 && effectiveAlpha < 1f) {
+                            if (hasFiltered[i]) {
+                                fVal = ema(fVal, filteredValue[i], effectiveAlpha);
+                            }
+                            filteredValue[i] = fVal;
+                            hasFiltered[i] = true;
+                        }
+                        // Boost 不对称滤波
+                        else if (i == 3) {
+                            if (hasFiltered[i]) {
+                                fVal = boostFilter(fVal, filteredValue[i], state);
+                            }
+                            filteredValue[i] = fVal;
+                            hasFiltered[i] = true;
+                            // 近零处理: 避免 "-0" 显示
+                            if (Math.abs(fVal) < 0.05f) {
+                                fVal = 0.0f;
+                                filteredValue[i] = 0.0f;
+                            }
+                        }
+
+                        // Rate Limit 检查 (MAX/MIN 始终更新, 仅限制显示刷新)
+                        boolean updateDisplay = (now - lastUpdateTime[i] >= effectiveInterval);
+
+                        // 缓存有效值
+                        lastValidValue[i] = fVal;
+                        hasValidValue[i] = true;
+
+                        // MAX / MIN 追踪 (始终更新)
                         if (!hasValue[i]) {
                             maxTrack[i] = fVal;
                             minTrack[i] = fVal;
@@ -456,111 +591,157 @@ public class MainActivity extends Activity implements DataSource.Callback {
                             if (fVal < minTrack[i]) minTrack[i] = fVal;
                         }
 
-                        if (maxValueViews[i] != null) {
-                            maxValueViews[i].setText(String.format(Locale.US,
-                                fmt, maxTrack[i]));
-                        }
-                        if (minValueViews[i] != null) {
-                            minValueViews[i].setText(String.format(Locale.US,
-                                fmt, minTrack[i]));
-                        }
+                        if (updateDisplay) {
+                            lastUpdateTime[i] = now;
 
-                        // Ethanol: 整数部分前加E标识, 亮绿色
-                        if (i == 0) {
-                            valueIntViews[i].setText("E" + formatted);
-                            valueIntViews[i].setTextColor(0xFF3FB950);
-                            if (valueDecViews[i] != null) {
-                                valueDecViews[i].setTextColor(0xFF3FB950);
-                            }
-                        }
+                            // 格式化并拆分整数/小数部分
+                            String formatted = String.format(Locale.US, fmt, fVal);
+                            splitSetValue(i, formatted);
+                            valueIntViews[i].setAlpha(1f);
 
-                        // ECT: 温度变色 <80蓝 80~95白 96~100红 >100紫闪烁
-                        if (i == 1) {
-                            lastEctVal = fVal;
-                            boolean shouldFlash = fVal > 100;
-                            if (shouldFlash != ectFlashing) {
-                                ectFlashing = shouldFlash;
-                                updateFlashState();
+                            if (scaleBars[i] != null) {
+                                scaleBars[i].setValue(fVal);
                             }
-                            if (!ectFlashing) {
-                                int color;
-                                if (fVal < 80) {
-                                    color = 0xFF00D8FF; // 蓝色
-                                } else if (fVal <= 95) {
-                                    color = 0xFFFFFFFF; // 白色
-                                } else {
-                                    color = 0xFFFF4444; // 红色 (96~100)
-                                }
-                                valueIntViews[i].setTextColor(color);
-                                valueIntViews[i].setAlpha(1f);
+
+                            if (maxValueViews[i] != null) {
+                                String maxFmt = (i < 3) ? "%.0f" : (i >= 5 ? "%+.1f" : "%.1f");
+                                if (i == 3) maxFmt = "%+.1f"; // MAP 带符号
+                                maxValueViews[i].setText(String.format(Locale.US, maxFmt, maxTrack[i]));
+                                maxValueViews[i].setTextColor(0xFFFF4444); // 红色
+                            }
+                            if (minValueViews[i] != null) {
+                                String minFmt = (i < 3) ? "%.0f" : (i >= 5 ? "%+.1f" : "%.1f");
+                                if (i == 3) minFmt = "%+.1f"; // MAP 带符号
+                                minValueViews[i].setText(String.format(Locale.US, minFmt, minTrack[i]));
+                                minValueViews[i].setTextColor(0xFFD29922); // 黄色
+                            }
+
+                            // Ethanol: 整数部分前加E标识, 按浓度变色
+                            if (i == 0) {
+                                valueIntViews[i].setText("E" + formatted);
+                                int ethColor;
+                                if (fVal < 20) ethColor = 0xFFFFFFFF;       // 白色
+                                else if (fVal < 40) ethColor = 0xFF3FB950;  // 绿色
+                                else if (fVal < 60) ethColor = 0xFFD29922;  // 黄色
+                                else ethColor = 0xFFFF4444;                  // 红色
+                                valueIntViews[i].setTextColor(ethColor);
                                 if (valueDecViews[i] != null) {
-                                    valueDecViews[i].setTextColor(color);
-                                    valueDecViews[i].setAlpha(1f);
+                                    valueDecViews[i].setTextColor(ethColor);
                                 }
                             }
-                        }
 
-                        // IAT: 进气温度变色 <35绿 35~45白 45~55黄 55~65红 >=65紫闪烁
-                        if (i == 2) {
-                            lastIatVal = fVal;
-                            boolean shouldFlash = fVal >= 65;
-                            if (shouldFlash != iatFlashing) {
-                                iatFlashing = shouldFlash;
-                                updateFlashState();
-                            }
-                            if (!iatFlashing) {
-                                int color;
-                                if (fVal < 35) {
-                                    color = 0xFF3FB950; // 绿色
-                                } else if (fVal < 45) {
-                                    color = 0xFFFFFFFF; // 白色
-                                } else if (fVal < 55) {
-                                    color = 0xFFD29922; // 黄色
-                                } else {
-                                    color = 0xFFFF4444; // 红色 (55~64)
+                            // ECT: 温度变色 <80蓝 80~95白 96~100红 >100紫闪烁
+                            if (i == 1) {
+                                lastEctVal = fVal;
+                                boolean shouldFlash = fVal > 100;
+                                if (shouldFlash != ectFlashing) {
+                                    ectFlashing = shouldFlash;
+                                    updateFlashState();
                                 }
-                                valueIntViews[i].setTextColor(color);
-                                valueIntViews[i].setAlpha(1f);
-                                if (valueDecViews[i] != null) {
-                                    valueDecViews[i].setTextColor(color);
-                                    valueDecViews[i].setAlpha(1f);
+                                if (!ectFlashing) {
+                                    int color;
+                                    if (fVal < 80) {
+                                        color = 0xFF00D8FF; // 蓝色
+                                    } else if (fVal <= 95) {
+                                        color = 0xFFFFFFFF; // 白色
+                                    } else {
+                                        color = 0xFFFF4444; // 红色 (96~100)
+                                    }
+                                    valueIntViews[i].setTextColor(color);
+                                    valueIntViews[i].setAlpha(1f);
+                                    if (valueDecViews[i] != null) {
+                                        valueDecViews[i].setTextColor(color);
+                                        valueDecViews[i].setAlpha(1f);
+                                    }
                                 }
                             }
-                        }
 
-                        // A/F: 9~11红(极浓) 11~14.5黄(偏浓) 14.5~15.5绿(理想) 15.5~18红(偏稀)
-                        // 红色区间 + 踩油门状态才闪烁
-                        if (i == 4) {
-                            lastAfVal = fVal;
-                            boolean inRedZone = fVal < 11 || fVal > 15.5f;
-                            boolean isOnThrottle = lastTpPlate > 5; // TP>5% 视为踩油门
-                            boolean shouldFlash = inRedZone && isOnThrottle;
-                            if (shouldFlash != afFlashing) {
-                                afFlashing = shouldFlash;
-                                updateFlashState();
+                            // IAT: 进气温度变色 <35绿 35~45白 45~55黄 55~65红 >=65紫闪烁
+                            if (i == 2) {
+                                lastIatVal = fVal;
+                                boolean shouldFlash = fVal >= 65;
+                                if (shouldFlash != iatFlashing) {
+                                    iatFlashing = shouldFlash;
+                                    updateFlashState();
+                                }
+                                if (!iatFlashing) {
+                                    int color;
+                                    if (fVal < 35) {
+                                        color = 0xFF3FB950; // 绿色
+                                    } else if (fVal < 45) {
+                                        color = 0xFFFFFFFF; // 白色
+                                    } else if (fVal < 55) {
+                                        color = 0xFFD29922; // 黄色
+                                    } else {
+                                        color = 0xFFFF4444; // 红色 (55~64)
+                                    }
+                                    valueIntViews[i].setTextColor(color);
+                                    valueIntViews[i].setAlpha(1f);
+                                    if (valueDecViews[i] != null) {
+                                        valueDecViews[i].setTextColor(color);
+                                        valueDecViews[i].setAlpha(1f);
+                                    }
+                                }
                             }
-                            if (!afFlashing) {
-                                int color;
-                                if (fVal < 11) {
-                                    color = 0xFFFF4444; // 红色 极浓
-                                } else if (fVal < 14.5f) {
-                                    color = 0xFFD29922; // 黄色 偏浓
-                                } else if (fVal <= 15.5f) {
-                                    color = 0xFF3FB950; // 绿色 理想
-                                } else {
-                                    color = 0xFFFF4444; // 红色 偏稀
+
+                            // A/F: 9~11红(极浓) 11~14.5黄(偏浓) 14.5~15.5绿(理想) 15.5~18红(偏稀)
+                            // 红色区间 + 踩油门状态才闪烁
+                            if (i == 4) {
+                                lastAfVal = fVal;
+                                boolean inRedZone = fVal < 11 || fVal > 15.5f;
+                                boolean isOnThrottle = lastTpPlate > 5; // TP>5% 视为踩油门
+                                boolean shouldFlash = inRedZone && isOnThrottle;
+                                if (shouldFlash != afFlashing) {
+                                    afFlashing = shouldFlash;
+                                    updateFlashState();
                                 }
-                                valueIntViews[i].setTextColor(color);
-                                valueIntViews[i].setAlpha(1f);
-                                if (valueDecViews[i] != null) {
-                                    valueDecViews[i].setTextColor(color);
-                                    valueDecViews[i].setAlpha(1f);
+                                if (!afFlashing) {
+                                    int color;
+                                    if (fVal < 11) {
+                                        color = 0xFFFF4444; // 红色 极浓
+                                    } else if (fVal < 14.5f) {
+                                        color = 0xFFD29922; // 黄色 偏浓
+                                    } else if (fVal <= 15.5f) {
+                                        color = 0xFF3FB950; // 绿色 理想
+                                    } else {
+                                        color = 0xFFFF4444; // 红色 偏稀
+                                    }
+                                    valueIntViews[i].setTextColor(color);
+                                    valueIntViews[i].setAlpha(1f);
+                                    if (valueDecViews[i] != null) {
+                                        valueDecViews[i].setTextColor(color);
+                                        valueDecViews[i].setAlpha(1f);
+                                    }
                                 }
+                            }
+
+                            // P2: IGN 负载门控 — 低负载时点火角无参考意义, 灰显
+                            if (i == 5 && lastTpPlate < 3) {
+                                valueIntViews[i].setAlpha(0.35f);
+                                if (valueDecViews[i] != null) valueDecViews[i].setAlpha(0.35f);
+                                if (scaleBars[i] != null) scaleBars[i].setAlpha(0.35f);
+                            }
+
+                            // P3: 置信度系统 — TRANSIENT 时 A/F, S.TRIM, L.TRIM 降低可信度
+                            if (isTransient && (i == 4 || i == 6 || i == 7)) {
+                                float conf = 0.45f;
+                                valueIntViews[i].setAlpha(conf);
+                                if (valueDecViews[i] != null) valueDecViews[i].setAlpha(conf);
+                                if (scaleBars[i] != null) scaleBars[i].setAlpha(conf);
                             }
                         }
                     } else {
-                        valueIntViews[i].setText("--");
-                        if (valueDecViews[i] != null) valueDecViews[i].setText("");
+                        // Last-Valid 缓存: 数据缺失时保留最后有效值 (半透明)
+                        if (hasValidValue[i]) {
+                            valueIntViews[i].setAlpha(0.4f);
+                            if (valueDecViews[i] != null) {
+                                valueDecViews[i].setAlpha(0.4f);
+                            }
+                        } else {
+                            valueIntViews[i].setText("--");
+                            valueIntViews[i].setAlpha(1f);
+                            if (valueDecViews[i] != null) valueDecViews[i].setText("");
+                        }
                         if (scaleBars[i] != null) {
                             scaleBars[i].setValue(Float.NaN);
                         }
@@ -666,7 +847,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
      */
     private void updateFlashState() {
         flashHandler.removeCallbacks(flashTick);
-        if (ectFlashing || iatFlashing) {
+        if (ectFlashing || iatFlashing || afFlashing || kcFlashing) {
             flashVisible = true;
             flashHandler.post(flashTick);
         }
@@ -698,6 +879,31 @@ public class MainActivity extends Activity implements DataSource.Callback {
         return v != null ? v.floatValue() : 0f;
     }
 
+    /**
+     * EMA 滤波: output = alpha × raw + (1 - alpha) × last
+     */
+    private float ema(float raw, float last, float alpha) {
+        return alpha * raw + (1 - alpha) * last;
+    }
+
+    /**
+     * Boost 不对称滤波: 增压快响应, 泄压按工况动态调整
+     * NORMAL: release=0.15 (正常响应)
+     * TRANSIENT: release=0.05 (换挡时丝滑衰减)
+     * DFCO: release=0.02 (泄压极慢, 避免 boost→vacuum 跳变)
+     */
+    private float boostFilter(float raw, float last, EngineStateTracker.State state) {
+        if (raw > last) {
+            return ema(raw, last, 0.6f);   // 快攻击 (不变)
+        } else {
+            float release;
+            if (state == EngineStateTracker.State.DFCO) release = 0.02f;
+            else if (state == EngineStateTracker.State.TRANSIENT) release = 0.05f;
+            else release = 0.15f;
+            return ema(raw, last, release);
+        }
+    }
+
     @Override
     public void onError(final String msg) {
         runOnUiThread(new Runnable() {
@@ -720,66 +926,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
             return;
         }
 
-        statusText.setText("搜索中...");
-
-        // 先查已配对
-        String addr = BluetoothSource.findFlashPro();
-        if (addr != null) {
-            statusText.setText("连接中...");
-            dataSource.connect(addr);
-        } else {
-            // 启动蓝牙扫描发现
-            Toast.makeText(this, "已配对列表未找到, 开始扫描...", Toast.LENGTH_SHORT).show();
-            startDiscoveryAndConnect();
-        }
-    }
-
-    /**
-     * 启动蓝牙扫描发现 FlashPro 并自动连接
-     */
-    private void startDiscoveryAndConnect() {
-        final BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
-        adapter.cancelDiscovery();
-
-        final android.content.BroadcastReceiver receiver = new android.content.BroadcastReceiver() {
-            @Override
-            public void onReceive(android.content.Context context, android.content.Intent intent) {
-                String action = intent.getAction();
-                if (BluetoothDevice.ACTION_FOUND.equals(action)) {
-                    BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-                    if (device != null) {
-                        String name = device.getName();
-                        if (name != null && (name.toLowerCase().contains("flashpro")
-                                || name.toLowerCase().contains("hondata"))) {
-                            // 找到了! 停止扫描并连接
-                            adapter.cancelDiscovery();
-                            try { unregisterReceiver(this); } catch (Exception ignored) {}
-                            final String addr = device.getAddress();
-                            runOnUiThread(new Runnable() {
-                                @Override public void run() {
-                                    statusText.setText("连接中...");
-                                    dataSource.connect(addr);
-                                }
-                            });
-                        }
-                    }
-                } else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
-                    try { unregisterReceiver(this); } catch (Exception ignored) {}
-                    runOnUiThread(new Runnable() {
-                        @Override public void run() {
-                            if (!dataSource.isConnected()) {
-                                statusText.setText("未找到FlashPro");
-                            }
-                        }
-                    });
-                }
-            }
-        };
-
-        android.content.IntentFilter filter = new android.content.IntentFilter();
-        filter.addAction(BluetoothDevice.ACTION_FOUND);
-        filter.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
-        registerReceiver(receiver, filter);
-        adapter.startDiscovery();
+        statusText.setText("连接中...");
+        dataSource.connect(BluetoothSource.FLASHPRO_MAC);
     }
 }

@@ -19,23 +19,23 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.hondata.dash/.MainActivity
 ```
 
-## 界面布局 (V1.0)
+## 界面布局 (V1.2)
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │            ▓▓  ▓▓  ▓▓  ▓▓  ▓▓  ▓▓          6-LED 转速灯条         │ ← 42dp (LED+Header叠加)
 │ Powered by Helijohnny                        Demo (模拟)  已连接    │
 ├────────────┬────────────┬────────────┬──────────────────────────────┤
-│ Ethanol(%) │ ECT(°C)    │ IAT(°C)    │ MAP(bar)                     │
+│ Ethanol(%) │ ECT(°C)    │ IAT(°C)    │ Boost(bar)                   │
 │            │            │            │                              │
-│ E85        │ 86         │ 33         │ 1.15                         │ ← 第1行: 整数, 字高×1.2
-│  92    87  │  90    82  │  35    31  │  1.20  0.88                  │ ← MAX/MIN
+│ E30        │ 86         │ 33         │ 0.15                         │ ← 第1行: 整数, 字高×1.2
+│  92    87  │  90    82  │  35    31  │  1.20  0.88                  │ ← MAX/MIN (颜色区分±)
 │ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬                    │ ← ScaleBar
 ├────────────┼────────────┼────────────┼──────────────────────────────┤
 │ A/F        │ IGN(°)     │ S.TRIM(%)  │ L.TRIM(%)                    │
 │            │            │            │                              │
-│ 14.6       │ 22.5       │ +1.8       │ -2.5                         │ ← 第2行: 小数, 字高×1.4
-│  15.0 14.2 │  25.0 12.5 │  +2.5 -5.0 │  +1.0 -4.5                 │ ← MAX/MIN 21sp
+│ 14.6       │ 22.5       │ 1.8        │ 2.5                          │ ← 第2行: 小数, 字高×1.4
+│  15.0 14.2 │  25.0 12.5 │  2.5  5.0  │  1.0  4.5                   │ ← MAX/MIN (颜色区分±)
 │ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬                    │
 ├──────┬─┬─┬─┬─┬────┬────┬─────┬──────┬──────┬───────────────────────┤
 │ K.C  │C1│C2│C3│C4│K.R │K.L │BAT(V)│F.P   │W.G  │T.P               │ ← 底部 59dp
@@ -46,9 +46,10 @@ adb shell am start -n com.hondata.dash/.MainActivity
 ### 6-LED 转速灯条
 
 - 6 颗大 LED，RPM 渐进点亮
-- 阈值: 4000 / 4500 / 5000 / 5500 / 6000 / 6200
+- 阈值: 3000 / 3500 / 4000 / 4500 / 5000 / 5500
 - 颜色: 绿 绿 黄 黄 红 红
-- ≥6400 RPM 全亮 1Hz 闪烁
+- ≥6400 RPM 全亮 10Hz 闪烁
+- 阈值下移: 3000/3500/4000/4500/5000/5500 (适配 1.5T 动力区间)
 - 与 Header 叠加 FrameLayout，节省纵向空间
 
 ### 4×2 主数据网格
@@ -56,26 +57,26 @@ adb shell am start -n com.hondata.dash/.MainActivity
 每个传感器卡片包含:
 - **顶部**: 英文缩写 + 单位(括号) 并排
 - **中央左**: 大数值 (第1行字高×1.2, 第2行字高×1.4, 宽度不变)
-- **中央右**: MAX/MIN 实时追踪
+- **中央右**: MAX/MIN 实时追踪 (用颜色区分正负，蓝色正值，红色负值)
 - **底部**: ScaleBarView 刻度进度条
 
 #### 第1行参数
 
 | 卡片 | PID | 缩写 | 格式 | 范围 | 颜色/闪烁 |
 |------|-----|------|------|------|----------|
-| card0 | 0xB03 | Ethanol | %.0f | 0-100% | 前缀"E", 亮绿 |
+| card0 | 0xB03 | Ethanol | %.0f | 0-100% | 前缀"E", <E20白 E20-40绿 E40-60黄 >E60红 |
 | card1 | 0x160 | ECT | %.0f | 40-120°C | <80蓝 80~95白 96~100红 >100紫闪烁 |
 | card2 | 0x151 | IAT | %.0f | 20-100°C | <35绿 35~44白 45~54黄 55~64红 ≥65紫闪烁 |
-| card3 | 0x110 | MAP | %.1f | -0.3~2.0 bar | kPa÷100→bar |
+| card3 | 0x110 | Boost | %.1f | -1.0~2.0 bar | 相对压力 (MAP-大气压), kPa÷100→bar |
 
 #### 第2行参数
 
 | 卡片 | PID | 缩写 | 格式 | 范围 | 颜色/闪烁 |
 |------|-----|------|------|------|----------|
-| card4 | 0x320 | A/F | %.1f | 9-18 | Lambda×14.7, <11红 11~14.5黄 14.5~15.5绿 >15.5红, 红色+踩油门闪烁 |
+| card4 | 0x320 | A/F | %.1f | 9-18 | Lambda×14.7, <11红 11~14.5黄 14.5~15.5绿 >15.5红, 红色+踩油门闪烁; DFCO时显示"DFCO" |
 | card5 | 0x140 | IGN | %.1f | -40~40° | — |
-| card6 | 0x330 | S.TRIM | %+.1f | -25~+25% | — |
-| card7 | 0x332 | L.TRIM | %+.1f | -25~+25% | — |
+| card6 | 0x330 | S.TRIM | %+.1f | -25~+25% | DFCO时冻结 |
+| card7 | 0x332 | L.TRIM | %+.1f | -25~+25% | DFCO时冻结 |
 
 > **A/F 闪烁排除**: 仅在节气门开度(TP)>5%时闪烁，松油/滑行/换挡不触发。
 
@@ -98,19 +99,83 @@ adb shell am start -n com.hondata.dash/.MainActivity
 - **区间放大**: A/F 绿色区间(14.5~15.5)视觉放大 2.5 倍，突出安全范围
 - 边缘刻度文字自动对齐
 
+## 数据处理管线 (V1.2)
+
+### 引擎状态检测
+
+`EngineStateTracker` 带滞回防抖动的优先级状态机，检测 5 种工况：
+
+**优先级**: DFCO > TRANSIENT > WOT > IDLE > NORMAL
+
+| 状态 | 判定条件 | 滞回时间 |
+|------|---------|---------|
+| DFCO | TP<2%, 车速>15, 喷油<0.5ms | 进入200ms, 退出300ms |
+| TRANSIENT | dTP/dt>50%/s OR dRPM/dt>1200rpm/s OR dMAP/dt>300kPa/s | 80ms |
+| WOT | TP>80% | 进入100ms, 退出200ms |
+| IDLE | RPM<1000, TP<2%, 车速<3 | 300ms |
+| NORMAL | 默认 | 100ms |
+
+> TRANSIENT 三重判定（MT 车必备）: 快速松油 / 换挡 RPM 暴跌 / 增压崩溃，任一触发即判定。
+
+### 自适应滤波
+
+- **EMA 滤波**: 各参数独立 α 系数 (Ethanol 0.05, ECT/IAT 0.05, Boost 0, A/F 0.3, IGN 0.3, S.TRIM 0.4, L.TRIM 1.0)
+- **Boost 不对称滤波**: 增压快攻击 α=0.6，泄压动态释放（NORMAL 0.15, TRANSIENT 0.05, DFCO 0.02）
+- **A/F 自适应**: WOT/TRANSIENT 时 α=0.7 且 20Hz 刷新，NORMAL 时 α=0.3 且 10Hz
+- **IGN 负荷门控**: TP<3% 时降低 α，松油时 IGN 显示快速归零
+- **Ethanol 慢滤波**: α=0.05，过滤 Flex Fuel 传感器噪声
+
+### 范围验证
+
+每个参数独立的物理极限检查，超范围值直接丢弃：
+
+| 参数 | 有效范围 |
+|------|---------|
+| Ethanol | 0~100% |
+| ECT | -20~130°C |
+| IAT | -20~130°C |
+| Boost | -1.5~3.0 bar |
+| A/F | 8~25 |
+| IGN | -25~55° |
+| S.TRIM | -30~30% |
+| L.TRIM | -30~30% |
+
+### 信心系统
+
+TRANSIENT 状态下降低 A/F、S.TRIM、L.TRIM 的显示透明度至 45%，提示数据可能不准确。
+
+### NaN 保护
+
+EMA 滤波前检查 NaN，防止传感器异常帧污染滤波状态。
+
+### DFCO 处理
+
+减速断油期间：
+- A/F 显示灰色 "DFCO"（断油时 Lambda 读到的是空气，无意义）
+- S.TRIM 和 L.TRIM 冻结在最后有效值
+
+### Last-Valid 缓存
+
+蓝牙丢包时保留最后有效值，以 40% 透明度显示，而非直接显示 "--"。
+
+### 蓝牙自动重连
+
+断线后自动指数退避重连（1s→2s→4s→8s），重连成功后自动恢复数据流，无需手动重启 App。
+
 ## 文件结构
 
 ```
 app/src/main/java/com/hondata/dash/
-├── MainActivity.java          # 主界面, 数据绑定, 闪烁警告控制
+├── MainActivity.java          # 主界面, 数据绑定, 滤波, 闪烁控制
 ├── ScaleBarView.java          # 刻度进度条 (支持区间放大)
 ├── ShiftLightView.java        # 6-LED 转速灯条
 └── data/
     ├── DataSource.java        # 数据源接口 (Callback)
-    ├── BluetoothSource.java   # 蓝牙SPP (FlashPro, 无握手弹窗)
+    ├── BluetoothSource.java   # 蓝牙SPP (FlashPro, 自动重连)
+    ├── EngineStateTracker.java # 引擎状态检测 (V1.2: 多条件瞬态+滞回)
     ├── HondataProtocol.java   # Hondata 协议解析+缩放公式
     ├── SensorData.java        # PID→Double Map
-    └── DemoSource.java        # 模拟数据源 (20Hz)
+    └── DemoSource.java        # 模拟数据源 (V1.2: 6阶段+EXTREME)
 
 app/src/main/res/
 ├── layout/
@@ -151,16 +216,48 @@ Android 无原生字高缩放，通过 `textSize × scale` + `textScaleX = 1/sca
 
 ### 数据刷新
 
-- 模拟模式 (DemoSource): 20Hz, RPM 正弦波 800~6800 覆盖全部灯条阶段
+- 模拟模式 (DemoSource): 20Hz, 30秒状态循环 (IDLE→NORMAL→WOT→TRANSIENT→DFCO→CRUISE)
 - 蓝牙模式 (BluetoothSource): FlashPro SPP 实时, 50Hz 轮询
 
 ## 零依赖
 
 纯 Android Framework API，无第三方库:
 - 无 `androidx` / 无 Kotlin / 无 `.so` 原生库
-- Debug APK: **85 KB**
+- Debug APK: **89 KB**
 
 ## 版本历史
+
+### V1.2 (2026-05-21) — 数据管线深度优化
+
+- **TRANSIENT 多条件检测**: dTP/dt>50%/s OR dRPM/dt>1200rpm/s OR dMAP/dt>300kPa/s，任一触发
+- **状态优先级系统**: DFCO > TRANSIENT > WOT > IDLE > NORMAL
+- **滞回防抖动**: 各状态独立的进入/退出延时，防止快速抖动
+- **自适应滤波**: A/F 在 WOT/TRANSIENT 时 α=0.7+20Hz，NORMAL 时 α=0.3+10Hz
+- **Boost 动态释放**: NORMAL 0.15, TRANSIENT 0.05, DFCO 0.02
+- **范围验证**: 8 个参数独立的物理极限检查，超范围丢弃
+- **NaN 保护**: EMA 滤波前检查，防止传感器异常帧污染状态
+- **IGN 负荷门控**: TP<3% 时降低 α，松油时 IGN 快速归零
+- **信心系统**: TRANSIENT 下 A/F、S.TRIM、L.TRIM 透明度降至 45%
+- **Ethanol 慢滤波**: α=0.05，过滤 Flex Fuel 传感器噪声
+- **MAP 近零钳位**: |value|<0.05 时归零，消除 "-0" 显示
+- **转速灯条下移**: 阈值 3000/3500/4000/4500/5000/5500，适配 1.5T 动力区间
+- **蓝牙自动重连**: 断线后指数退避重连（1s→2s→4s→8s），无需手动重启
+- **读取超时**: 单帧 3 秒超时，超时视为断线触发重连
+- **DemoSource EXTREME 阶段**: 正弦波扫满全部 ScaleBar 量程
+
+### V1.1 (2026-05-21) — 数据处理管线升级
+
+- MAP → Boost 相对压力（减去大气压）
+- Boost 范围改为 -1.0~2.0 bar，4 区颜色
+- Ethanol 4 级变色：<E20 白 / E20-40 绿 / E40-60 黄 / >E60 红
+- 引擎状态检测：IDLE / NORMAL / WOT / DFCO / TRANSIENT
+- DFCO 处理：A/F 显示"DFCO"，S.TRIM/L.TRIM 冻结
+- EMA 信号滤波，各参数独立 α 系数
+- Boost 不对称滤波（增压快攻击/泄压慢释放）
+- Rate Limiting 各参数独立更新频率
+- Last-Valid 缓存，蓝牙丢包时保留最后有效值
+- MAX/MIN 颜色区分正负（蓝正红负）
+- DemoSource 状态循环模拟
 
 ### V1.0 (2026-05-19) — 首个上车版本
 

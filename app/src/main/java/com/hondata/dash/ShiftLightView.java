@@ -24,11 +24,11 @@ public class ShiftLightView extends View {
 
     // 各 LED 点亮的 RPM 阈值
     private static final float[] RPM_THRESHOLDS = {
-        4000, 4500, 5000, 5500, 6000, 6200
+        3000, 3500, 4000, 4500, 5000, 5500
     };
 
     // 阶段4: 全部闪烁
-    private static final float RPM_FLASH = 6400;
+    private static final float RPM_FLASH = 5500;
     private static final long FLASH_MS = 50; // 10Hz
 
     // LED 颜色: 绿 绿 黄 黄 红 红
