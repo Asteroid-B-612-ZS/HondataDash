@@ -13,6 +13,7 @@ local.properties
 # 调试/临时文件
 *.png
 *.cfa
+*.apk
 analyze_apk.py
 hondatamobile.apk
 ui_simulator.html

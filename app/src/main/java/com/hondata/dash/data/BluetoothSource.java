@@ -15,22 +15,28 @@ import java.util.UUID;
 
 /**
  * 蓝牙 SPP 数据源 — 带自动重连。
- * 连接 Hondata FlashPro (MAC 硬编码)，断线后自动指数退避重连。
+ * 连接 Hondata FlashPro (MAC 硬编码)，断线后自动重连。
+ *
+ * 重连策略: 完全重建 (和重启 App 一致)
+ * - 新建 HondataProtocol (清零所有协议状态)
+ * - 完全关闭旧 Socket (防止 Bluetooth 栈残留)
+ * - 首次重连无延迟 (和重启 App 一样立即尝试)
+ * - 后续重连指数退避
  */
 public class BluetoothSource implements DataSource {
 
     private static final String TAG = "BTSource";
     private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private static final int POLL_INTERVAL_MS = 20; // 50Hz
-    private static final int READ_TIMEOUT_MS = 3000; // 单帧读取超时
-    private static final int RECONNECT_BASE_MS = 1000; // 初始重连间隔
-    private static final int RECONNECT_MAX_MS = 8000;  // 最大重连间隔
+    private static final int READ_TIMEOUT_MS = 3000;
+    private static final int RECONNECT_BASE_MS = 1000;
+    private static final int RECONNECT_MAX_MS = 8000;
 
-    // FlashPro MAC 地址 (替换为你的设备地址)
-    public static final String FLASHPRO_MAC = "XX:XX:XX:XX:XX:XX";
+    // FlashPro MAC 地址 (硬编码)
+    public static final String FLASHPRO_MAC = "XX:XX:XX:XX:XX:XX"; // 替换为你的 FlashPro MAC
 
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
-    private final HondataProtocol protocol = new HondataProtocol();
+    private HondataProtocol protocol;
 
     private Callback callback;
     private android.content.Context exportContext;
@@ -40,7 +46,11 @@ public class BluetoothSource implements DataSource {
     private Thread pollThread;
     private volatile boolean running;
     private volatile boolean connected;
-    private volatile boolean intentionalDisconnect; // 用户主动断开，不重连
+    private volatile boolean intentionalDisconnect;
+
+    public BluetoothSource() {
+        protocol = new HondataProtocol();
+    }
 
     @Override public String getName() { return "Bluetooth SPP"; }
     @Override public void setCallback(Callback cb) { this.callback = cb; }
@@ -73,7 +83,6 @@ public class BluetoothSource implements DataSource {
             BluetoothDevice device = adapter.getRemoteDevice(FLASHPRO_MAC);
             Log.i(TAG, "目标设备: " + device.getName() + " [" + FLASHPRO_MAC + "]");
 
-            // 连接策略: 优先反射 channel 1 (已验证成功), fallback 不安全 SPP
             BluetoothSocket connectedSocket = null;
 
             // 方式1: 反射 channel 1
@@ -249,7 +258,7 @@ public class BluetoothSource implements DataSource {
 
                         if (intentionalDisconnect) break;
 
-                        // 自动重连
+                        // 自动重连 (完全重建, 和重启 App 一致)
                         reconnectDelay = autoReconnect(reconnectDelay);
                         if (reconnectDelay < 0) break; // 重连失败且已停止
 
@@ -271,36 +280,51 @@ public class BluetoothSource implements DataSource {
     }
 
     /**
-     * 自动重连: 关闭旧连接 → 指数退避等待 → 重新连接+握手
+     * 自动重连: 完全重建 (和重启 App 完全一致)
+     *
+     * 1. 彻底关闭旧连接 (Socket + Stream + Protocol)
+     * 2. 新建 HondataProtocol (清零所有协议状态)
+     * 3. 首次无延迟立即尝试 (和重启 App 一样)
+     * 4. 后续失败指数退避
+     *
      * @param currentDelay 当前退避间隔
      * @return 新的退避间隔, -1 表示停止
      */
     private int autoReconnect(int currentDelay) {
+        boolean firstAttempt = true;
+
         while (running && !intentionalDisconnect) {
-            Log.i(TAG, "断线, " + (currentDelay / 1000) + "s 后重连...");
 
-            // 通知 UI 重连中
-            uiHandler.post(new Runnable() {
-                @Override public void run() {
-                    if (callback != null) callback.onError("连接断开, 重连中...");
-                }
-            });
-
-            // 关闭旧连接
+            // 1. 彻底关闭旧连接
             closeSocket();
 
-            // 等待退避间隔
-            try {
-                Thread.sleep(currentDelay);
-            } catch (InterruptedException e) {
-                return -1;
+            // 2. 新建 Protocol (清零所有状态 — 和重启 App 一样)
+            protocol = new HondataProtocol();
+            Log.i(TAG, "Protocol 已重建");
+
+            // 3. 首次重连无延迟 (和重启 App 一样立即尝试)
+            if (!firstAttempt) {
+                Log.i(TAG, "重连失败, " + (currentDelay / 1000) + "s 后重试...");
+                try {
+                    Thread.sleep(currentDelay);
+                } catch (InterruptedException e) {
+                    return -1;
+                }
             }
+            firstAttempt = false;
 
             if (!running || intentionalDisconnect) return -1;
 
-            // 尝试重连
+            // 4. 通知 UI 重连中
+            uiHandler.post(new Runnable() {
+                @Override public void run() {
+                    if (callback != null) callback.onError("重连中...");
+                }
+            });
+
+            // 5. 尝试连接 (全新 Protocol + 全新 Socket)
             try {
-                Log.i(TAG, "开始重连...");
+                Log.i(TAG, "开始重连 (完全重建)...");
                 doConnect();
 
                 if (connected) {
@@ -381,9 +405,6 @@ public class BluetoothSource implements DataSource {
         return buf;
     }
 
-    /**
-     * 带超时的读取: 总超时 READ_TIMEOUT_MS, 超时视为断线
-     */
     private byte[] readExactWithTimeout(int len, int timeoutMs) throws IOException {
         if (inputStream == null) throw new IOException("未连接");
         byte[] buf = new byte[len];
@@ -399,7 +420,6 @@ public class BluetoothSource implements DataSource {
                 if (n < 0) throw new IOException("连接断开");
                 total += n;
             } else {
-                // 无数据, 短暂等待
                 try { Thread.sleep(1); } catch (InterruptedException e) {
                     throw new IOException("中断");
                 }
@@ -417,9 +437,6 @@ public class BluetoothSource implements DataSource {
         });
     }
 
-    /**
-     * 在已配对设备中查找 FlashPro
-     */
     public static String findFlashPro(BluetoothAdapter adapter) {
         if (adapter == null) return null;
         for (BluetoothDevice device : adapter.getBondedDevices()) {

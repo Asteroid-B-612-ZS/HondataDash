@@ -19,23 +19,23 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.hondata.dash/.MainActivity
 ```
 
-## 界面布局 (V1.2)
+## 界面布局 (V1.3)
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │            ▓▓  ▓▓  ▓▓  ▓▓  ▓▓  ▓▓          6-LED 转速灯条         │ ← 42dp (LED+Header叠加)
 │ Powered by Helijohnny                        Demo (模拟)  已连接    │
 ├────────────┬────────────┬────────────┬──────────────────────────────┤
-│ Ethanol(%) │ ECT(°C)    │ IAT(°C)    │ Boost(bar)                   │
+│ Ethanol(%) │ ECT(°C)    │ IAT(°C)    │ L.TRIM(%)                    │
 │            │            │            │                              │
-│ E30        │ 86         │ 33         │ 0.15                         │ ← 第1行: 整数, 字高×1.2
-│  92    87  │  90    82  │  35    31  │  1.20  0.88                  │ ← MAX/MIN (颜色区分±)
-│ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬                    │ ← ScaleBar
+│ E85        │ 86         │ 33         │ +2.5                         │ ← 第1行: 字高×1.5
+│  92    87  │  90    82  │  35    31  │  +1.0  4.5                   │ ← MAX/MIN
+│ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬                    │ ← ScaleBar+峰值
 ├────────────┼────────────┼────────────┼──────────────────────────────┤
-│ A/F        │ IGN(°)     │ S.TRIM(%)  │ L.TRIM(%)                    │
+│ MAP(bar)   │ A/F        │ IGN(°)     │ S.TRIM(%)                    │
 │            │            │            │                              │
-│ 14.6       │ 22.5       │ 1.8        │ 2.5                          │ ← 第2行: 小数, 字高×1.4
-│  15.0 14.2 │  25.0 12.5 │  2.5  5.0  │  1.0  4.5                   │ ← MAX/MIN (颜色区分±)
+│ +0.15      │ 14.6       │ +22.5      │ +1.8                         │ ← 第2行: 字高×1.65
+│  1.20 0.88 │  15.0 14.2 │  25.0 12.5 │  2.5  5.0                    │ ← MAX/MIN
 │ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬                    │
 ├──────┬─┬─┬─┬─┬────┬────┬─────┬──────┬──────┬───────────────────────┤
 │ K.C  │C1│C2│C3│C4│K.R │K.L │BAT(V)│F.P   │W.G  │T.P               │ ← 底部 59dp
@@ -56,27 +56,27 @@ adb shell am start -n com.hondata.dash/.MainActivity
 
 每个传感器卡片包含:
 - **顶部**: 英文缩写 + 单位(括号) 并排
-- **中央左**: 大数值 (第1行字高×1.2, 第2行字高×1.4, 宽度不变)
+- **中央左**: 大数值 (第1行字高×1.5, 第2行字高×1.65, 宽度不变)
 - **中央右**: MAX/MIN 实时追踪 (用颜色区分正负，蓝色正值，红色负值)
 - **底部**: ScaleBarView 刻度进度条
 
-#### 第1行参数
+#### 第1行参数 (慢数据)
 
-| 卡片 | PID | 缩写 | 格式 | 范围 | 颜色/闪烁 |
-|------|-----|------|------|------|----------|
-| card0 | 0xB03 | Ethanol | %.0f | 0-100% | 前缀"E", <E20白 E20-40绿 E40-60黄 >E60红 |
-| card1 | 0x160 | ECT | %.0f | 40-120°C | <80蓝 80~95白 96~100红 >100紫闪烁 |
-| card2 | 0x151 | IAT | %.0f | 20-100°C | <35绿 35~44白 45~54黄 55~64红 ≥65紫闪烁 |
-| card3 | 0x110 | Boost | %.1f | -1.0~2.0 bar | 相对压力 (MAP-大气压), kPa÷100→bar |
+| 卡片 | PID | 缩写 | 格式 | 范围 | 动力学 | 颜色/闪烁 |
+|------|-----|------|------|------|--------|----------|
+| card0 | 0xB03 | Ethanol | %.0f | 0-100% | STATIC | 前缀"E", <E20白 E20-40绿 E40-60黄 >E60红 |
+| card1 | 0x160 | ECT | %.0f | 40-120°C | THERMAL | <80蓝 80~95白 96~100红 >100紫闪烁 |
+| card2 | 0x151 | IAT | %.0f | 20-100°C | THERMAL | <35绿 35~44白 45~54黄 55~64红 ≥65紫闪烁 |
+| card3 | 0x332 | L.TRIM | %+.1f | -25~+25% | THERMAL | DFCO时冻结 |
 
-#### 第2行参数
+#### 第2行参数 (快数据)
 
-| 卡片 | PID | 缩写 | 格式 | 范围 | 颜色/闪烁 |
-|------|-----|------|------|------|----------|
-| card4 | 0x320 | A/F | %.1f | 9-18 | Lambda×14.7, <11红 11~14.5黄 14.5~15.5绿 >15.5红, 红色+踩油门闪烁; DFCO时显示"DFCO" |
-| card5 | 0x140 | IGN | %.1f | -40~40° | — |
-| card6 | 0x330 | S.TRIM | %+.1f | -25~+25% | DFCO时冻结 |
-| card7 | 0x332 | L.TRIM | %+.1f | -25~+25% | DFCO时冻结 |
+| 卡片 | PID | 缩写 | 格式 | 范围 | 动力学 | 颜色/闪烁 |
+|------|-----|------|------|------|--------|----------|
+| card4 | 0x110 | MAP | %+.1f | -1.0~2.0 bar | MECHANICAL | 相对压力 (MAP-大气压), kPa÷100→bar |
+| card5 | 0x320 | A/F | %.1f | 9-18 | TRANSIENT | Lambda×14.7, <11红 11~14.5黄 14.5~15.5绿 >15.5红, 红色+踩油门闪烁; DFCO时显示"DFCO" |
+| card6 | 0x140 | IGN | %+.1f | -40~40° | MECHANICAL | DFCO时显示"DFCO" |
+| card7 | 0x330 | S.TRIM | %+.1f | -25~+25% | TRANSIENT | DFCO时显示"DFCO" |
 
 > **A/F 闪烁排除**: 仅在节气门开度(TP)>5%时闪烁，松油/滑行/换挡不触发。
 
@@ -93,13 +93,41 @@ adb shell am start -n com.hondata.dash/.MainActivity
 | W.G(%) | weight=1 | 0x1A0 | %.0f | 废气旁通阀 |
 | T.P(%) | weight=1 | 0x122 | %.0f | 节气门板 |
 
-### ScaleBarView 刻度进度条
+### ScaleBarView — V3 动力学原型引擎
 
-- 数据条 + 半透明颜色区间 + 区间分界线 + 锚点填充 + 当前值指示线
-- **区间放大**: A/F 绿色区间(14.5~15.5)视觉放大 2.5 倍，突出安全范围
+4 类动力学原型，每类使用完全不同的数学结构：
+
+| 原型 | 参数 | 数学模型 | 视觉效果 |
+|------|------|---------|---------|
+| **STATIC** | Ethanol | 锁定态, 无能量系统 | 纯显示, 无峰值保持 |
+| **THERMAL** | ECT, IAT, L.TRIM | 牛顿冷却定律 (双向独立) | 高温快散低温慢散, Drift Memory Peak |
+| **MECHANICAL** | Boost/MAP, IGN | Spring-Damper 二阶系统 (Euler积分) | 自然过冲+回弹+物理残影 |
+| **TRANSIENT** | A/F, S.TRIM | Oscillation Envelope (双向独立) | 只扩展不收缩, 呼吸包络 |
+
+- 数据条 15dp (V1.2 为 10dp), ScaleBar 总高 42dp
+- 颜色区间背景 + 区间分割线 + 锚点填充 + 当前值指示线
+- **区间放大**: A/F 绿色区间(14.5~15.5) 2.5×, Boost 0~1.5bar 2.0×
 - 边缘刻度文字自动对齐
+- **峰值参数按卡片独立**: 每个卡片独立的衰减/保持参数
 
-## 数据处理管线 (V1.2)
+### 情绪渲染
+
+7 种情绪状态，渐变跟随动力学状态 ("感受到，但不打扰"):
+
+| 情绪 | 触发 | 视觉 |
+|------|------|------|
+| NONE | 默认 | 无效果 |
+| BUILDING | 增压/温度上升/积累 | 微暖橙色偏移 |
+| STABLE | 稳态 | 无效果 |
+| RELEASING | 泄放/降温 | 微冷蓝色偏移 |
+| DANGER | 超限 (ECT>105, A/F<10.5) | 微红色偏移 |
+| WARNING | 接近危险 | 微黄色偏移 |
+| PROTECTION | ECU保护 (IGN<-10) | 微橙色偏移 |
+
+- **渐变跟随**: `emotionCurrent` 平滑趋向 `emotionIntensity`, 不突变
+- 三层渲染: 填充色混合 + 指示线变色 + 边缘微弱发光
+
+## 数据处理管线 (V1.3)
 
 ### 引擎状态检测
 
@@ -119,10 +147,10 @@ adb shell am start -n com.hondata.dash/.MainActivity
 
 ### 自适应滤波
 
-- **EMA 滤波**: 各参数独立 α 系数 (Ethanol 0.05, ECT/IAT 0.05, Boost 0, A/F 0.3, IGN 0.3, S.TRIM 0.4, L.TRIM 1.0)
+- **EMA 滤波**: 各参数独立 α 系数 (Ethanol 0.05, ECT 0.1, IAT 0.05, L.TRIM 1.0, A/F 0.3, IGN 0.4, S.TRIM 0.2)
 - **Boost 不对称滤波**: 增压快攻击 α=0.6，泄压动态释放（NORMAL 0.15, TRANSIENT 0.05, DFCO 0.02）
 - **A/F 自适应**: WOT/TRANSIENT 时 α=0.7 且 20Hz 刷新，NORMAL 时 α=0.3 且 10Hz
-- **IGN 负荷门控**: TP<3% 时降低 α，松油时 IGN 显示快速归零
+- **IGN 自适应**: WOT/TRANSIENT 时 20Hz 刷新
 - **Ethanol 慢滤波**: α=0.05，过滤 Flex Fuel 传感器噪声
 
 ### 范围验证
@@ -142,7 +170,7 @@ adb shell am start -n com.hondata.dash/.MainActivity
 
 ### 信心系统
 
-TRANSIENT 状态下降低 A/F、S.TRIM、L.TRIM 的显示透明度至 45%，提示数据可能不准确。
+TRANSIENT 状态下降低 A/F、S.TRIM 的显示透明度至 45%，提示数据可能不准确。L.TRIM 已排除 (ECU 长期学习值本身极稳定)。
 
 ### NaN 保护
 
@@ -158,20 +186,26 @@ EMA 滤波前检查 NaN，防止传感器异常帧污染滤波状态。
 
 蓝牙丢包时保留最后有效值，以 40% 透明度显示，而非直接显示 "--"。
 
-### 蓝牙自动重连
+### 蓝牙自动重连 (V1.3 完全重建)
 
-断线后自动指数退避重连（1s→2s→4s→8s），重连成功后自动恢复数据流，无需手动重启 App。
+完全重建策略 (和重启 App 完全一致):
+1. 彻底关闭旧连接 (Socket + Stream)
+2. 新建 `HondataProtocol` 实例 (清零所有协议状态)
+3. 首次重连无延迟 (和重启 App 一样立即尝试)
+4. 后续失败: 指数退避 (1s→2s→4s→8s)
+5. 完整握手: 点火检测(10次) → INIT → 传感器定义
+6. 成功后自动恢复数据采集
 
 ## 文件结构
 
 ```
 app/src/main/java/com/hondata/dash/
-├── MainActivity.java          # 主界面, 数据绑定, 滤波, 闪烁控制
-├── ScaleBarView.java          # 刻度进度条 (支持区间放大)
+├── MainActivity.java          # 主界面, 数据绑定, 滤波, 闪烁控制, 情绪引擎
+├── ScaleBarView.java          # V3 动力学原型引擎 (4原型+情绪渲染)
 ├── ShiftLightView.java        # 6-LED 转速灯条
 └── data/
     ├── DataSource.java        # 数据源接口 (Callback)
-    ├── BluetoothSource.java   # 蓝牙SPP (FlashPro, 自动重连)
+    ├── BluetoothSource.java   # 蓝牙SPP (FlashPro, V1.3 完全重建式自动重连)
     ├── EngineStateTracker.java # 引擎状态检测 (V1.2: 多条件瞬态+滞回)
     ├── HondataProtocol.java   # Hondata 协议解析+缩放公式
     ├── SensorData.java        # PID→Double Map
@@ -204,8 +238,10 @@ app/src/main/res/
 ### 字体纵向拉伸
 
 Android 无原生字高缩放，通过 `textSize × scale` + `textScaleX = 1/scale` 实现:
-- 第1行: scale=1.2 (字高+20%, 宽度不变)
-- 第2行: scale=1.4 (字高+40%, 宽度不变)
+- 第1行 (i=0~2): scale=1.5 → textSize=112.5sp, scaleX=0.667
+- 第1行 (i=0, Ethanol): scaleX=0.50 (额外压窄，"E85"前缀适配容器宽度)
+- 第2行 (i=3~7): scale=1.65 → textSize=99sp, scaleX=0.606
+- 第2行 (i=6,7 IGN/S.TRIM): scaleX=0.50 (带符号两位数+小数更窄)
 
 ### 全屏方案
 
@@ -223,9 +259,34 @@ Android 无原生字高缩放，通过 `textSize × scale` + `textScaleX = 1/sca
 
 纯 Android Framework API，无第三方库:
 - 无 `androidx` / 无 Kotlin / 无 `.so` 原生库
-- Debug APK: **89 KB**
+- Release APK: **45 KB**
 
 ## 版本历史
+
+### V1.3 (2026-05-22) — 动力学原型引擎 + UI 精调
+
+详细变更说明请参阅 [English V1.3 Changelog](README.md#v13-2026-05-22--dynamics-archetype-engine--ui-polish)，以下是摘要：
+
+#### 核心重写: V3 动力学原型引擎
+- 4 类数学模型: STATIC (锁定) / THERMAL (牛顿冷却, 双向) / MECHANICAL (弹簧-阻尼, 二阶系统) / TRANSIENT (振荡包络, 双向)
+- 每卡片独立参数，修复 L.TRIM 双向峰值、MECHANICAL 阻尼速度反向、TRANSIENT 衰减过快等 5 个 bug
+
+#### 情绪渲染系统
+- 7 种情绪状态 (NONE/BUILDING/STABLE/RELEASING/DANGER/WARNING/PROTECTION)
+- 渐变跟随 + 三层渲染 (填充色混合+指示线变色+边缘发光)
+
+#### UI 优化
+- 字体缩放升级: Row 1 ×1.5 (112.5sp), Row 2 ×1.65 (99sp)
+- 卡片位置重排: 慢数据(Ethanol/ECT/IAT/L.TRIM) 上行，快数据(MAP/A/F/IGN/S.TRIM) 下行
+- 数据条加粗 10dp→15dp，Ethanol scaleX=0.50 解决 "E85" 溢出裁剪
+- DFCO 显示优化 + 置信度精简 (仅 A/F/S.TRIM)
+
+#### 蓝牙自动重连重写
+- 完全重建策略: 新建 Protocol + 新建 Socket + 首次零延迟 + 指数退避
+- 三重容错连接: 反射 ch1 → 不安全 SPP → 标准 SPP
+
+#### 修改文件
+`ScaleBarView.java` (全面重写) / `MainActivity.java` (字体+卡片+情绪) / `BluetoothSource.java` (重连) / `activity_main.xml` / `item_sensor_card.xml` / `build.gradle` (版本号)
 
 ### V1.2 (2026-05-21) — UI 修复 + 仓库清理
 
