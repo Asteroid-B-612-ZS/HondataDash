@@ -18,6 +18,7 @@ import android.text.style.ScaleXSpan;
 import com.hondata.dash.data.BluetoothSource;
 import com.hondata.dash.data.DataSource;
 import com.hondata.dash.data.DemoSource;
+import com.hondata.dash.data.EngineSemanticState;
 import com.hondata.dash.data.EngineStateTracker;
 import com.hondata.dash.data.SensorData;
 
@@ -374,7 +375,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 bar.setThermal(0.2f, 0.1f, 0.08f);  // 极慢吸热, 极慢散热, 极慢漂移
                 break;
 
-            case 4: // Boost: MECHANICAL — Spring-Damper, 涡轮机械感
+            case 4: // Boost: MECHANICAL — Spring-Damper + Peak Hold
                 bar.setRange(-1.0f, 2.0f);
                 bar.setTicks(
                     new float[]{-1.0f, 0, 0.5f, 1.0f, 1.5f, 2.0f},
@@ -385,8 +386,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 bar.addZone(1.5f, 2.0f, 0xFFFF4444);
                 bar.setAnchor(0);
                 bar.setExpand(0, 1.5f, 2.0f);
-                // stiffness=5 中速建压, damping=0.45 欠阻尼 (大过冲, 慢衰减)
-                bar.setMechanical(5.0f, 0.45f);
+                // stiffness=5 中速建压, damping=0.45 欠阻尼, peakRetention=0.70 半衰期~3s
+                bar.setMechanical(5.0f, 0.45f, 0.70f);
                 break;
 
             case 5: // A/F: TRANSIENT — Oscillation Envelope, 燃烧事件
@@ -400,19 +401,19 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 bar.addZone(15.5f, 18, 0xFFFF4444);
                 bar.setAnchor(14.7f);
                 bar.setExpand(14.5f, 15.5f, 2.5f);
-                // gain=3.0 高敏感, decay=0.55 慢衰减 (半衰期~3.3s)
-                bar.setTransient(3.0f, 0.55f);
+                // decay=0.80 慢衰减 (半衰期~3.1s, 负值方向同步改善)
+                bar.setTransient(3.0f, 0.80f);
                 break;
 
-            case 6: // IGN: MECHANICAL — Spring-Damper, 机械联动
+            case 6: // IGN: MECHANICAL — Spring-Damper + Peak Hold, 机械联动
                 bar.setRange(-40, 40);
                 bar.setTicks(
                     new float[]{-40, -20, 0, 20, 40},
                     new String[]{"-40", "-20", "0", "20", "40"});
                 bar.addZone(-40, 40, 0xFF00D8FF);
                 bar.setAnchor(0);
-                // stiffness=2.5 软弹簧(大惯性,大残影), damping=0.40 欠阻尼 (长过冲)
-                bar.setMechanical(2.5f, 0.40f);
+                // stiffness=2.5 软弹簧, damping=0.40 欠阻尼, peakRetention=0.85 半衰期~4.6s
+                bar.setMechanical(2.5f, 0.40f, 0.85f);
                 break;
 
             case 7: // S.TRIM: TRANSIENT — Oscillation Envelope, 修正振荡
@@ -476,6 +477,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
     @Override
     public void onDisconnected() {
+        engineState.reset();
         runOnUiThread(new Runnable() {
             @Override public void run() {
                 statusText.setText("已断开");
@@ -532,9 +534,9 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 Double baro = data.get(0x170);
                 if (baro != null) lastBaro = baro.floatValue();
 
-                // 检测引擎状态
-                EngineStateTracker.State state = engineState.update(data);
-                boolean isDfco = (state == EngineStateTracker.State.DFCO);
+                // 检测引擎状态 (V2 语义模型)
+                EngineSemanticState state = engineState.update(data);
+                boolean isDfco = state.isDfco();
                 boolean dfcoJustEnded = lastDfcoState && !isDfco;
                 lastDfcoState = isDfco;
                 long now = System.currentTimeMillis();
@@ -606,18 +608,17 @@ public class MainActivity extends Activity implements DataSource.Callback {
                             lastUpdateTime[i] = 0; // 跳过 Rate Limit, 立即刷新显示
                         }
 
-                        // 自适应参数: 根据引擎工况动态调整滤波和刷新率
+                        // 自适应参数: V2 置信度驱动连续调制
                         float effectiveAlpha = EMA_ALPHA[i];
                         long effectiveInterval = UPDATE_INTERVAL[i];
-                        boolean isWot = (state == EngineStateTracker.State.WOT);
-                        boolean isTransient = (state == EngineStateTracker.State.TRANSIENT);
-                        boolean needFast = isWot || isTransient;
-                        // A/F: WOT/TRANSIENT 快速响应 α=0.7/20Hz, 巡航稳定 α=0.3/10Hz
+                        boolean isWot = state.isWot();
+                        boolean needFast = isWot || state.hasModifier();
+                        // A/F: WOT alpha 由置信度连续调制 (0.3~0.7), 快速模式 20Hz
                         if (i == 5) {
-                            effectiveAlpha = needFast ? 0.7f : 0.3f;
+                            effectiveAlpha = state.afAlpha();
                             effectiveInterval = needFast ? 50L : 100L;
                         }
-                        // IGN: WOT/TRANSIENT 高速刷新 20Hz
+                        // IGN: WOT/Modifier 高速刷新 20Hz
                         if (i == 6) {
                             effectiveInterval = needFast ? 50L : 100L;
                         }
@@ -796,11 +797,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                 }
                             }
 
-                            // P3: 置信度系统 — TRANSIENT 时 A/F, S.TRIM 降低可信度
-                            if (isTransient && (i == 5 || i == 7)) {
-                                float conf = 0.45f;
-                                valueIntViews[i].setAlpha(conf);
-                                if (valueDecViews[i] != null) valueDecViews[i].setAlpha(conf);
+                            // P3: V2 置信度驱动透明度 — A/F, S.TRIM 连续调制
+                            if (i == 5 || i == 7) {
+                                float alpha = state.textAlpha(true);
+                                valueIntViews[i].setAlpha(alpha);
+                                if (valueDecViews[i] != null) valueDecViews[i].setAlpha(alpha);
                                 // ScaleBar 始终保持明亮, 不随文字变暗
                             }
                         }
@@ -1025,18 +1026,13 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
     /**
      * Boost 不对称滤波: 增压快响应, 泄压按工况动态调整
-     * NORMAL: release=0.15 (正常响应)
-     * TRANSIENT: release=0.05 (换挡时丝滑衰减)
-     * DFCO: release=0.02 (泄压极慢, 避免 boost→vacuum 跳变)
+     * V2: 释放率由 EngineSemanticState.boostRelease() 连续提供
      */
-    private float boostFilter(float raw, float last, EngineStateTracker.State state) {
+    private float boostFilter(float raw, float last, EngineSemanticState state) {
         if (raw > last) {
             return ema(raw, last, 0.6f);   // 快攻击 (不变)
         } else {
-            float release;
-            if (state == EngineStateTracker.State.DFCO) release = 0.02f;
-            else if (state == EngineStateTracker.State.TRANSIENT) release = 0.05f;
-            else release = 0.15f;
+            float release = state.boostRelease();
             return ema(raw, last, release);
         }
     }
@@ -1057,7 +1053,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
      * 每个参数拥有不同的情绪转换逻辑, 情绪强度由 ScaleBar 内部渐变跟随。
      * 原则: "感受到，但不打扰" — 渐变跟随动力学状态
      */
-    private void updateEmotion(int i, float val, EngineStateTracker.State engineSt) {
+    private void updateEmotion(int i, float val, EngineSemanticState engineSt) {
         ScaleBarView bar = scaleBars[i];
         if (bar == null) return;
 

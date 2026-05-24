@@ -35,7 +35,7 @@ public class BluetoothSource implements DataSource {
     private static final int BT_STACK_CLEANUP_MS = 1000; // 蓝牙栈释放 channel 等待时间
 
     // FlashPro MAC 地址 (硬编码)
-    public static final String FLASHPRO_MAC = "XX:XX:XX:XX:XX:XX"; // 替换为你的 FlashPro MAC
+    public static final String FLASHPRO_MAC = "XX:XX:XX:XX:XX:XX";
 
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private HondataProtocol protocol;

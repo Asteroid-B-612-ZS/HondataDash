@@ -55,14 +55,16 @@ public class ScaleBarView extends View {
     private float coolingRate = 0.5f;       // 散热速率 (每秒)
     private float thermalMemory = 0.3f;     // 记忆衰减率 (Drift Memory)
 
-    // ========== ARCH_MECHANICAL: Spring-Damper ==========
+    // ========== ARCH_MECHANICAL: Spring-Damper + Peak Hold ==========
     // position/velocity 组成二阶系统, 自然产生 overshoot/rebound/residual
     private float mechPosition = Float.NaN; // 当前显示位置
     private float mechVelocity = 0;         // 运动速度
     private float stiffness = 8.0f;         // 弹簧刚度
     private float mechDamping = 0.7f;       // 阻尼系数 (0=无阻尼, 1=临界阻尼)
-    // residual: position 落后于 target 的区域就是 "物理残影"
-    // 不需要单独的 peakVal!
+    // V2: 峰值保持 (双向, 独立于弹簧残影)
+    private float peakPos = 0;              // anchor 上方峰值距离
+    private float peakNeg = 0;              // anchor 下方峰值距离
+    private float peakRetention = 0.7f;     // 峰值保留率 (每秒, 越高保持越久)
 
     // ========== ARCH_TRANSIENT: Oscillation Envelope ==========
     // 双侧独立包络: 高侧/低侧各自追踪和衰减
@@ -186,14 +188,16 @@ public class ScaleBarView extends View {
 
     /**
      * 配置 MECHANICAL 原型 (Boost/IGN)
-     * Spring-Damper: 自然产生 overshoot/rebound/residual
+     * Spring-Damper + Peak Hold: 过冲/回弹/残影 + 近期峰值保持
      * @param stiffness 弹簧刚度 (越大追踪越快)
      * @param damping 阻尼 (0~1: 0=无阻尼振荡, 1=临界阻尼无过冲)
+     * @param peakRetention 峰值保留率/秒 (0.5快衰减~0.9慢衰减, 越高保持越久)
      */
-    public void setMechanical(float stiffness, float damping) {
+    public void setMechanical(float stiffness, float damping, float peakRetention) {
         archetype = ARCH_MECHANICAL;
         this.stiffness = stiffness;
         this.mechDamping = damping;
+        this.peakRetention = peakRetention;
     }
 
     /**
@@ -275,12 +279,12 @@ public class ScaleBarView extends View {
         if (Float.isNaN(mechPosition)) {
             mechPosition = target;
             mechVelocity = 0;
+            peakPos = Math.max(0, target - anchorVal);
+            peakNeg = Math.max(0, anchorVal - target);
             return;
         }
 
         // 二阶 Spring-Damper 系统 (Euler 积分)
-        // mechDamping = 阻尼比 zeta (0=无阻尼振荡, 1=临界阻尼无过冲)
-        // 欠阻尼 (zeta<1) → 自然产生 overshoot/rebound/residual
         float displacement = target - mechPosition;
         float springForce = stiffness * displacement;
         float criticalDamp = 2.0f * (float) Math.sqrt(stiffness);
@@ -294,6 +298,15 @@ public class ScaleBarView extends View {
             mechPosition = target;
             mechVelocity = 0;
         }
+
+        // V2: 峰值保持 — 双向追踪, 指数衰减
+        float devPos = Math.max(0, target - anchorVal);
+        float devNeg = Math.max(0, anchorVal - target);
+        if (devPos > peakPos) peakPos = devPos;
+        if (devNeg > peakNeg) peakNeg = devNeg;
+        float retention = (float) Math.pow(peakRetention, dt);
+        peakPos *= retention;
+        peakNeg *= retention;
     }
 
     // ========== ARCH_TRANSIENT: Oscillation Envelope ==========
@@ -581,6 +594,50 @@ public class ScaleBarView extends View {
                     Color.red(resColor) / 2, Color.green(resColor) / 2, Color.blue(resColor) / 2));
                 canvas.drawLine(posXC, barTop, posXC, barBottom, peakMarkerPaint);
                 fillLeft = posXC;
+            }
+        }
+
+        // V2: 峰值保持 — 正方向 (anchor 上方, Boost 峰值/IGN 正峰值)
+        if (peakPos > 0.01f) {
+            float peakV = anchorVal + peakPos;
+            float peakClamped = Math.max(minVal, Math.min(maxVal, peakV));
+            float px = valToX(peakClamped, barLeft, barW);
+
+            if (px > fillRight + 0.5f && px <= barRight) {
+                float peakAlpha = Math.min(0.85f, 0.3f + peakPos / (maxVal - minVal) * 2.0f);
+                int peakColor = zoneColor(peakClamped);
+                peakFillPaint.setColor(Color.argb((int)(peakAlpha * 180),
+                    Color.red(peakColor), Color.green(peakColor), Color.blue(peakColor)));
+                canvas.drawRect(fillRight, barTop, px, barBottom, peakFillPaint);
+
+                peakMarkerPaint.setStrokeWidth(3 * density);
+                peakMarkerPaint.setColor(Color.argb((int)(peakAlpha * 220),
+                    Color.red(peakColor), Color.green(peakColor), Color.blue(peakColor)));
+                canvas.drawLine(px, barTop, px, barBottom, peakMarkerPaint);
+                peakMarkerPaint.setStrokeWidth(2 * density);
+                fillRight = px;
+            }
+        }
+
+        // V2: 峰值保持 — 负方向 (anchor 下方, IGN 负峰值)
+        if (peakNeg > 0.01f) {
+            float peakV = anchorVal - peakNeg;
+            float peakClamped = Math.max(minVal, Math.min(maxVal, peakV));
+            float px = valToX(peakClamped, barLeft, barW);
+
+            if (px < fillLeft - 0.5f && px >= barLeft) {
+                float peakAlpha = Math.min(0.85f, 0.3f + peakNeg / (maxVal - minVal) * 2.0f);
+                int peakColor = zoneColor(peakClamped);
+                peakFillPaint.setColor(Color.argb((int)(peakAlpha * 180),
+                    Color.red(peakColor), Color.green(peakColor), Color.blue(peakColor)));
+                canvas.drawRect(px, barTop, fillLeft, barBottom, peakFillPaint);
+
+                peakMarkerPaint.setStrokeWidth(3 * density);
+                peakMarkerPaint.setColor(Color.argb((int)(peakAlpha * 220),
+                    Color.red(peakColor), Color.green(peakColor), Color.blue(peakColor)));
+                canvas.drawLine(px, barTop, px, barBottom, peakMarkerPaint);
+                peakMarkerPaint.setStrokeWidth(2 * density);
+                fillLeft = px;
             }
         }
 
