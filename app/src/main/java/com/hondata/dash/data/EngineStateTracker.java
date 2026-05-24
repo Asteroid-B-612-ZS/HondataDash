@@ -27,14 +27,14 @@ public class EngineStateTracker {
     private long lastTime = 0;
     private boolean initialized = false;
 
-    // 滞回时间 (ms)
-    private static final long HYSTERESIS_DFCO_ENTER  = 200;
-    private static final long HYSTERESIS_DFCO_EXIT   = 300;
-    private static final long HYSTERESIS_WOT_ENTER   = 100;
-    private static final long HYSTERESIS_WOT_EXIT    = 200;
-    private static final long HYSTERESIS_IDLE_ENTER  = 300;
-    private static final long HYSTERESIS_TRANSIENT   = 80;
-    private static final long HYSTERESIS_DEFAULT     = 100;
+    // 滞回时间 (ms) — V1.4 全面缩短，基于实车数据验证
+    private static final long HYSTERESIS_DFCO_ENTER  = 100;   // 松油信号明确(TP<2+Inj<0.5+Speed>15 三重条件)
+    private static final long HYSTERESIS_DFCO_EXIT   = 50;    // TP恢复>2%无歧义，50ms仅防抖
+    private static final long HYSTERESIS_WOT_ENTER   = 30;    // TP>80%完全无歧义
+    private static final long HYSTERESIS_WOT_EXIT    = 80;    // 适度缩短
+    private static final long HYSTERESIS_IDLE_ENTER  = 200;   // 稍微缩短
+    private static final long HYSTERESIS_TRANSIENT   = 40;    // 快速捕捉瞬态
+    private static final long HYSTERESIS_DEFAULT     = 50;    // 缩短通用滞回
 
     // TRANSIENT 触发阈值 (变化率/秒，与采样率无关)
     private static final float TP_RATE_THRESHOLD  = 50f;    // %/s
