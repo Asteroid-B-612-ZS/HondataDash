@@ -101,7 +101,7 @@ Each sensor card contains:
 |-----------|-----------|------------|---------------|
 | **STATIC** | Ethanol | Locked state, no energy system | Pure display, no peak hold |
 | **THERMAL** | ECT, IAT, L.TRIM | Newton's Law of Cooling (bidirectional) | Fast decay at high heat, slow at low; Drift Memory Peak |
-| **MECHANICAL** | Boost, IGN | Spring-Damper 2nd-order system (Euler integration) | Natural overshoot + rebound + physical residual |
+| **MECHANICAL** | Boost, IGN | Spring-Damper 2nd-order system (Euler integration) + Peak Hold | Natural overshoot + rebound + physical residual + bidirectional peak tracking |
 | **TRANSIENT** | A/F, S.TRIM | Oscillation Envelope (bidirectional) | Expand-only, breathing envelope |
 
 - Data bar 15dp (was 10dp in V1.2), ScaleBar total height 42dp
@@ -127,28 +127,58 @@ Each sensor card contains:
 - **Gradual follow**: `emotionCurrent` smoothly interpolates toward `emotionIntensity`, no sudden jumps
 - Three-layer rendering: fill color blend + indicator line color shift + edge glow
 
-## Data Processing Pipeline (V1.3)
+## Data Processing Pipeline (V2.0)
 
-### Engine State Detection
+### Engine State Detection — Three-Dimensional Semantic Model
 
-`EngineStateTracker` with hysteresis-based priority state machine, detecting 5 states:
+`EngineStateTracker` returns `EngineSemanticState` with four orthogonal dimensions:
 
-**Priority**: DFCO > TRANSIENT > WOT > IDLE > NORMAL
+- **MainState** (ECU strategy layer, mutually exclusive): DFCO / WOT / WARMUP / IDLE / NORMAL
+- **SubState** (operating detail): WOT→SPOOL/PEAK/HOLD, DFCO→ENTER/HOLD, or NONE
+- **Modifier** (dynamic overlay, orthogonal to MainState): TIP_IN / TIP_OUT / BOOST_SURGE / RPM_DIP / NONE
+- **Confidence** (state certainty 0.0~1.0): weighted calculation + low-pass filter (α=0.1, ~200ms inertia)
+
+#### MainState Detection
 
 | State | Detection Criteria | Hysteresis |
 |-------|--------------------|------------|
-| DFCO | TP<2%, Speed>15, Inj<0.5ms | Enter 200ms, Exit 300ms |
-| TRANSIENT | dTP/dt>50%/s OR dRPM/dt>1200rpm/s OR dMAP/dt>300kPa/s | 80ms |
-| WOT | TP>80% | Enter 100ms, Exit 200ms |
-| IDLE | RPM<1000, TP<2%, Speed<3 | 300ms |
-| NORMAL | Default | 100ms |
+| DFCO | TP<2%, Speed>15, Inj<0.5ms, **RPM>1400** | Enter 100ms, Exit 50ms |
+| WOT | **ClosedLoop OFF + TargetLambda<0.95 + MAP>120kPa + RPM>1500** | Candidate 30ms, Sustain 80ms |
+| WARMUP | ECT<65°C enter, ECT>72°C + ClosedLoop ON 5s exit | Hysteresis 7°C |
+| IDLE | RPM<1000, TP<2%, Speed<3 | 200ms |
+| NORMAL | Default | 50ms |
 
-> TRANSIENT triple detection (essential for MT vehicles): rapid throttle lift / shift RPM drop / boost collapse — any trigger activates.
+> **WOT Redefined (V2.0)**: For torque-model ECU (L15B7), throttle position ≠ engine load. WOT is now detected by ECU strategy signals: Open Loop (ClosedLoop OFF) + Rich command (TargetLambda<0.95) + Boost established (MAP>120kPa) + RPM above threshold. This correctly identifies WOT regardless of throttle position.
+
+> **WARMUP**: Cold-start detection with ECT hysteresis. Prevents WOT-like signals during warmup from being misinterpreted.
+
+> **DFCO Four-way Lock**: Added RPM>1400 to prevent false triggers at idle recovery edge.
+
+#### SubState Detection
+
+| MainState | SubState | Criteria |
+|-----------|----------|----------|
+| WOT | SPOOL | dMAP/dt > 100 kPa/s (boost building) |
+| WOT | PEAK | WOT duration < 2s |
+| WOT | HOLD | WOT duration ≥ 2s |
+| DFCO | ENTER | DFCO duration < 200ms |
+| DFCO | HOLD | DFCO duration ≥ 200ms |
+
+#### Modifier Detection (priority order)
+
+| Priority | Modifier | Criteria |
+|----------|----------|----------|
+| 1 | RPM_DIP | dRPM/dt < -1200 rpm/s |
+| 2 | BOOST_SURGE | dMAP/dt > 300 kPa/s |
+| 3 | TIP_OUT | dTP/dt < -50%/s |
+| 4 | TIP_IN | dTP/dt > 50%/s |
+
+> Modifiers are orthogonal — they overlay on any MainState, providing transient context without disrupting state machine flow. This replaces the old TRANSIENT main state which would hijack WOT detection.
 
 ### Adaptive Filtering
 
 - **EMA filter**: Per-parameter α (Ethanol 0.05, ECT 0.1, IAT 0.05, L.TRIM 1.0, A/F 0.3, IGN 0.4, S.TRIM 0.2)
-- **Boost asymmetric filter**: Fast attack α=0.6, dynamic release (NORMAL 0.15, TRANSIENT 0.05, DFCO 0.02)
+- **Boost asymmetric filter**: Fast attack α=0.6, dynamic release driven by state confidence (NORMAL 0.15, Modifier 0.05, DFCO 0.02)
 - **A/F adaptive**: WOT/TRANSIENT α=0.7 at 20Hz, NORMAL α=0.3 at 10Hz
 - **IGN adaptive**: WOT/TRANSIENT 20Hz refresh
 - **Ethanol slow filter**: α=0.05, smoothing Flex Fuel sensor noise
@@ -185,7 +215,15 @@ Per-parameter physical limits — out-of-range values are discarded:
 
 ### Confidence System
 
-During TRANSIENT state, A/F and S.TRIM display opacity reduced to 45% to indicate potentially inaccurate readings. L.TRIM excluded (ECU long-term learning value is inherently stable).
+Per-state weighted confidence calculation + low-pass filter (α=0.1, ~200ms inertia). Drives:
+
+| Output | Formula | Effect |
+|--------|---------|--------|
+| A/F alpha | `0.3 + confidence × 0.4` | Continuous modulation (0.3~0.7) based on state certainty |
+| Text opacity | `0.45 + 0.55 × confidence` | Sensitive cards (A/F, S.TRIM) fade when uncertain |
+| Boost release | `0.02 / 0.05 / 0.15` | Three-level automatic switch based on MainState + Modifier |
+
+WOT confidence weights: ClosedLoop 0.35 + TargetLambda 0.25 + MAP 0.25 + RPM 0.15
 
 ### NaN Protection
 
@@ -216,12 +254,13 @@ On disconnect, the data layer restarts from scratch while the UI stays alive (eq
 ```
 app/src/main/java/com/hondata/dash/
 ├── MainActivity.java          # Main UI, data binding, filtering, flash control, emotion engine
-├── ScaleBarView.java          # V3 Dynamics Archetype Engine (4 archetype + emotion rendering)
+├── ScaleBarView.java          # V3 Dynamics Archetype Engine (4 archetype + emotion rendering + peak hold)
 ├── ShiftLightView.java        # 6-LED shift light
 └── data/
     ├── DataSource.java        # Data source interface (Callback)
     ├── BluetoothSource.java   # Bluetooth SPP (FlashPro, V1.4 fullReset auto-reconnect)
-    ├── EngineStateTracker.java # Engine state detection (V1.4: optimized hysteresis timings)
+    ├── EngineSemanticState.java # V2.0 Three-dimensional semantic state (Main+Sub+Modifier+Confidence)
+    ├── EngineStateTracker.java # Engine state detection (V2.0: ECU semantic model)
     ├── HondataProtocol.java   # Protocol parsing + scaling formulas
     ├── SensorData.java        # PID→Double Map
     └── DemoSource.java        # Demo source with 6-phase cycling + EXTREME (V1.2)
@@ -277,6 +316,60 @@ Pure Android Framework API, no third-party libraries:
 - Release APK: **45 KB**
 
 ## Version History
+
+### V2.0 (2026-05-24) — ECU Semantic State Engine + Peak Hold
+
+#### 1. Three-Dimensional Semantic State Model
+
+Replaced `enum State` with `EngineSemanticState` struct containing four orthogonal dimensions:
+
+- **MainState** (ECU strategy layer, mutually exclusive): DFCO / WOT / WARMUP / IDLE / NORMAL
+- **SubState** (operating detail): WOT→SPOOL/PEAK/HOLD, DFCO→ENTER/HOLD
+- **Modifier** (dynamic overlay, orthogonal): TIP_IN / TIP_OUT / BOOST_SURGE / RPM_DIP
+- **Confidence** (0.0~1.0): weighted calculation + low-pass filter
+
+#### 2. WOT Redefined — ECU Strategy-Based Detection
+
+For torque-model ECU (L15B7), throttle position ≠ engine load. WOT now detected by ECU strategy signals:
+
+- `ClosedLoop(0x0340) OFF` + `TargetLambda(0x0322) < 0.95` + `MAP > 120kPa` + `RPM > 1500`
+- Triple AND: Open Loop + Rich command + Boost established
+
+#### 3. New: WARMUP State
+
+Cold-start detection with ECT hysteresis — enter <65°C, exit >72°C + ClosedLoop ON sustained 5s.
+
+#### 4. DFCO Four-Way Lock
+
+Added RPM>1400 to existing TP<2% + Speed>15 + Inj<0.5ms, preventing false triggers at idle recovery edge.
+
+#### 5. TRANSIENT → Modifier
+
+Transient is no longer a main state. It became an orthogonal Modifier that can overlay on any MainState, solving the problem where TRANSIENT would hijack WOT detection.
+
+#### 6. Confidence-Driven Continuous Modulation
+
+Per-state weighted confidence with low-pass filter (α=0.1, ~200ms inertia) drives:
+- A/F alpha: `0.3 + confidence × 0.4` (continuous, not binary)
+- Text opacity: `0.45 + 0.55 × confidence` (gradual fade for sensitive cards)
+- Boost release: three-level automatic switch
+
+#### 7. MECHANICAL Peak Hold
+
+Added bidirectional peak tracking to MECHANICAL archetype (Boost + IGN cards):
+- Boost: peakRetention=0.70 (~3s half-life), drawn as semi-transparent fill + thick marker line
+- IGN: peakRetention=0.85 (~4.6s half-life)
+- A/F envelope decay slowed: 0.55 → 0.80 (half-life 1.2s → 3.1s)
+
+#### 8. Modified Files
+
+| File | Changes |
+|------|---------|
+| `EngineSemanticState.java` | **NEW** — Three-dimensional semantic state struct |
+| `EngineStateTracker.java` | **REWRITTEN** — V2 ECU semantic model with confidence |
+| `ScaleBarView.java` | MECHANICAL archetype: bidirectional peak tracking + peakRetention parameter |
+| `MainActivity.java` | Confidence-driven alpha/opacity/release, `hasModifier()` for fast refresh |
+| `build.gradle` | versionCode 4→5, versionName "1.4"→"2.0" |
 
 ### V1.4 (2026-05-24) — Response Optimization + Bluetooth fullReset
 
@@ -493,7 +586,7 @@ Connection method: reflection ch1 → insecure SPP → standard SPP (triple fall
 - **DFCO handling**: A/F shows "DFCO", S.TRIM/L.TRIM frozen
 - **EMA signal filtering**: Per-parameter α (Ethanol 0.05, ECT/IAT 0.05, A/F 0.3, IGN 0.3)
 - **Adaptive filtering**: A/F WOT/TRANSIENT α=0.7+20Hz, NORMAL α=0.3+10Hz
-- **Boost asymmetric filter**: Fast attack α=0.6, dynamic release (NORMAL 0.15, TRANSIENT 0.05, DFCO 0.02)
+- **Boost asymmetric filter**: Fast attack α=0.6, dynamic release driven by state confidence (NORMAL 0.15, Modifier 0.05, DFCO 0.02)
 - **Range validation**: 8-parameter physical limits + NaN protection
 - **IGN load gating**: Reduced α when TP<3%
 - **Confidence system**: A/F/S.TRIM/L.TRIM opacity 45% during TRANSIENT

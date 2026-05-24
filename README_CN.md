@@ -101,7 +101,7 @@ adb shell am start -n com.hondata.dash/.MainActivity
 |------|------|---------|---------|
 | **STATIC** | Ethanol | 锁定态, 无能量系统 | 纯显示, 无峰值保持 |
 | **THERMAL** | ECT, IAT, L.TRIM | 牛顿冷却定律 (双向独立) | 高温快散低温慢散, Drift Memory Peak |
-| **MECHANICAL** | Boost/MAP, IGN | Spring-Damper 二阶系统 (Euler积分) | 自然过冲+回弹+物理残影 |
+| **MECHANICAL** | Boost/MAP, IGN | Spring-Damper 二阶系统 (Euler积分) + 峰值保持 | 自然过冲+回弹+物理残影+双向峰值追踪 |
 | **TRANSIENT** | A/F, S.TRIM | Oscillation Envelope (双向独立) | 只扩展不收缩, 呼吸包络 |
 
 - 数据条 15dp (V1.2 为 10dp), ScaleBar 总高 42dp
@@ -127,28 +127,58 @@ adb shell am start -n com.hondata.dash/.MainActivity
 - **渐变跟随**: `emotionCurrent` 平滑趋向 `emotionIntensity`, 不突变
 - 三层渲染: 填充色混合 + 指示线变色 + 边缘微弱发光
 
-## 数据处理管线 (V1.3)
+## 数据处理管线 (V2.0)
 
-### 引擎状态检测
+### 引擎状态检测 — 三维语义状态模型
 
-`EngineStateTracker` 带滞回防抖动的优先级状态机，检测 5 种工况：
+`EngineStateTracker` 返回 `EngineSemanticState`，包含四个正交维度：
 
-**优先级**: DFCO > TRANSIENT > WOT > IDLE > NORMAL
+- **MainState** (ECU 策略层，互斥): DFCO / WOT / WARMUP / IDLE / NORMAL
+- **SubState** (工况细节): WOT→SPOOL/PEAK/HOLD, DFCO→ENTER/HOLD, 或 NONE
+- **Modifier** (动态修饰，正交叠加于任意 MainState): TIP_IN / TIP_OUT / BOOST_SURGE / RPM_DIP / NONE
+- **Confidence** (状态可信度 0.0~1.0): 加权计算 + 低通滤波 (α=0.1, ~200ms 惯性)
 
-| 状态 | 判定条件 | 滞回时间 (V1.4) |
+#### MainState 检测
+
+| 状态 | 判定条件 | 滞回时间 |
 |------|---------|---------|
-| DFCO | TP<2%, 车速>15, 喷油<0.5ms | 进入100ms, 退出50ms |
-| TRANSIENT | dTP/dt>50%/s OR dRPM/dt>1200rpm/s OR dMAP/dt>300kPa/s | 40ms |
-| WOT | TP>80% | 进入30ms, 退出80ms |
+| DFCO | TP<2%, 车速>15, 喷油<0.5ms, **RPM>1400** | 进入100ms, 退出50ms |
+| WOT | **ClosedLoop OFF + TargetLambda<0.95 + MAP>120kPa + RPM>1500** | 候选30ms, 维持80ms |
+| WARMUP | ECT<65°C 进入, ECT>72°C + ClosedLoop ON 5s 退出 | 滞回 7°C |
 | IDLE | RPM<1000, TP<2%, 车速<3 | 200ms |
 | NORMAL | 默认 | 50ms |
 
-> TRANSIENT 三重判定（MT 车必备）: 快速松油 / 换挡 RPM 暴跌 / 增压崩溃，任一触发即判定。
+> **WOT 重新定义 (V2.0)**: L15B7 扭矩模型 ECU 下，节气门位置 ≠ 发动机负荷。WOT 改为基于 ECU 策略信号：Open Loop (ClosedLoop OFF) + 富油命令 (TargetLambda<0.95) + 涡轮增压建立 (MAP>120kPa) + RPM 高于阈值。无论节气门位置如何都能正确识别 WOT。
+
+> **WARMUP**: 冷启动检测，ECT 滞回防抖。防止暖机期间的类 WOT 信号被误判。
+
+> **DFCO 四重锁定**: 新增 RPM>1400 条件，防止怠速恢复边缘误触发。
+
+#### SubState 检测
+
+| MainState | SubState | 条件 |
+|-----------|----------|------|
+| WOT | SPOOL | dMAP/dt > 100 kPa/s (增压建立中) |
+| WOT | PEAK | WOT 持续 < 2s |
+| WOT | HOLD | WOT 持续 ≥ 2s |
+| DFCO | ENTER | DFCO 持续 < 200ms |
+| DFCO | HOLD | DFCO 持续 ≥ 200ms |
+
+#### Modifier 检测（优先级顺序）
+
+| 优先级 | Modifier | 条件 |
+|--------|----------|------|
+| 1 | RPM_DIP | dRPM/dt < -1200 rpm/s |
+| 2 | BOOST_SURGE | dMAP/dt > 300 kPa/s |
+| 3 | TIP_OUT | dTP/dt < -50%/s |
+| 4 | TIP_IN | dTP/dt > 50%/s |
+
+> Modifier 是正交的 — 可叠加于任意 MainState，提供瞬态上下文而不干扰状态机流程。这替代了旧的 TRANSIENT 主状态（旧方案中 TRANSIENT 会劫持 WOT 检测）。
 
 ### 自适应滤波
 
 - **EMA 滤波**: 各参数独立 α 系数 (Ethanol 0.05, ECT 0.1, IAT 0.05, L.TRIM 1.0, A/F 0.3, IGN 0.4, S.TRIM 0.2)
-- **Boost 不对称滤波**: 增压快攻击 α=0.6，泄压动态释放（NORMAL 0.15, TRANSIENT 0.05, DFCO 0.02）
+- **Boost 不对称滤波**: 增压快攻击 α=0.6，泄压动态释放（NORMAL 0.15, Modifier 0.05, DFCO 0.02）
 - **A/F 自适应**: WOT/TRANSIENT 时 α=0.7 且 20Hz 刷新，NORMAL 时 α=0.3 且 10Hz
 - **IGN 自适应**: WOT/TRANSIENT 时 20Hz 刷新
 - **Ethanol 慢滤波**: α=0.05，过滤 Flex Fuel 传感器噪声
@@ -168,9 +198,17 @@ adb shell am start -n com.hondata.dash/.MainActivity
 | S.TRIM | -30~30% |
 | L.TRIM | -30~30% |
 
-### 信心系统
+### 置信度系统
 
-TRANSIENT 状态下降低 A/F、S.TRIM 的显示透明度至 45%，提示数据可能不准确。L.TRIM 已排除 (ECU 长期学习值本身极稳定)。
+各状态加权置信度计算 + 低通滤波 (α=0.1, ~200ms 惯性)。驱动：
+
+| 输出 | 公式 | 效果 |
+|------|------|------|
+| A/F alpha | `0.3 + confidence × 0.4` | 基于状态可信度的连续调制 (0.3~0.7) |
+| 文字透明度 | `0.45 + 0.55 × confidence` | 敏感卡片 (A/F, S.TRIM) 在不确定时渐隐 |
+| Boost 释放率 | `0.02 / 0.05 / 0.15` | 三级自动切换，基于 MainState + Modifier |
+
+WOT 置信度权重: ClosedLoop 0.35 + TargetLambda 0.25 + MAP 0.25 + RPM 0.15
 
 ### NaN 保护
 
@@ -201,12 +239,13 @@ EMA 滤波前检查 NaN，防止传感器异常帧污染滤波状态。
 ```
 app/src/main/java/com/hondata/dash/
 ├── MainActivity.java          # 主界面, 数据绑定, 滤波, 闪烁控制, 情绪引擎
-├── ScaleBarView.java          # V3 动力学原型引擎 (4原型+情绪渲染)
+├── ScaleBarView.java          # V3 动力学原型引擎 (4原型+情绪渲染+峰值保持)
 ├── ShiftLightView.java        # 6-LED 转速灯条
 └── data/
     ├── DataSource.java        # 数据源接口 (Callback)
     ├── BluetoothSource.java   # 蓝牙SPP (FlashPro, V1.4 fullReset 自动重连)
-    ├── EngineStateTracker.java # 引擎状态检测 (V1.4: 优化滞回时间)
+    ├── EngineSemanticState.java # V2.0 三维语义状态 (Main+Sub+Modifier+Confidence)
+    ├── EngineStateTracker.java # 引擎状态检测 (V2.0: ECU 语义模型)
     ├── HondataProtocol.java   # Hondata 协议解析+缩放公式
     ├── SensorData.java        # PID→Double Map
     └── DemoSource.java        # 模拟数据源 (V1.2: 6阶段+EXTREME)
@@ -262,6 +301,60 @@ Android 无原生字高缩放，通过 `textSize × scale` + `textScaleX = 1/sca
 - Release APK: **45 KB**
 
 ## 版本历史
+
+### V2.0 (2026-05-24) — ECU 语义状态引擎 + 峰值保持
+
+#### 1. 三维语义状态模型
+
+从 `enum State` 升级为 `EngineSemanticState` 结构体，四个正交维度：
+
+- **MainState** (ECU 策略层，互斥): DFCO / WOT / WARMUP / IDLE / NORMAL
+- **SubState** (工况细节): WOT→SPOOL/PEAK/HOLD, DFCO→ENTER/HOLD
+- **Modifier** (动态修饰，正交叠加): TIP_IN / TIP_OUT / BOOST_SURGE / RPM_DIP
+- **Confidence** (0.0~1.0): 加权计算 + 低通滤波
+
+#### 2. WOT 重新定义 — ECU 策略信号检测
+
+L15B7 扭矩模型 ECU 下，节气门位置 ≠ 发动机负荷。WOT 改为基于 ECU 策略信号：
+
+- `ClosedLoop(0x0340) OFF` + `TargetLambda(0x0322) < 0.95` + `MAP > 120kPa` + `RPM > 1500`
+- 三重 AND：Open Loop + 富油命令 + 涡轮增压建立
+
+#### 3. 新增 WARMUP 暖机状态
+
+冷启动检测，ECT 滞回防抖（进入 <65°C，退出 >72°C + ClosedLoop ON 持续 5s）
+
+#### 4. DFCO 四重锁定
+
+新增 RPM>1400，防止怠速恢复边缘误触发。
+
+#### 5. TRANSIENT → Modifier
+
+瞬态不再是主状态，改为正交 Modifier，可叠加于任意 MainState，解决 TRANSIENT 劫持 WOT 的问题。
+
+#### 6. 置信度连续调制
+
+各状态加权置信度 + 低通滤波 (α=0.1) 驱动：
+- A/F alpha: `0.3 + confidence × 0.4`（连续调制，非二值）
+- 文字透明度: `0.45 + 0.55 × confidence`（敏感卡片渐隐）
+- Boost 释放率: 三级自动切换
+
+#### 7. MECHANICAL 峰值保持
+
+Boost 和 IGN 卡片新增双向峰值追踪：
+- Boost: peakRetention=0.70（半衰期 ~3s），半透明填充 + 粗标记线
+- IGN: peakRetention=0.85（半衰期 ~4.6s）
+- A/F 包络衰减调慢: 0.55 → 0.80（半衰期 1.2s → 3.1s）
+
+#### 8. 修改文件
+
+| 文件 | 变更 |
+|------|------|
+| `EngineSemanticState.java` | **新增** — 三维语义状态结构体 |
+| `EngineStateTracker.java` | **重写** — V2 ECU 语义模型 + 置信度 |
+| `ScaleBarView.java` | MECHANICAL 原型: 双向峰值追踪 + peakRetention 参数 |
+| `MainActivity.java` | 置信度驱动 alpha/透明度/释放率，`hasModifier()` 快速刷新 |
+| `build.gradle` | versionCode 4→5, versionName "1.4"→"2.0" |
 
 ### V1.4 (2026-05-24) — 响应优化 + 蓝牙 fullReset
 
