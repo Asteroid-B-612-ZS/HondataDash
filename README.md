@@ -201,15 +201,15 @@ During deceleration fuel cut-off:
 
 When sensor data is temporarily missing (Bluetooth dropout), displays the last valid value at 40% opacity instead of "--".
 
-### Bluetooth Auto-Reconnect (V1.3 Full Rebuild)
+### Bluetooth Auto-Reconnect (V1.4 fullReset)
 
-Full rebuild strategy (identical to restarting the app):
-1. Close old socket completely (prevent Bluetooth stack residue)
-2. Create new `HondataProtocol` instance (clear all protocol state)
-3. First reconnect attempt: zero delay (same as app restart)
-4. Subsequent failures: exponential backoff (1s→2s→4s→8s)
-5. Full handshake sequence: ignition detection (10 retries) → init → sensor definitions
-6. Automatic resume of data polling on success
+On disconnect, the data layer restarts from scratch while the UI stays alive (equivalent to restarting the app without closing the screen):
+1. **Kill old thread** — completely stop pollThread + close Socket/Streams
+2. **Wait for BT stack** — 1s delay for RFCOMM channel release (V1.3 reconnect failed because the Bluetooth stack still held the old connection)
+3. **Create new thread** — fresh connection attempt from scratch (identical to app startup)
+4. **Full handshake** — ignition detection → init → sensor definitions
+5. **Auto-resume** — start polling automatically on success
+6. **Exponential backoff** — 1s→2s→4s→8s on repeated failures
 
 ## File Structure
 
@@ -220,8 +220,8 @@ app/src/main/java/com/hondata/dash/
 ├── ShiftLightView.java        # 6-LED shift light
 └── data/
     ├── DataSource.java        # Data source interface (Callback)
-    ├── BluetoothSource.java   # Bluetooth SPP (FlashPro, V1.3 full-rebuild auto-reconnect)
-    ├── EngineStateTracker.java # Engine state detection (V1.2: multi-condition transient + hysteresis)
+    ├── BluetoothSource.java   # Bluetooth SPP (FlashPro, V1.4 fullReset auto-reconnect)
+    ├── EngineStateTracker.java # Engine state detection (V1.4: optimized hysteresis timings)
     ├── HondataProtocol.java   # Protocol parsing + scaling formulas
     ├── SensorData.java        # PID→Double Map
     └── DemoSource.java        # Demo source with 6-phase cycling + EXTREME (V1.2)
@@ -277,6 +277,86 @@ Pure Android Framework API, no third-party libraries:
 - Release APK: **45 KB**
 
 ## Version History
+
+### V1.4 (2026-05-24) — Response Optimization + Bluetooth fullReset
+
+Real-car testing identified three issues: sluggish state transitions during aggressive driving, delayed data recovery after DFCO exit, and bluetooth auto-reconnect not working at all.
+
+#### 1. Hysteresis Optimization (EngineStateTracker.java)
+
+V1.3 hysteresis timings caused a perceived delay of 600~1000ms during aggressive driving state transitions (e.g., DFCO→WOT when quickly getting back on throttle). The root cause was DFCO EXIT hysteresis at 300ms — when TP goes from 0% to 80%+, there's zero ambiguity, so the long hysteresis was unnecessary.
+
+V1.4 reduces all timings based on real-car data analysis:
+
+| Transition | V1.3 | V1.4 | Reduction | Reasoning |
+|------------|------|------|-----------|-----------|
+| DFCO ENTER | 200ms | **100ms** | -50% | TP<2% + Inj<0.5ms + Speed>15 triple condition is unambiguous |
+| DFCO EXIT | 300ms | **50ms** | -83% | TP recovering >2% is unambiguous, 50ms is just debounce |
+| WOT ENTER | 100ms | **30ms** | -70% | TP>80% is zero-ambiguity |
+| WOT EXIT | 200ms | **80ms** | -60% | Moderately reduced |
+| IDLE ENTER | 300ms | **200ms** | -33% | Slightly reduced |
+| TRANSIENT | 80ms | **40ms** | -50% | Faster transient capture |
+| DEFAULT | 100ms | **50ms** | -50% | Faster general transitions |
+
+**Worst-case DFCO→WOT latency** reduced from ~600-1000ms to ~80-130ms (DFCO EXIT 50ms + WOT ENTER 30ms + Rate Limit bypass).
+
+#### 2. Instant State-Change Response (MainActivity.java)
+
+Two additional optimizations beyond hysteresis reduction:
+
+**a) DFCO exit resets ALL filters + skips Rate Limit:**
+
+V1.3 only reset filters for A/F/IGN/S.TRIM on DFCO exit. V1.4 extends this to Boost (card 4) as well — during DFCO, Boost asymmetric filter uses release=0.02 (extremely slow), so even after exiting DFCO the displayed Boost value was stuck. V1.4 resets the Boost filter state on DFCO exit, allowing immediate display of the actual value.
+
+Additionally, all cards skip Rate Limit on DFCO exit (`lastUpdateTime[i] = 0`), forcing an immediate display refresh rather than waiting for the next Rate Limit interval.
+
+**b) Before V1.4 delay chain (DFCO→WOT):**
+```
+t=0     Throttle applied
+t=300ms DFCO EXIT hysteresis satisfied
+t=400ms WOT ENTER hysteresis satisfied
+t=500ms Rate Limit interval elapsed
+t=600ms First real value displayed (Boost EMA climbing)
+```
+
+**After V1.4:**
+```
+t=0     Throttle applied
+t=50ms  DFCO EXIT hysteresis satisfied, filters reset, Rate Limit bypassed
+t=80ms  WOT ENTER hysteresis satisfied
+t=80ms  First real value displayed immediately (no filter lag)
+```
+
+#### 3. Bluetooth fullReset Reconnect (BluetoothSource.java)
+
+V1.3's autoReconnect failed in practice — only restarting the app restored the connection. Root cause: reconnection was attempted within the same poll thread, and the Android Bluetooth stack didn't fully release the RFCOMM channel before the new connection attempt.
+
+V1.4 replaces the in-loop reconnect with a **fullReset** strategy:
+
+| Step | V1.3 autoReconnect | V1.4 fullReset |
+|------|--------------------|----------------|
+| Thread | Same pollThread | **New thread**, old thread fully destroyed |
+| BT stack | No cleanup wait | **1s wait** for RFCOMM channel release |
+| Protocol | New instance | New instance (same) |
+| Reconnect | Within polling loop | **Separate reset thread**, polling loop exits on disconnect |
+| UI | Stays alive | Stays alive (same) |
+
+Flow on disconnect:
+1. `IOException` in polling loop → set `connected = false`
+2. Notify UI `onDisconnected()`
+3. Exit polling loop (V1.3 continued in same loop)
+4. Trigger `fullReset()` from UI thread
+5. `fullReset()`: kill old thread → close socket → **wait 1s for BT stack** → new Protocol → new connection thread
+6. On success: auto-start polling from fresh state
+
+#### 4. Modified Files
+
+| File | Changes |
+|------|---------|
+| `EngineStateTracker.java` | All 7 hysteresis timings reduced (DFCO EXIT 300→50ms, WOT ENTER 100→30ms, etc.) |
+| `MainActivity.java` | DFCO exit resets Boost filter + skips Rate Limit for all cards |
+| `BluetoothSource.java` | fullReset reconnect (new thread, BT stack cleanup, fresh connection) |
+| `build.gradle` | versionCode 3→4, versionName "1.3"→"1.4" |
 
 ### V1.3 (2026-05-22) — Dynamics Archetype Engine + UI Polish
 
