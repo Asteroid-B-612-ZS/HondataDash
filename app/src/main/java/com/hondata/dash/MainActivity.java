@@ -600,8 +600,10 @@ public class MainActivity extends Activity implements DataSource.Callback {
                         }
 
                         // DFCO 退出即时恢复: 重置滤波器, 踩油门立刻显示正确值
-                        if (dfcoJustEnded && (i == 5 || i == 6 || i == 7)) {
+                        // V1.4: Boost 也重置 (DFCO 期间 release=0.02 极慢, 退出后需立即追上)
+                        if (dfcoJustEnded) {
                             hasFiltered[i] = false;
+                            lastUpdateTime[i] = 0; // 跳过 Rate Limit, 立即刷新显示
                         }
 
                         // 自适应参数: 根据引擎工况动态调整滤波和刷新率
