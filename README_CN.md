@@ -135,13 +135,13 @@ adb shell am start -n com.hondata.dash/.MainActivity
 
 **优先级**: DFCO > TRANSIENT > WOT > IDLE > NORMAL
 
-| 状态 | 判定条件 | 滞回时间 |
+| 状态 | 判定条件 | 滞回时间 (V1.4) |
 |------|---------|---------|
-| DFCO | TP<2%, 车速>15, 喷油<0.5ms | 进入200ms, 退出300ms |
-| TRANSIENT | dTP/dt>50%/s OR dRPM/dt>1200rpm/s OR dMAP/dt>300kPa/s | 80ms |
-| WOT | TP>80% | 进入100ms, 退出200ms |
-| IDLE | RPM<1000, TP<2%, 车速<3 | 300ms |
-| NORMAL | 默认 | 100ms |
+| DFCO | TP<2%, 车速>15, 喷油<0.5ms | 进入100ms, 退出50ms |
+| TRANSIENT | dTP/dt>50%/s OR dRPM/dt>1200rpm/s OR dMAP/dt>300kPa/s | 40ms |
+| WOT | TP>80% | 进入30ms, 退出80ms |
+| IDLE | RPM<1000, TP<2%, 车速<3 | 200ms |
+| NORMAL | 默认 | 50ms |
 
 > TRANSIENT 三重判定（MT 车必备）: 快速松油 / 换挡 RPM 暴跌 / 增压崩溃，任一触发即判定。
 
@@ -186,15 +186,15 @@ EMA 滤波前检查 NaN，防止传感器异常帧污染滤波状态。
 
 蓝牙丢包时保留最后有效值，以 40% 透明度显示，而非直接显示 "--"。
 
-### 蓝牙自动重连 (V1.3 完全重建)
+### 蓝牙自动重连 (V1.4 fullReset)
 
-完全重建策略 (和重启 App 完全一致):
-1. 彻底关闭旧连接 (Socket + Stream)
-2. 新建 `HondataProtocol` 实例 (清零所有协议状态)
-3. 首次重连无延迟 (和重启 App 一样立即尝试)
-4. 后续失败: 指数退避 (1s→2s→4s→8s)
-5. 完整握手: 点火检测(10次) → INIT → 传感器定义
-6. 成功后自动恢复数据采集
+断线后数据层完全重启，UI 不退出 (等同重启 App 的数据层而不关闭界面):
+1. **销毁旧线程** — 完全停止 pollThread + 关闭 Socket/Stream
+2. **等待蓝牙栈** — 1s 等待 RFCOMM channel 释放 (V1.3 失败的原因：蓝牙栈仍持有旧连接)
+3. **新建线程** — 从零连接 (等同 App 启动流程)
+4. **完整握手** — 点火检测 → INIT → 传感器定义
+5. **自动恢复** — 成功后自动开始数据轮询
+6. **指数退避** — 反复失败时 1s→2s→4s→8s
 
 ## 文件结构
 
@@ -205,8 +205,8 @@ app/src/main/java/com/hondata/dash/
 ├── ShiftLightView.java        # 6-LED 转速灯条
 └── data/
     ├── DataSource.java        # 数据源接口 (Callback)
-    ├── BluetoothSource.java   # 蓝牙SPP (FlashPro, V1.3 完全重建式自动重连)
-    ├── EngineStateTracker.java # 引擎状态检测 (V1.2: 多条件瞬态+滞回)
+    ├── BluetoothSource.java   # 蓝牙SPP (FlashPro, V1.4 fullReset 自动重连)
+    ├── EngineStateTracker.java # 引擎状态检测 (V1.4: 优化滞回时间)
     ├── HondataProtocol.java   # Hondata 协议解析+缩放公式
     ├── SensorData.java        # PID→Double Map
     └── DemoSource.java        # 模拟数据源 (V1.2: 6阶段+EXTREME)
@@ -262,6 +262,86 @@ Android 无原生字高缩放，通过 `textSize × scale` + `textScaleX = 1/sca
 - Release APK: **45 KB**
 
 ## 版本历史
+
+### V1.4 (2026-05-24) — 响应优化 + 蓝牙 fullReset
+
+实车测试发现三个问题：激烈驾驶时状态切换迟钝、DFCO 退出后数据恢复慢、蓝牙断线后自动重连完全无效。
+
+#### 1. 滞回时间优化 (EngineStateTracker.java)
+
+V1.3 的滞回时间导致激烈驾驶时感知延迟 600~1000ms（例如 DFCO→WOT 快速补油场景）。根本原因是 DFCO EXIT 滞回 300ms——当 TP 从 0% 跳到 80%+，信号完全无歧义，300ms 的防抖毫无必要。
+
+V1.4 基于实车数据分析全面缩短：
+
+| 转换 | V1.3 | V1.4 | 降幅 | 理由 |
+|------|------|------|------|------|
+| DFCO 进入 | 200ms | **100ms** | -50% | TP<2%+Inj<0.5ms+车速>15 三重条件明确 |
+| DFCO 退出 | 300ms | **50ms** | -83% | TP 恢复 >2% 无歧义，50ms 仅防抖 |
+| WOT 进入 | 100ms | **30ms** | -70% | TP>80% 完全无歧义 |
+| WOT 退出 | 200ms | **80ms** | -60% | 适度缩短 |
+| IDLE 进入 | 300ms | **200ms** | -33% | 稍微缩短 |
+| TRANSIENT | 80ms | **40ms** | -50% | 快速捕捉瞬态 |
+| 默认 | 100ms | **50ms** | -50% | 缩短通用滞回 |
+
+**DFCO→WOT 最坏情况延迟** 从 ~600-1000ms 降低到 ~80-130ms (DFCO EXIT 50ms + WOT ENTER 30ms + Rate Limit 旁路)。
+
+#### 2. 状态切换即时响应 (MainActivity.java)
+
+除缩短滞回外，两项额外优化：
+
+**a) DFCO 退出重置所有滤波器 + 跳过 Rate Limit：**
+
+V1.3 仅重置 A/F/IGN/S.TRIM 的滤波器。V1.4 扩展到 Boost (card 4)——DFCO 期间 Boost 不对称滤波的 release=0.02（极慢衰减），退出后 Boost 显示值卡住不动。V1.4 重置 Boost 滤波状态，立即显示真实值。
+
+同时所有卡片在 DFCO 退出时跳过 Rate Limit（`lastUpdateTime[i] = 0`），强制立即刷新显示，而非等待下一个 Rate Limit 周期。
+
+**b) 优化前后延迟对比 (DFCO→WOT)：**
+
+```
+V1.3:
+t=0     踩油门
+t=300ms DFCO EXIT 滞回满足
+t=400ms WOT ENTER 滞回满足
+t=500ms Rate Limit 间隔到达
+t=600ms 第一个真实值显示 (Boost EMA 缓慢爬升)
+
+V1.4:
+t=0     踩油门
+t=50ms  DFCO EXIT 滞回满足，滤波器重置，Rate Limit 旁路
+t=80ms  WOT ENTER 滞回满足
+t=80ms  第一个真实值立即显示 (无滤波延迟)
+```
+
+#### 3. 蓝牙 fullReset 重连 (BluetoothSource.java)
+
+V1.3 的 autoReconnect 实际无效——只有重启 App 才能恢复连接。根因：重连在同一个 pollThread 内执行，Android 蓝牙栈没有完全释放 RFCOMM channel 就开始新连接。
+
+V1.4 用 **fullReset** 替代循环内重连：
+
+| 步骤 | V1.3 autoReconnect | V1.4 fullReset |
+|------|--------------------|----------------|
+| 线程 | 同一个 pollThread | **新线程**，旧线程完全销毁 |
+| 蓝牙栈 | 无清理等待 | **等待 1s** 让 RFCOMM channel 释放 |
+| Protocol | 新实例 | 新实例 (相同) |
+| 重连 | 在轮询循环内 | **独立重置线程**，轮询循环退出 |
+| UI | 保持 | 保持 (相同) |
+
+断线流程：
+1. 轮询循环中 `IOException` → `connected = false`
+2. 通知 UI `onDisconnected()`
+3. 退出轮询循环 (V1.3 继续在循环内)
+4. 从 UI 线程触发 `fullReset()`
+5. `fullReset()`: 销毁旧线程 → 关闭 Socket → **等待 1s 蓝牙栈清理** → 新 Protocol → 新连接线程
+6. 成功后自动开始轮询
+
+#### 4. 修改文件
+
+| 文件 | 变更 |
+|------|------|
+| `EngineStateTracker.java` | 7 项滞回时间全部缩短 (DFCO EXIT 300→50ms, WOT ENTER 100→30ms 等) |
+| `MainActivity.java` | DFCO 退出重置 Boost 滤波器 + 跳过所有卡片 Rate Limit |
+| `BluetoothSource.java` | fullReset 重连 (新线程, 蓝牙栈清理等待, 全新连接) |
+| `build.gradle` | versionCode 3→4, versionName "1.3"→"1.4" |
 
 ### V1.3 (2026-05-22) — 动力学原型引擎 + UI 精调
 
