@@ -14,14 +14,15 @@ import java.lang.reflect.Method;
 import java.util.UUID;
 
 /**
- * 蓝牙 SPP 数据源 — 带自动重连。
+ * 蓝牙 SPP 数据源 — V1.4 fullReset 重连策略。
  * 连接 Hondata FlashPro (MAC 硬编码)，断线后自动重连。
  *
- * 重连策略: 完全重建 (和重启 App 一致)
+ * 重连策略: fullReset (等同重启 App 数据层，UI 不退出)
+ * - 完全停止旧 pollThread + 关闭 Socket
+ * - 等待蓝牙栈释放 RFCOMM channel (1s)
  * - 新建 HondataProtocol (清零所有协议状态)
- * - 完全关闭旧 Socket (防止 Bluetooth 栈残留)
- * - 首次重连无延迟 (和重启 App 一样立即尝试)
- * - 后续重连指数退避
+ * - 全新线程从零连接 (等同 App 启动流程)
+ * - 首次重连 1s 后尝试，后续指数退避
  */
 public class BluetoothSource implements DataSource {
 
@@ -31,6 +32,7 @@ public class BluetoothSource implements DataSource {
     private static final int READ_TIMEOUT_MS = 3000;
     private static final int RECONNECT_BASE_MS = 1000;
     private static final int RECONNECT_MAX_MS = 8000;
+    private static final int BT_STACK_CLEANUP_MS = 1000; // 蓝牙栈释放 channel 等待时间
 
     // FlashPro MAC 地址 (硬编码)
     public static final String FLASHPRO_MAC = "XX:XX:XX:XX:XX:XX"; // 替换为你的 FlashPro MAC
@@ -47,6 +49,7 @@ public class BluetoothSource implements DataSource {
     private volatile boolean running;
     private volatile boolean connected;
     private volatile boolean intentionalDisconnect;
+    private volatile boolean reconnecting; // V1.4: 标记重连中，防止重复触发
 
     public BluetoothSource() {
         protocol = new HondataProtocol();
@@ -60,12 +63,143 @@ public class BluetoothSource implements DataSource {
     @Override
     public void connect(final String address) {
         intentionalDisconnect = false;
+        reconnecting = false;
         new Thread(new Runnable() {
             @Override
             public void run() {
                 doConnect();
             }
         }).start();
+    }
+
+    /**
+     * V1.4: fullReset — 断线后自动重连 (等同重启 App 数据层)
+     *
+     * 与 V1.3 autoReconnect 的区别:
+     * 1. 完全销毁旧 pollThread (而非在同一线程内重连)
+     * 2. 等待蓝牙栈释放 RFCOMM channel (1s)
+     * 3. 全新线程执行连接 (等同 App 启动)
+     *
+     * 由 UI Handler 延迟 1s 后调用，期间显示 "重连中..."
+     */
+    public void fullReset() {
+        if (reconnecting || intentionalDisconnect) return;
+        reconnecting = true;
+
+        Log.i(TAG, "fullReset: 开始重建数据层...");
+
+        // 1. 完全停止旧线程
+        running = false;
+        if (pollThread != null) {
+            pollThread.interrupt();
+            pollThread = null;
+        }
+
+        // 2. 关闭所有连接
+        closeSocket();
+        connected = false;
+
+        // 3. 在后台线程执行: 等待蓝牙栈清理 → 重新连接
+        Thread resetThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    // 等待蓝牙栈释放 RFCOMM channel
+                    Log.i(TAG, "fullReset: 等待蓝牙栈清理 (" + BT_STACK_CLEANUP_MS + "ms)...");
+                    Thread.sleep(BT_STACK_CLEANUP_MS);
+
+                    if (intentionalDisconnect) {
+                        Log.i(TAG, "fullReset: 用户主动断开，取消重连");
+                        reconnecting = false;
+                        return;
+                    }
+
+                    // 重建 Protocol
+                    protocol = new HondataProtocol();
+                    Log.i(TAG, "fullReset: Protocol 已重建");
+
+                    // 通知 UI
+                    uiHandler.post(new Runnable() {
+                        @Override public void run() {
+                            if (callback != null) callback.onError("重连中...");
+                        }
+                    });
+
+                    // 全新连接 (等同 App 启动)
+                    doConnect();
+
+                    if (connected) {
+                        Log.i(TAG, "fullReset: 重连成功!");
+                        reconnecting = false;
+                        // 自动开始轮询
+                        startPolling();
+                    } else {
+                        Log.w(TAG, "fullReset: 首次重连失败，开始指数退避...");
+                        reconnectWithBackoff(RECONNECT_BASE_MS);
+                    }
+                } catch (InterruptedException e) {
+                    Log.i(TAG, "fullReset: 被中断，取消重连");
+                    reconnecting = false;
+                }
+            }
+        });
+        resetThread.setDaemon(true);
+        resetThread.start();
+    }
+
+    /**
+     * 指数退避重连 (仅在 fullReset 首次失败后使用)
+     */
+    private void reconnectWithBackoff(int delay) {
+        while (running || !intentionalDisconnect) {
+            if (intentionalDisconnect) {
+                reconnecting = false;
+                return;
+            }
+
+            try {
+                Log.i(TAG, "重连失败, " + (delay / 1000) + "s 后重试...");
+                Thread.sleep(delay);
+            } catch (InterruptedException e) {
+                reconnecting = false;
+                return;
+            }
+
+            if (intentionalDisconnect) {
+                reconnecting = false;
+                return;
+            }
+
+            // 关闭残留连接
+            closeSocket();
+            connected = false;
+            protocol = new HondataProtocol();
+
+            // 通知 UI
+            uiHandler.post(new Runnable() {
+                @Override public void run() {
+                    if (callback != null) callback.onError("重连中...");
+                }
+            });
+
+            try {
+                Log.i(TAG, "开始重连 (指数退避)...");
+                doConnect();
+
+                if (connected) {
+                    Log.i(TAG, "重连成功!");
+                    reconnecting = false;
+                    startPolling();
+                    return;
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "重连异常: " + e.getMessage());
+            }
+
+            // 指数退避: 1s → 2s → 4s → 8s
+            delay = Math.min(delay * 2, RECONNECT_MAX_MS);
+        }
+        reconnecting = false;
     }
 
     /**
@@ -206,7 +340,7 @@ public class BluetoothSource implements DataSource {
         return true;
     }
 
-    // === 轮询 (带自动重连) ===
+    // === 轮询 (V1.4: 断线触发 fullReset 而非内循环重连) ===
 
     @Override
     public void startPolling() {
@@ -221,8 +355,6 @@ public class BluetoothSource implements DataSource {
                     postError("数据帧长度无效");
                     return;
                 }
-
-                int reconnectDelay = RECONNECT_BASE_MS;
 
                 while (running && !intentionalDisconnect) {
                     try {
@@ -242,9 +374,6 @@ public class BluetoothSource implements DataSource {
                             Thread.sleep(POLL_INTERVAL_MS);
                         }
 
-                        // 连接正常, 重置重连间隔
-                        reconnectDelay = RECONNECT_BASE_MS;
-
                     } catch (IOException e) {
                         Log.w(TAG, "数据读取异常: " + e.getMessage());
                         connected = false;
@@ -258,87 +387,27 @@ public class BluetoothSource implements DataSource {
 
                         if (intentionalDisconnect) break;
 
-                        // 自动重连 (完全重建, 和重启 App 一致)
-                        reconnectDelay = autoReconnect(reconnectDelay);
-                        if (reconnectDelay < 0) break; // 重连失败且已停止
-
-                        // 重连成功, 重新获取帧长度
-                        dataLen = protocol.getExpectedLength(0x35);
-                        if (dataLen <= 0) {
-                            postError("重连后帧长度无效");
-                            break;
-                        }
+                        // V1.4: 退出轮询循环，由 fullReset 接管
+                        Log.i(TAG, "断线检测，退出轮询，触发 fullReset");
+                        break;
 
                     } catch (InterruptedException e) {
                         break;
                     }
                 }
+
+                // 轮询退出后触发 fullReset (非主动断线时)
+                if (!intentionalDisconnect && !reconnecting) {
+                    uiHandler.post(new Runnable() {
+                        @Override public void run() {
+                            fullReset();
+                        }
+                    });
+                }
             }
         });
         pollThread.setDaemon(true);
         pollThread.start();
-    }
-
-    /**
-     * 自动重连: 完全重建 (和重启 App 完全一致)
-     *
-     * 1. 彻底关闭旧连接 (Socket + Stream + Protocol)
-     * 2. 新建 HondataProtocol (清零所有协议状态)
-     * 3. 首次无延迟立即尝试 (和重启 App 一样)
-     * 4. 后续失败指数退避
-     *
-     * @param currentDelay 当前退避间隔
-     * @return 新的退避间隔, -1 表示停止
-     */
-    private int autoReconnect(int currentDelay) {
-        boolean firstAttempt = true;
-
-        while (running && !intentionalDisconnect) {
-
-            // 1. 彻底关闭旧连接
-            closeSocket();
-
-            // 2. 新建 Protocol (清零所有状态 — 和重启 App 一样)
-            protocol = new HondataProtocol();
-            Log.i(TAG, "Protocol 已重建");
-
-            // 3. 首次重连无延迟 (和重启 App 一样立即尝试)
-            if (!firstAttempt) {
-                Log.i(TAG, "重连失败, " + (currentDelay / 1000) + "s 后重试...");
-                try {
-                    Thread.sleep(currentDelay);
-                } catch (InterruptedException e) {
-                    return -1;
-                }
-            }
-            firstAttempt = false;
-
-            if (!running || intentionalDisconnect) return -1;
-
-            // 4. 通知 UI 重连中
-            uiHandler.post(new Runnable() {
-                @Override public void run() {
-                    if (callback != null) callback.onError("重连中...");
-                }
-            });
-
-            // 5. 尝试连接 (全新 Protocol + 全新 Socket)
-            try {
-                Log.i(TAG, "开始重连 (完全重建)...");
-                doConnect();
-
-                if (connected) {
-                    Log.i(TAG, "重连成功!");
-                    return RECONNECT_BASE_MS;
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "重连失败: " + e.getMessage());
-            }
-
-            // 指数退避
-            currentDelay = Math.min(currentDelay * 2, RECONNECT_MAX_MS);
-        }
-        return -1;
     }
 
     @Override
@@ -355,6 +424,7 @@ public class BluetoothSource implements DataSource {
         intentionalDisconnect = true;
         running = false;
         connected = false;
+        reconnecting = false;
 
         if (pollThread != null) {
             pollThread.interrupt();
