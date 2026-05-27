@@ -205,7 +205,7 @@ adb shell am start -n com.hondata.dash/.MainActivity
 | 输出 | 公式 | 效果 |
 |------|------|------|
 | A/F alpha | `0.3 + confidence × 0.4` | 基于状态可信度的连续调制 (0.3~0.7) |
-| 文字透明度 | `0.45 + 0.55 × confidence` | 敏感卡片 (A/F, S.TRIM) 在不确定时渐隐 |
+| 文字透明度 | `0.45 + 0.55 × confidence` | 敏感卡片 (A/F, IGN, S.TRIM) 在不确定时渐隐 |
 | Boost 释放率 | `0.02 / 0.05 / 0.15` | 三级自动切换，基于 MainState + Modifier |
 
 WOT 置信度权重: ClosedLoop 0.35 + TargetLambda 0.25 + MAP 0.25 + RPM 0.15
@@ -217,8 +217,8 @@ EMA 滤波前检查 NaN，防止传感器异常帧污染滤波状态。
 ### DFCO 处理
 
 减速断油期间：
-- A/F 显示灰色 "DFCO"（断油时 Lambda 读到的是空气，无意义）
-- S.TRIM 和 L.TRIM 冻结在最后有效值
+- A/F、IGN、S.TRIM 显示灰色 "DFCO"，退出过渡完全同步（同步进入/退出，相同 alpha 恢复）
+- L.TRIM 冻结在最后有效值（变化极慢，无需特殊处理）
 
 ### Last-Valid 缓存
 
@@ -298,7 +298,7 @@ Android 无原生字高缩放，通过 `textSize × scale` + `textScaleX = 1/sca
 
 纯 Android Framework API，无第三方库:
 - 无 `androidx` / 无 Kotlin / 无 `.so` 原生库
-- Release APK: **64 KB**
+- Release APK: **45 KB**
 
 ## 版本历史
 
@@ -320,12 +320,17 @@ V2.0 的 MAX/MIN 追踪器是裸记录器——任何工况的值都无条件写
 
 用 2026-05-27 真实驾驶 LOG（E26, 27% 乙醇, 24℃）替代合成正弦波。五段顺序播放：IDLE(5s) → NORMAL(8s) → WOT(12s) → DFCO(8s) → ACCEL(15s)，后接 EXTREME 合成扫描(9s)。Demo 模式现在正确触发 V2.0 WOT 检测（提供了旧 DemoSource 没有的 `ClosedLoop` + `TargetLambda` PID）。
 
-#### 4. 修改文件
+#### 4. DFCO 退出过渡同步
+
+V2.0 仅对 A/F 和 S.TRIM 在 DFCO 退出时应用置信度驱动的渐进 alpha 恢复（textAlpha）。IGN 瞬间恢复全亮，视觉上不同步。V2.1 将 textAlpha 扩展到所有三个 DFCO 卡片（A/F、IGN、S.TRIM），确保过渡完全同步。
+
+#### 5. 修改文件
 
 | 文件 | 变更 |
 |------|------|
-| `MainActivity.java` | History Admission (3 层机制) + Recent Peak + 状态关联冷却 + DFCO 退出追踪, 约 100 行 |
+| `MainActivity.java` | History Admission (3 层机制) + Recent Peak + 状态关联冷却 + DFCO 退出追踪 + DFCO 过渡同步, 约 100 行 |
 | `DemoSource.java` | **重写** — 真实 LOG 数据回放, 5 段关键帧 + 线性插值 |
+| `proguard-rules.pro` | 精准逐类 keep 规则（排除 DemoSource 不进入正式版） |
 | `build.gradle` | versionCode 5→6, versionName "2.0"→"2.1" |
 
 ### V2.0 (2026-05-24) — ECU 语义状态引擎 + 峰值保持

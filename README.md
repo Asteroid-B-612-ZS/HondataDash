@@ -220,7 +220,7 @@ Per-state weighted confidence calculation + low-pass filter (α=0.1, ~200ms iner
 | Output | Formula | Effect |
 |--------|---------|--------|
 | A/F alpha | `0.3 + confidence × 0.4` | Continuous modulation (0.3~0.7) based on state certainty |
-| Text opacity | `0.45 + 0.55 × confidence` | Sensitive cards (A/F, S.TRIM) fade when uncertain |
+| Text opacity | `0.45 + 0.55 × confidence` | Sensitive cards (A/F, IGN, S.TRIM) fade when uncertain |
 | Boost release | `0.02 / 0.05 / 0.15` | Three-level automatic switch based on MainState + Modifier |
 
 WOT confidence weights: ClosedLoop 0.35 + TargetLambda 0.25 + MAP 0.25 + RPM 0.15
@@ -232,8 +232,8 @@ NaN check before EMA filtering prevents sensor anomaly frames from contaminating
 ### DFCO Handling
 
 During deceleration fuel cut-off:
-- A/F displays "DFCO" in gray (Lambda reads air when injectors off)
-- S.TRIM and L.TRIM frozen at last valid value
+- A/F, IGN, S.TRIM display "DFCO" in gray with synchronized transition (enter/exit together, identical alpha recovery)
+- L.TRIM frozen at last valid value (changes too slowly to matter)
 
 ### Last-Valid Cache
 
@@ -313,7 +313,7 @@ Three-layer defense for car head units:
 
 Pure Android Framework API, no third-party libraries:
 - No `androidx` / No Kotlin / No `.so` native libs
-- Release APK: **64 KB**
+- Release APK: **45 KB**
 
 ## Version History
 
@@ -335,12 +335,17 @@ Displayed MAX/MIN now auto-decay toward current value after 30 seconds without a
 
 Replaced synthetic sine-wave DemoSource with real driving data extracted from a 2026-05-27 Hondata FlashPro LOG (E26, 27% ethanol, 24°C). Five segments play sequentially: IDLE(5s) → NORMAL(8s) → WOT(12s) → DFCO(8s) → ACCEL(15s), followed by EXTREME synthetic sweep (9s) for ScaleBar range testing. Demo mode now correctly triggers V2.0 WOT detection (provides `ClosedLoop` + `TargetLambda` PIDs that the old DemoSource didn't).
 
-#### 4. Modified Files
+#### 4. DFCO Exit Transition Sync
+
+V2.0 only applied confidence-driven gradual alpha recovery (textAlpha) to A/F and S.TRIM on DFCO exit. IGN jumped to full brightness instantly, creating a visible desync. V2.1 extends textAlpha to all three DFCO cards (A/F, IGN, S.TRIM) so they transition in unison.
+
+#### 5. Modified Files
 
 | File | Changes |
 |------|---------|
-| `MainActivity.java` | History Admission (3 mechanisms) + Recent Peak + State-linked Cooldown + DFCO exit tracking, ~100 lines |
+| `MainActivity.java` | History Admission (3 mechanisms) + Recent Peak + State-linked Cooldown + DFCO exit tracking + DFCO transition sync, ~100 lines |
 | `DemoSource.java` | **REWRITTEN** — Real LOG data playback with 5 segments + linear interpolation |
+| `proguard-rules.pro` | Precise per-class keep rules (exclude DemoSource from release) |
 | `build.gradle` | versionCode 5→6, versionName "2.0"→"2.1" |
 
 ### V2.0 (2026-05-24) — ECU Semantic State Engine + Peak Hold

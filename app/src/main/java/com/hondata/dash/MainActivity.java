@@ -875,8 +875,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                 }
                             }
 
-                            // P3: V2 置信度驱动透明度 — A/F, S.TRIM 连续调制
-                            if (i == 5 || i == 7) {
+                            // P3: V2 置信度驱动透明度 — A/F, IGN, S.TRIM 同步调制
+                            if (i == 5 || i == 6 || i == 7) {
                                 float alpha = state.textAlpha(true);
                                 valueIntViews[i].setAlpha(alpha);
                                 if (valueDecViews[i] != null) valueDecViews[i].setAlpha(alpha);
