@@ -54,9 +54,51 @@ public class MainActivity extends Activity implements DataSource.Callback {
     // MAX / MIN 追踪
     private final TextView[] maxValueViews = new TextView[8];
     private final TextView[] minValueViews = new TextView[8];
-    private final float[] maxTrack = new float[8];
+    private final float[] maxTrack = new float[8];      // Session Peak (内部)
     private final float[] minTrack = new float[8];
+    private final float[] recentMax = new float[8];     // Recent Peak (显示用, 30s衰减)
+    private final float[] recentMin = new float[8];
+    private final long[] lastMaxTime = new long[8];     // Cooldown 时间戳
+    private final long[] lastMinTime = new long[8];
+    private final long[] recentMaxTime = new long[8];   // Recent Peak 记录时间
+    private final long[] recentMinTime = new long[8];
     private final boolean[] hasValue = new boolean[8];
+
+    // History Admission 参数表: [MAX cooldown, MIN cooldown] (ms)
+    private static final long[][] COOLDOWN_MS = {
+        {3000, 3000},  // 0 Ethanol
+        {2000, 2000},  // 1 ECT
+        {1500, 1500},  // 2 IAT
+        {3000, 3000},  // 3 L.TRIM
+        {500,  1500},  // 4 Boost (MIN=真空, 低优先级)
+        {300,  600},   // 5 A/F (MAX=Lean危险→快, MIN=Rich保护→慢)
+        {1000, 500},   // 6 IGN (MIN=退角事件→快)
+        {500,  500},   // 7 S.TRIM
+    };
+    // WOT 时缩短的 cooldown
+    private static final long[][] COOLDOWN_WOT_MS = {
+        {3000, 3000},  // Ethanol — 不变
+        {2000, 2000},  // ECT — 不变
+        {1500, 1500},  // IAT — 不变
+        {3000, 3000},  // L.TRIM — 不变
+        {250,  750},   // Boost
+        {150,  300},   // A/F
+        {500,  250},   // IGN
+        {250,  250},   // S.TRIM
+    };
+    // Breakthrough 语义阈值 (绝对值): [MAX threshold, MIN threshold]
+    private static final float[][] BREAKTHROUGH = {
+        {5f,    5f},    // Ethanol
+        {3f,    3f},    // ECT
+        {5f,    5f},    // IAT
+        {2f,    2f},    // L.TRIM
+        {0.15f, 0.15f}, // Boost
+        {0.5f,  1.0f},  // A/F (MAX: lean+0.5, MIN: rich-1.0)
+        {5f,    3f},    // IGN (MAX: +5°, MIN: -3°)
+        {4f,    4f},    // S.TRIM
+    };
+    private static final long RECENT_PEAK_HOLD_MS = 30000; // 30s 保持后开始衰减
+    private static final float RECENT_DECAY_RATE = 0.02f;  // 每帧衰减率
 
     // 爆震缸 (4个)
     private final TextView[] knockValues = new TextView[4];
@@ -99,6 +141,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
     // DFCO 状态跟踪 (用于退出 DFCO 时即时恢复显示)
     private boolean lastDfcoState = false;
+    private long dfcoExitTime = 0;  // DFCO 退出时间戳 (用于 History Admission 500ms 窗口)
     private final Runnable flashTick = new Runnable() {
         @Override
         public void run() {
@@ -225,6 +268,10 @@ public class MainActivity extends Activity implements DataSource.Callback {
         // 初始化 MAX/MIN 追踪
         for (int i = 0; i < 8; i++) {
             hasValue[i] = false;
+            lastMaxTime[i] = 0;
+            lastMinTime[i] = 0;
+            recentMaxTime[i] = 0;
+            recentMinTime[i] = 0;
         }
 
         // 初始化 8 个主卡片
@@ -478,6 +525,14 @@ public class MainActivity extends Activity implements DataSource.Callback {
     @Override
     public void onDisconnected() {
         engineState.reset();
+        for (int i = 0; i < 8; i++) {
+            hasValue[i] = false;
+            lastMaxTime[i] = 0;
+            lastMinTime[i] = 0;
+            recentMaxTime[i] = 0;
+            recentMinTime[i] = 0;
+        }
+        dfcoExitTime = 0;
         runOnUiThread(new Runnable() {
             @Override public void run() {
                 statusText.setText("已断开");
@@ -539,6 +594,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 boolean isDfco = state.isDfco();
                 boolean dfcoJustEnded = lastDfcoState && !isDfco;
                 lastDfcoState = isDfco;
+                if (dfcoJustEnded) dfcoExitTime = System.currentTimeMillis();
                 long now = System.currentTimeMillis();
 
                 // 更新 8 个主卡片
@@ -652,15 +708,38 @@ public class MainActivity extends Activity implements DataSource.Callback {
                         lastValidValue[i] = fVal;
                         hasValidValue[i] = true;
 
-                        // MAX / MIN 追踪 (始终更新)
+                        // History Admission System: 三层机制 + Recent Peak
                         if (!hasValue[i]) {
-                            maxTrack[i] = fVal;
-                            minTrack[i] = fVal;
+                            maxTrack[i] = recentMax[i] = fVal;
+                            minTrack[i] = recentMin[i] = fVal;
+                            lastMaxTime[i] = lastMinTime[i] = now;
+                            recentMaxTime[i] = recentMinTime[i] = now;
                             hasValue[i] = true;
-                        } else {
-                            if (fVal > maxTrack[i]) maxTrack[i] = fVal;
-                            if (fVal < minTrack[i]) minTrack[i] = fVal;
+                        } else if (isEligibleForHistory(i, state)) {
+                            boolean maxExpired = (now - lastMaxTime[i] >= getCooldown(i, true, isWot));
+                            boolean minExpired = (now - lastMinTime[i] >= getCooldown(i, false, isWot));
+
+                            // MAX 更新: cooldown 过期 或 突破语义阈值
+                            if (fVal > maxTrack[i]) {
+                                if (maxExpired || isBreakthrough(i, true, fVal, maxTrack[i])) {
+                                    maxTrack[i] = fVal;
+                                    recentMax[i] = fVal;
+                                    lastMaxTime[i] = now;
+                                    recentMaxTime[i] = now;
+                                }
+                            }
+                            // MIN 更新: cooldown 过期 或 突破语义阈值
+                            if (fVal < minTrack[i]) {
+                                if (minExpired || isBreakthrough(i, false, fVal, minTrack[i])) {
+                                    minTrack[i] = fVal;
+                                    recentMin[i] = fVal;
+                                    lastMinTime[i] = now;
+                                    recentMinTime[i] = now;
+                                }
+                            }
                         }
+                        // Recent Peak 30s 衰减 (每帧)
+                        updateRecentPeak(i, fVal, now);
 
                         if (updateDisplay) {
                             lastUpdateTime[i] = now;
@@ -686,15 +765,14 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                 if (i < 3) maxFmt = "%.0f";        // Ethanol, ECT, IAT
                                 else if (i == 5) maxFmt = "%.1f";  // A/F
                                 else maxFmt = "%+.1f";             // L.TRIM, MAP, IGN, S.TRIM
-                                maxValueViews[i].setText(String.format(Locale.US, maxFmt, maxTrack[i]));
-                                maxValueViews[i].setTextColor(0xFFCCCCCC); // 标题灰色
+                                maxValueViews[i].setText(String.format(Locale.US, maxFmt, recentMax[i]));                                maxValueViews[i].setTextColor(0xFFCCCCCC); // 标题灰色
                             }
                             if (minValueViews[i] != null) {
                                 String minFmt;
                                 if (i < 3) minFmt = "%.0f";        // Ethanol, ECT, IAT
                                 else if (i == 5) minFmt = "%.1f";  // A/F
                                 else minFmt = "%+.1f";             // L.TRIM, MAP, IGN, S.TRIM
-                                minValueViews[i].setText(String.format(Locale.US, minFmt, minTrack[i]));
+                                minValueViews[i].setText(String.format(Locale.US, minFmt, recentMin[i]));
                                 minValueViews[i].setTextColor(0xFFCCCCCC); // 标题灰色
                             }
 
@@ -1022,6 +1100,71 @@ public class MainActivity extends Activity implements DataSource.Callback {
      */
     private float ema(float raw, float last, float alpha) {
         return alpha * raw + (1 - alpha) * last;
+    }
+
+    // === History Admission System ===
+
+    /** Semantic Admission: 当前工况下该参数是否有分析意义 */
+    private boolean isEligibleForHistory(int i, EngineSemanticState state) {
+        boolean isDfco = state.isDfco();
+        boolean isWarmup = state.isWarmup();
+        boolean isSpool = state.sub == EngineSemanticState.SubState.SPOOL;
+        boolean inDfcoRecovery = (dfcoExitTime > 0)
+            && (System.currentTimeMillis() - dfcoExitTime < 500);
+
+        switch (i) {
+            case 0: // Ethanol — 配置参数, 永远有效
+            case 1: // ECT — 热参数, 所有温度都有意义
+            case 2: // IAT — 同上
+            case 4: // Boost — 正压负压都有意义
+                return true;
+            case 3: // L.TRIM — 只记闭环稳态修正
+                return !isDfco && !isWarmup && !inDfcoRecovery;
+            case 5: // A/F — 只记有效燃烧 AFR
+                return !isDfco && !isWarmup && !isSpool && !inDfcoRecovery;
+            case 6: // IGN — 只记正常温度下的点火角
+                return !isDfco && !isWarmup;
+            case 7: // S.TRIM — 只记有效反馈修正
+                return !isDfco && !isWarmup && !isSpool && !inDfcoRecovery;
+            default:
+                return true;
+        }
+    }
+
+    /** State-linked Cooldown: WOT 时缩短 */
+    private long getCooldown(int i, boolean isMax, boolean isWot) {
+        long[][] table = isWot ? COOLDOWN_WOT_MS : COOLDOWN_MS;
+        return table[i][isMax ? 0 : 1];
+    }
+
+    /** Per-Parameter Breakthrough: 语义阈值突破 (绝对值) */
+    private boolean isBreakthrough(int i, boolean isMax, float newVal, float current) {
+        float threshold = BREAKTHROUGH[i][isMax ? 0 : 1];
+        if (isMax) {
+            return (newVal - current) > threshold;
+        } else {
+            return (current - newVal) > threshold;
+        }
+    }
+
+    /** Recent Peak 30s 自动衰减: 超过保持时间后指数回归当前值 */
+    private void updateRecentPeak(int i, float currentVal, long now) {
+        if (now - recentMaxTime[i] > RECENT_PEAK_HOLD_MS) {
+            float diff = recentMax[i] - currentVal;
+            if (diff > 0.01f) {
+                recentMax[i] -= diff * RECENT_DECAY_RATE;
+            } else {
+                recentMax[i] = currentVal;
+            }
+        }
+        if (now - recentMinTime[i] > RECENT_PEAK_HOLD_MS) {
+            float diff = currentVal - recentMin[i];
+            if (diff > 0.01f) {
+                recentMin[i] += diff * RECENT_DECAY_RATE;
+            } else {
+                recentMin[i] = currentVal;
+            }
+        }
     }
 
     /**

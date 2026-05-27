@@ -263,7 +263,7 @@ app/src/main/java/com/hondata/dash/
     ├── EngineStateTracker.java # Engine state detection (V2.0: ECU semantic model)
     ├── HondataProtocol.java   # Protocol parsing + scaling formulas
     ├── SensorData.java        # PID→Double Map
-    └── DemoSource.java        # Demo source with 6-phase cycling + EXTREME (V1.2)
+    └── DemoSource.java        # Demo source — Real LOG data playback (V2.1) + EXTREME sweep
 
 app/src/main/res/
 ├── layout/
@@ -313,9 +313,35 @@ Three-layer defense for car head units:
 
 Pure Android Framework API, no third-party libraries:
 - No `androidx` / No Kotlin / No `.so` native libs
-- Release APK: **45 KB**
+- Release APK: **64 KB**
 
 ## Version History
+
+### V2.1 (2026-05-27) — History Admission System + Real LOG Demo
+
+#### 1. History Admission System — Three-Layer MAX/MIN Quality Control
+
+V2.0's MAX/MIN tracker was a bare recorder — any operating condition's values were unconditionally admitted. This led to DFCO-exit AFR spikes polluting MIN, cold-start IGN retard polluting MIN, and transient fuel trim jumps polluting MAX. V2.1 replaces the bare tracker with a three-layer admission system:
+
+- **Layer 1 — Semantic Admission**: Per-card rules defining which operating conditions produce analytically meaningful values. E.g., A/F excluded during DFCO/WARMUP/SPOOL/DFCO-exit-recovery(500ms); IGN excluded during DFCO/WARMUP.
+- **Layer 2 — Asymmetric Cooldown**: MAX and MIN have independent per-parameter cooldown durations. E.g., Boost MAX=500ms MIN=1500ms (vacuum is less important than boost peak). WOT mode shortens all cooldowns (State-linked Cooldown).
+- **Layer 3 — Per-Parameter Breakthrough**: Absolute delta thresholds allow major events to bypass cooldown. E.g., A/F Lean Δ>+0.5, IGN MIN Δ>-3°. Breakthrough resets cooldown timer.
+
+#### 2. Recent Peak — 30s Auto-Decay
+
+Displayed MAX/MIN now auto-decay toward current value after 30 seconds without a new extreme. Session-peak tracking continues internally but is no longer shown on the UI. This ensures the driver sees "recent memory" rather than all-time records.
+
+#### 3. Demo Source — Real LOG Data Playback
+
+Replaced synthetic sine-wave DemoSource with real driving data extracted from a 2026-05-27 Hondata FlashPro LOG (E26, 27% ethanol, 24°C). Five segments play sequentially: IDLE(5s) → NORMAL(8s) → WOT(12s) → DFCO(8s) → ACCEL(15s), followed by EXTREME synthetic sweep (9s) for ScaleBar range testing. Demo mode now correctly triggers V2.0 WOT detection (provides `ClosedLoop` + `TargetLambda` PIDs that the old DemoSource didn't).
+
+#### 4. Modified Files
+
+| File | Changes |
+|------|---------|
+| `MainActivity.java` | History Admission (3 mechanisms) + Recent Peak + State-linked Cooldown + DFCO exit tracking, ~100 lines |
+| `DemoSource.java` | **REWRITTEN** — Real LOG data playback with 5 segments + linear interpolation |
+| `build.gradle` | versionCode 5→6, versionName "2.0"→"2.1" |
 
 ### V2.0 (2026-05-24) — ECU Semantic State Engine + Peak Hold
 

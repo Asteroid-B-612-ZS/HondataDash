@@ -248,7 +248,7 @@ app/src/main/java/com/hondata/dash/
     ├── EngineStateTracker.java # 引擎状态检测 (V2.0: ECU 语义模型)
     ├── HondataProtocol.java   # Hondata 协议解析+缩放公式
     ├── SensorData.java        # PID→Double Map
-    └── DemoSource.java        # 模拟数据源 (V1.2: 6阶段+EXTREME)
+    └── DemoSource.java        # 演示数据源 — 真实 LOG 回放 (V2.1) + EXTREME 扫描
 
 app/src/main/res/
 ├── layout/
@@ -298,9 +298,35 @@ Android 无原生字高缩放，通过 `textSize × scale` + `textScaleX = 1/sca
 
 纯 Android Framework API，无第三方库:
 - 无 `androidx` / 无 Kotlin / 无 `.so` 原生库
-- Release APK: **45 KB**
+- Release APK: **64 KB**
 
 ## 版本历史
+
+### V2.1 (2026-05-27) — 历史准入系统 + 真实 LOG 回放
+
+#### 1. History Admission System — 三层 MAX/MIN 质量控制
+
+V2.0 的 MAX/MIN 追踪器是裸记录器——任何工况的值都无条件写入。导致 DFCO 退出 AFR 闪到 10.0 污染 MIN、冷启动 IGN 退角到 -18° 污染 MIN、瞬态 S.TRIM 暴跳污染 MAX。V2.1 用三层准入系统替代：
+
+- **第一层 — 语义准入**: 每卡片独立规则，定义哪些工况产生有分析意义的值。例如 A/F 在 DFCO/WARMUP/SPOOL/DFCO退出恢复(500ms) 期间被排除；IGN 在 DFCO/WARMUP 期间被排除。
+- **第二层 — 非对称冷却**: MAX 和 MIN 有独立的每参数冷却时间。例如 Boost MAX=500ms MIN=1500ms（真空不如正压峰值重要）。WOT 模式缩短所有冷却时间（状态关联冷却）。
+- **第三层 — 逐参数突破**: 绝对增量阈值允许重大事件绕过冷却。例如 A/F 稀 Δ>+0.5，IGN MIN Δ>-3°。突破后重置冷却计时器。
+
+#### 2. Recent Peak — 30s 自动衰减
+
+显示用 MAX/MIN 在 30s 无新极值后自动衰减回当前值。Session Peak 继续内部追踪但不在 UI 显示。确保驾驶员看到"最近的记忆"而非历史极值。
+
+#### 3. Demo 数据源 — 真实 LOG 回放
+
+用 2026-05-27 真实驾驶 LOG（E26, 27% 乙醇, 24℃）替代合成正弦波。五段顺序播放：IDLE(5s) → NORMAL(8s) → WOT(12s) → DFCO(8s) → ACCEL(15s)，后接 EXTREME 合成扫描(9s)。Demo 模式现在正确触发 V2.0 WOT 检测（提供了旧 DemoSource 没有的 `ClosedLoop` + `TargetLambda` PID）。
+
+#### 4. 修改文件
+
+| 文件 | 变更 |
+|------|------|
+| `MainActivity.java` | History Admission (3 层机制) + Recent Peak + 状态关联冷却 + DFCO 退出追踪, 约 100 行 |
+| `DemoSource.java` | **重写** — 真实 LOG 数据回放, 5 段关键帧 + 线性插值 |
+| `build.gradle` | versionCode 5→6, versionName "2.0"→"2.1" |
 
 ### V2.0 (2026-05-24) — ECU 语义状态引擎 + 峰值保持
 
