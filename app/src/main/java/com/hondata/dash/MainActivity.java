@@ -157,14 +157,14 @@ public class MainActivity extends Activity implements DataSource.Callback {
     }
 
     private static final FitParam[] FIT_PARAMS = new FitParam[] {
-        new FitParam(112.5f, 0.42f, 0.55f, true, "E100"),    // 0 Ethanol
-        new FitParam(112.5f, 0.48f, 0.70f, true, "120"),      // 1 ECT
-        new FitParam(112.5f, 0.48f, 0.70f, true, "120"),      // 2 IAT
-        new FitParam(99.0f,  0.34f, 0.62f, true, "+25.0"),    // 3 L.TRIM
-        new FitParam(99.0f,  0.42f, 0.62f, true, "+2.0"),     // 4 MAP
-        new FitParam(99.0f,  0.42f, 0.62f, true, "18.0"),     // 5 A/F
-        new FitParam(99.0f,  0.32f, 0.58f, true, "+40.0"),    // 6 IGN
-        new FitParam(99.0f,  0.32f, 0.58f, true, "+25.0")     // 7 S.TRIM
+        new FitParam(112.5f, 0.36f, 0.50f, true, "E100"),    // 0 Ethanol
+        new FitParam(112.5f, 0.40f, 0.58f, true, "120"),      // 1 ECT
+        new FitParam(112.5f, 0.40f, 0.58f, true, "120"),      // 2 IAT
+        new FitParam(99.0f,  0.28f, 0.48f, true, "+25.0"),    // 3 L.TRIM
+        new FitParam(99.0f,  0.36f, 0.50f, true, "+2.0"),     // 4 MAP
+        new FitParam(99.0f,  0.36f, 0.50f, true, "18.0"),     // 5 A/F
+        new FitParam(99.0f,  0.26f, 0.44f, true, "+40.0"),    // 6 IGN
+        new FitParam(99.0f,  0.26f, 0.44f, true, "+25.0")     // 7 S.TRIM
     };
 
     // V2.2: 数据新鲜度追踪 — 独立 Handler 250ms 刷新, 不依赖 onDataReceived
@@ -1546,10 +1546,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
         if (intView == null || area == null) return;
 
+        // 安全余量 dp(28): 两个 TextView 的内边距 + 间距 + 右侧不贴边
         int available = area.getWidth()
                 - area.getPaddingLeft()
                 - area.getPaddingRight()
-                - dp(8);
+                - dp(28);
 
         if (available <= 0) {
             area.post(new Runnable() {
@@ -1598,8 +1599,12 @@ public class MainActivity extends Activity implements DataSource.Callback {
             measureCombined = intText + (decText == null ? "" : decText);
         }
 
+        // 分别测量 int 和 dec 部分, 更准确反映两个 TextView 实际宽度
         android.text.TextPaint paint = intView.getPaint();
-        float rawWidth = paint.measureText(measureCombined);
+        float wInt = paint.measureText(intText);
+        float wDec = (decView != null && decText != null && !decText.isEmpty())
+                ? paint.measureText(decText) : 0f;
+        float rawWidth = wInt + wDec;
         if (rawWidth <= 0f) return;
 
         float scaleX = 1.0f;
