@@ -113,8 +113,15 @@ public class MainActivity extends Activity implements DataSource.Callback {
         false   // 7 S.TRIM — 快速动态量, 用 recent
     };
 
-    // V2.2: 数据新鲜度追踪
+    // V2.2: 数据新鲜度追踪 — 独立 Handler 250ms 刷新, 不依赖 onDataReceived
     private long lastValidFrameTimeMs = 0L;
+    private final Handler freshnessHandler = new Handler(Looper.getMainLooper());
+    private final Runnable freshnessRunnable = new Runnable() {
+        @Override public void run() {
+            updateFreshnessStatus();
+            freshnessHandler.postDelayed(this, 250);
+        }
+    };
 
     // 爆震缸 (4个)
     private final TextView[] knockValues = new TextView[4];
@@ -375,6 +382,9 @@ public class MainActivity extends Activity implements DataSource.Callback {
         } else {
             connectBluetooth();
         }
+
+        // V2.2: 启动数据新鲜度独立刷新 (250ms)
+        freshnessHandler.post(freshnessRunnable);
     }
 
     /**
@@ -522,6 +532,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        freshnessHandler.removeCallbacks(freshnessRunnable);
         dataSource.disconnect();
     }
 
@@ -740,11 +751,17 @@ public class MainActivity extends Activity implements DataSource.Callback {
                         float valueForExtreme = (i == 4) ? rawValueForExtreme : fVal;
 
                         if (!hasValue[i]) {
-                            maxTrack[i] = recentMax[i] = fVal;
-                            minTrack[i] = recentMin[i] = fVal;
-                            lastMaxTime[i] = lastMinTime[i] = now;
-                            recentMaxTime[i] = recentMinTime[i] = now;
-                            hasValue[i] = true;
+                            // V2.2: Session Extreme 初始化用 valueForExtreme (MAP 用原始值)
+                            float initVal = SHOW_SESSION_EXTREME[i] ? valueForExtreme : fVal;
+                            if (!SHOW_SESSION_EXTREME[i] || isTrustedForSessionExtreme(i, initVal)) {
+                                maxTrack[i] = initVal;
+                                minTrack[i] = initVal;
+                                recentMax[i] = fVal;
+                                recentMin[i] = fVal;
+                                lastMaxTime[i] = lastMinTime[i] = now;
+                                recentMaxTime[i] = recentMinTime[i] = now;
+                                hasValue[i] = true;
+                            }
                         } else if (SHOW_SESSION_EXTREME[i]) {
                             // Session Extreme 路径: 只做可信值过滤, 无 cooldown/decay
                             if (isTrustedForSessionExtreme(i, valueForExtreme)) {
@@ -1112,27 +1129,27 @@ public class MainActivity extends Activity implements DataSource.Callback {
                         shiftLight.setRpm(rpmVal.floatValue());
                     }
                 }
-
-                // V2.2: 数据新鲜度状态显示
-                long nowMs = SystemClock.elapsedRealtime();
-                long age = nowMs - lastValidFrameTimeMs;
-                if (lastValidFrameTimeMs <= 0) {
-                    // 还没收到数据, 保持 onConnected 设置的 "已连接"
-                } else if (age < 500) {
-                    statusText.setText("LIVE");
-                    statusText.setTextColor(0xFF3FB950);
-                } else if (age < 1500) {
-                    statusText.setText("STALE");
-                    statusText.setTextColor(0xFFD29922);
-                } else if (age < 3000) {
-                    statusText.setText("DATA LOST");
-                    statusText.setTextColor(0xFFFF4444);
-                } else {
-                    statusText.setText("BT LOST");
-                    statusText.setTextColor(0xFFFF4444);
-                }
             }
         });
+    }
+
+    /** V2.2: 数据新鲜度状态更新 (由独立 Handler 每 250ms 调用) */
+    private void updateFreshnessStatus() {
+        if (lastValidFrameTimeMs <= 0) return;
+        long age = SystemClock.elapsedRealtime() - lastValidFrameTimeMs;
+        if (age < 500) {
+            statusText.setText("LIVE");
+            statusText.setTextColor(0xFF3FB950);
+        } else if (age < 1500) {
+            statusText.setText("STALE");
+            statusText.setTextColor(0xFFD29922);
+        } else if (age < 3000) {
+            statusText.setText("DATA LOST");
+            statusText.setTextColor(0xFFFF4444);
+        } else {
+            statusText.setText("BT LOST");
+            statusText.setTextColor(0xFFFF4444);
+        }
     }
 
     /**
