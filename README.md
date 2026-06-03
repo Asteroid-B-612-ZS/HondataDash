@@ -317,6 +317,42 @@ Pure Android Framework API, no third-party libraries:
 
 ## Version History
 
+### V2.2 (2026-06-03) — Session Extreme & Semantic Alarm
+
+#### 1. Dual-Path MAX/MIN — Session Extreme vs Recent Extreme
+
+Parameters split into two categories:
+
+- **Session Extreme** (Ethanol, ECT, IAT, L.TRIM, MAP): Full-session MAX/MIN that persist for the entire driving session. No decay, no cooldown, no reset on Bluetooth reconnect or DFCO exit. Trusted-value filtering rejects NaN, Infinity, and physically impossible values.
+- **Recent Extreme** (A/F, IGN, S.TRIM): Continues using V2.1's three-layer admission (semantic admission + asymmetric cooldown + breakthrough threshold) with 30s auto-decay.
+
+#### 2. MAP Session MAX/MIN Uses Raw Boost Value
+
+MAP session extremes use the validated raw boost value before asymmetric filtering, near-zero clamping, and rate limiting. This prevents the boost filter from attenuating short transient peaks — the actual maximum boost is captured faithfully.
+
+#### 3. A/F State-Aware Alarm
+
+A/F warning logic now differentiates by engine state instead of using global thresholds:
+
+- **DFCO**: No alarm (injectors off, no combustion)
+- **WOT**: Lean-burn danger priority — A/F > 12.2 triggers red flash (dangerous lean); A/F < 10.2 only yellow warning (rich, not dangerous)
+- **NORMAL/IDLE/WARMUP**: Standard four-zone coloring with conservative flash thresholds (only when TP > 5% and A/F < 12.5 or > 16.5)
+
+#### 4. Data Freshness Indicator
+
+Header status now shows real-time data freshness: `LIVE` (green, <500ms) → `STALE` (yellow, <1500ms) → `DATA LOST` (red, <3000ms) → `BT LOST` (red, ≥3000ms).
+
+#### 5. Bluetooth Reconnect Preserves Session Extremes
+
+Short Bluetooth disconnects/reconnects no longer clear full-session MAX/MIN for Ethanol, ECT, IAT, L.TRIM, and MAP. Only filter state and Recent Extreme parameters (A/F, IGN, S.TRIM) are reset.
+
+#### 6. Modified Files
+
+| File | Changes |
+|------|---------|
+| `MainActivity.java` | Dual-path MAX/MIN, `isTrustedForSessionExtreme()`, A/F state-aware alarm, data freshness, reconnect preservation |
+| `build.gradle` | versionCode 6→7, versionName "2.1"→"2.2" |
+
 ### V2.1 (2026-05-27) — History Admission System + Real LOG Demo
 
 #### 1. History Admission System — Three-Layer MAX/MIN Quality Control

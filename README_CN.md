@@ -302,6 +302,40 @@ Android 无原生字高缩放，通过 `textSize × scale` + `textScaleX = 1/sca
 
 ## 版本历史
 
+### V2.2 (2026-06-03) — 全程极值与语义报警
+
+#### 1. 双路径 MAX/MIN — Session Extreme vs Recent Extreme
+
+参数分为两类：
+
+- **全程极值 (Session Extreme)** (Ethanol、ECT、IAT、L.TRIM、MAP)：保留整个驾驶周期的 MAX/MIN，不衰减、不冷却、蓝牙重连或 DFCO 退出不重置。通过可信值过滤排除 NaN、Infinity 和物理不可能值。
+- **近期动态 (Recent Extreme)** (A/F、IGN、S.TRIM)：继续使用 V2.1 三层准入（语义准入 + 非对称冷却 + 突破阈值）+ 30s 自动衰减。
+
+#### 2. MAP 全程极值使用原始增压值
+
+MAP 全程 MAX/MIN 使用校验后的原始增压值（在不对称滤波、近零归零、Rate Limit 之前），防止滤波器压低真实的瞬态峰值。
+
+#### 3. A/F 按工况分层报警
+
+- **DFCO**：不报警（断油，无燃烧）
+- **WOT**：过稀危险优先 — A/F > 12.2 红色闪烁（危险稀）；A/F < 10.2 仅黄色警告（过浓，非危险）
+- **NORMAL/IDLE/WARMUP**：标准四区变色，保守闪烁阈值（仅 TP > 5% 且 A/F < 12.5 或 > 16.5 时闪烁）
+
+#### 4. 数据新鲜度指示
+
+顶部状态栏显示实时数据新鲜度：`LIVE`（绿，<500ms）→ `STALE`（黄，<1500ms）→ `DATA LOST`（红，<3000ms）→ `BT LOST`（红，≥3000ms）。
+
+#### 5. 蓝牙重连保留全程极值
+
+短暂蓝牙断开/重连不再清空 Ethanol、ECT、IAT、L.TRIM、MAP 的全程 MAX/MIN。仅重置滤波状态和 A/F/IGN/S.TRIM 的近期极值。
+
+#### 6. 修改文件
+
+| 文件 | 变更 |
+|------|------|
+| `MainActivity.java` | 双路径 MAX/MIN、`isTrustedForSessionExtreme()`、A/F 工况报警、数据新鲜度、重连保留 |
+| `build.gradle` | versionCode 6→7, versionName "2.1"→"2.2" |
+
 ### V2.1 (2026-05-27) — 历史准入系统 + 真实 LOG 回放
 
 #### 1. History Admission System — 三层 MAX/MIN 质量控制

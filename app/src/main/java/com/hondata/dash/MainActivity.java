@@ -25,9 +25,10 @@ import com.hondata.dash.data.SensorData;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import android.os.SystemClock;
 
 /**
- * 主界面 - 硬核科技风格车载仪表盘 V2.3。
+ * 主界面 - 硬核科技风格车载仪表盘 V2.2。
  *
  * 4x2 HUD 网格 (英文缩写 + 刻度进度条 + MAX/MIN):
  *   Ethanol | ECT | IAT | BAT
@@ -99,6 +100,21 @@ public class MainActivity extends Activity implements DataSource.Callback {
     };
     private static final long RECENT_PEAK_HOLD_MS = 30000; // 30s 保持后开始衰减
     private static final float RECENT_DECAY_RATE = 0.02f;  // 每帧衰减率
+
+    // V2.2: Session Extreme 参数分类 — true=全程极值, false=近期动态极值
+    private static final boolean[] SHOW_SESSION_EXTREME = {
+        true,   // 0 Ethanol — 乙醇含量慢变量
+        true,   // 1 ECT — 本次驾驶最高水温
+        true,   // 2 IAT — 本次驾驶最高进气温度
+        true,   // 3 L.TRIM — 长期燃油修正全程范围
+        true,   // 4 MAP — 最大增压/最大真空
+        false,  // 5 A/F — 瞬态多, 用 recent
+        false,  // 6 IGN — 低负荷极值多, 用 recent
+        false   // 7 S.TRIM — 快速动态量, 用 recent
+    };
+
+    // V2.2: 数据新鲜度追踪
+    private long lastValidFrameTimeMs = 0L;
 
     // 爆震缸 (4个)
     private final TextView[] knockValues = new TextView[4];
@@ -526,11 +542,17 @@ public class MainActivity extends Activity implements DataSource.Callback {
     public void onDisconnected() {
         engineState.reset();
         for (int i = 0; i < 8; i++) {
-            hasValue[i] = false;
-            lastMaxTime[i] = 0;
-            lastMinTime[i] = 0;
-            recentMaxTime[i] = 0;
-            recentMinTime[i] = 0;
+            // V2.2: Session Extreme 参数 (Ethanol/ECT/IAT/L.TRIM/MAP) 不清空全程极值
+            if (!SHOW_SESSION_EXTREME[i]) {
+                hasValue[i] = false;
+                lastMaxTime[i] = 0;
+                lastMinTime[i] = 0;
+                recentMaxTime[i] = 0;
+                recentMinTime[i] = 0;
+            }
+            // 滤波和显示有效标记可重置 (不是 session 历史)
+            hasFiltered[i] = false;
+            hasValidValue[i] = false;
         }
         dfcoExitTime = 0;
         runOnUiThread(new Runnable() {
@@ -585,6 +607,9 @@ public class MainActivity extends Activity implements DataSource.Callback {
     public void onDataReceived(final SensorData data) {
         runOnUiThread(new Runnable() {
             @Override public void run() {
+                // V2.2: 数据新鲜度追踪
+                lastValidFrameTimeMs = SystemClock.elapsedRealtime();
+
                 // 更新大气压力 (用于 Boost 相对压力计算)
                 Double baro = data.get(0x170);
                 if (baro != null) lastBaro = baro.floatValue();
@@ -680,6 +705,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
                         }
 
                         // EMA 滤波
+                        // V2.2: 保存 MAP 原始值 (滤波前), 用于 Session Extreme
+                        float rawValueForExtreme = fVal;
                         if (effectiveAlpha > 0 && effectiveAlpha < 1f) {
                             if (hasFiltered[i]) {
                                 fVal = ema(fVal, filteredValue[i], effectiveAlpha);
@@ -708,18 +735,31 @@ public class MainActivity extends Activity implements DataSource.Callback {
                         lastValidValue[i] = fVal;
                         hasValidValue[i] = true;
 
-                        // History Admission System: 三层机制 + Recent Peak
+                        // History Admission System: V2.2 双路径
+                        // Session Extreme: 全程极值, 不衰减; Recent Extreme: 近期动态, 可衰减
+                        float valueForExtreme = (i == 4) ? rawValueForExtreme : fVal;
+
                         if (!hasValue[i]) {
                             maxTrack[i] = recentMax[i] = fVal;
                             minTrack[i] = recentMin[i] = fVal;
                             lastMaxTime[i] = lastMinTime[i] = now;
                             recentMaxTime[i] = recentMinTime[i] = now;
                             hasValue[i] = true;
+                        } else if (SHOW_SESSION_EXTREME[i]) {
+                            // Session Extreme 路径: 只做可信值过滤, 无 cooldown/decay
+                            if (isTrustedForSessionExtreme(i, valueForExtreme)) {
+                                if (valueForExtreme > maxTrack[i]) maxTrack[i] = valueForExtreme;
+                                if (valueForExtreme < minTrack[i]) minTrack[i] = valueForExtreme;
+                            }
+                            // recent 数组也保持同步 (ScaleBar 可能引用)
+                            if (fVal > recentMax[i]) { recentMax[i] = fVal; recentMaxTime[i] = now; }
+                            if (fVal < recentMin[i]) { recentMin[i] = fVal; recentMinTime[i] = now; }
+                            // Session Extreme 不做 recent decay
                         } else if (isEligibleForHistory(i, state)) {
+                            // Recent Extreme 路径: 三层准入 + cooldown + breakthrough + decay
                             boolean maxExpired = (now - lastMaxTime[i] >= getCooldown(i, true, isWot));
                             boolean minExpired = (now - lastMinTime[i] >= getCooldown(i, false, isWot));
 
-                            // MAX 更新: cooldown 过期 或 突破语义阈值
                             if (fVal > maxTrack[i]) {
                                 if (maxExpired || isBreakthrough(i, true, fVal, maxTrack[i])) {
                                     maxTrack[i] = fVal;
@@ -728,7 +768,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                     recentMaxTime[i] = now;
                                 }
                             }
-                            // MIN 更新: cooldown 过期 或 突破语义阈值
                             if (fVal < minTrack[i]) {
                                 if (minExpired || isBreakthrough(i, false, fVal, minTrack[i])) {
                                     minTrack[i] = fVal;
@@ -737,9 +776,9 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                     recentMinTime[i] = now;
                                 }
                             }
+                            // Recent Peak 30s 衰减 (每帧)
+                            updateRecentPeak(i, fVal, now);
                         }
-                        // Recent Peak 30s 衰减 (每帧)
-                        updateRecentPeak(i, fVal, now);
 
                         if (updateDisplay) {
                             lastUpdateTime[i] = now;
@@ -765,15 +804,18 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                 if (i < 3) maxFmt = "%.0f";        // Ethanol, ECT, IAT
                                 else if (i == 5) maxFmt = "%.1f";  // A/F
                                 else maxFmt = "%+.1f";             // L.TRIM, MAP, IGN, S.TRIM
-                                maxValueViews[i].setText(String.format(Locale.US, maxFmt, recentMax[i]));                                maxValueViews[i].setTextColor(0xFFCCCCCC); // 标题灰色
+                                float displayMax = SHOW_SESSION_EXTREME[i] ? maxTrack[i] : recentMax[i];
+                                maxValueViews[i].setText(String.format(Locale.US, maxFmt, displayMax));
+                                maxValueViews[i].setTextColor(0xFFCCCCCC);
                             }
                             if (minValueViews[i] != null) {
                                 String minFmt;
                                 if (i < 3) minFmt = "%.0f";        // Ethanol, ECT, IAT
                                 else if (i == 5) minFmt = "%.1f";  // A/F
                                 else minFmt = "%+.1f";             // L.TRIM, MAP, IGN, S.TRIM
-                                minValueViews[i].setText(String.format(Locale.US, minFmt, recentMin[i]));
-                                minValueViews[i].setTextColor(0xFFCCCCCC); // 标题灰色
+                                float displayMin = SHOW_SESSION_EXTREME[i] ? minTrack[i] : recentMin[i];
+                                minValueViews[i].setText(String.format(Locale.US, minFmt, displayMin));
+                                minValueViews[i].setTextColor(0xFFCCCCCC);
                             }
 
                             // Ethanol: E前缀压窄显示 + 按浓度变色
@@ -844,27 +886,43 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                 }
                             }
 
-                            // A/F: 9~11红(极浓) 11~14.5黄(偏浓) 14.5~15.5绿(理想) 15.5~18红(偏稀)
-                            // 红色区间 + 踩油门状态才闪烁
+                            // A/F: V2.2 按工况语义分层报警
+                            // DFCO: 不报警 (断油, 无燃烧); WOT: 防过稀优先; NORMAL: 宽泛异常提示
                             if (i == 5) {
                                 lastAfVal = fVal;
-                                boolean inRedZone = fVal < 11 || fVal > 15.5f;
-                                boolean isOnThrottle = lastTpPlate > 5; // TP>5% 视为踩油门
-                                boolean shouldFlash = inRedZone && isOnThrottle;
+                                boolean isOnThrottle = lastTpPlate > 5;
+
+                                // 闪烁判定
+                                boolean shouldFlash = false;
+                                if (isDfco) {
+                                    shouldFlash = false;
+                                } else if (isWot) {
+                                    shouldFlash = fVal > 12.2f;  // WOT 过稀危险闪烁
+                                } else {
+                                    shouldFlash = isOnThrottle && (fVal < 12.5f || fVal > 16.5f);
+                                }
                                 if (shouldFlash != afFlashing) {
                                     afFlashing = shouldFlash;
                                     updateFlashState();
                                 }
+
+                                // 颜色判定
                                 if (!afFlashing) {
                                     int color;
-                                    if (fVal < 11) {
-                                        color = 0xFFFF4444; // 红色 极浓
-                                    } else if (fVal < 14.5f) {
-                                        color = 0xFFD29922; // 黄色 偏浓
-                                    } else if (fVal <= 15.5f) {
-                                        color = 0xFF3FB950; // 绿色 理想
+                                    if (isDfco) {
+                                        // DFCO 已经在前面显示了灰色 "DFCO", 不会走到这里
+                                        color = 0xFF888888;
+                                    } else if (isWot) {
+                                        if (fVal > 12.2f) color = 0xFFFF4444;       // WOT 过稀: 危险红
+                                        else if (fVal > 11.8f) color = 0xFFD29922;   // WOT 偏稀: 警告黄
+                                        else if (fVal < 10.2f) color = 0xFFD29922;   // WOT 过浓: 警告黄 (非危险)
+                                        else color = 0xFF3FB950;                      // WOT 安全: 绿色
                                     } else {
-                                        color = 0xFFFF4444; // 红色 偏稀
+                                        // NORMAL / IDLE / WARMUP: 基础四区变色
+                                        if (fVal < 11) color = 0xFFFF4444;
+                                        else if (fVal < 14.5f) color = 0xFFD29922;
+                                        else if (fVal <= 15.5f) color = 0xFF3FB950;
+                                        else color = 0xFFFF4444;
                                     }
                                     valueIntViews[i].setTextColor(color);
                                     valueIntViews[i].setAlpha(1f);
@@ -1054,6 +1112,25 @@ public class MainActivity extends Activity implements DataSource.Callback {
                         shiftLight.setRpm(rpmVal.floatValue());
                     }
                 }
+
+                // V2.2: 数据新鲜度状态显示
+                long nowMs = SystemClock.elapsedRealtime();
+                long age = nowMs - lastValidFrameTimeMs;
+                if (lastValidFrameTimeMs <= 0) {
+                    // 还没收到数据, 保持 onConnected 设置的 "已连接"
+                } else if (age < 500) {
+                    statusText.setText("LIVE");
+                    statusText.setTextColor(0xFF3FB950);
+                } else if (age < 1500) {
+                    statusText.setText("STALE");
+                    statusText.setTextColor(0xFFD29922);
+                } else if (age < 3000) {
+                    statusText.setText("DATA LOST");
+                    statusText.setTextColor(0xFFFF4444);
+                } else {
+                    statusText.setText("BT LOST");
+                    statusText.setTextColor(0xFFFF4444);
+                }
             }
         });
     }
@@ -1128,6 +1205,19 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 return !isDfco && !isWarmup && !isSpool && !inDfcoRecovery;
             default:
                 return true;
+        }
+    }
+
+    /** V2.2: Session Extreme 可信值过滤 — 排除 NaN/Infinity 和不可能的物理值 */
+    private boolean isTrustedForSessionExtreme(int index, float value) {
+        if (Float.isNaN(value) || Float.isInfinite(value)) return false;
+        switch (index) {
+            case 0: return value >= 0f && value <= 100f;        // Ethanol %
+            case 1: return value >= -40f && value <= 130f;       // ECT °C
+            case 2: return value >= -40f && value <= 120f;       // IAT °C
+            case 3: return value >= -30f && value <= 30f;        // L.TRIM %
+            case 4: return value >= -1.0f && value <= 2.5f;      // MAP/Boost bar
+            default: return false;
         }
     }
 
