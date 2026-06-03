@@ -49,6 +49,7 @@
 
         <!-- 数值 (左侧, 占2/3) -->
         <LinearLayout
+            android:id="@+id/valueArea"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="3"
@@ -66,6 +67,7 @@
                 android:textStyle="bold|italic"
                 android:includeFontPadding="false"
                 android:singleLine="true"
+                android:ellipsize="none"
                 android:text="--"/>
 
             <TextView
@@ -77,12 +79,14 @@
                 android:textSize="65sp"
                 android:textStyle="bold|italic"
                 android:includeFontPadding="false"
-                android:singleLine="true"/>
+                android:singleLine="true"
+                android:ellipsize="none"/>
 
         </LinearLayout>
 
         <!-- MAX / MIN (右侧右对齐, MAX靠上 MIN靠下) -->
         <LinearLayout
+            android:id="@+id/extremePanel"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1.5"

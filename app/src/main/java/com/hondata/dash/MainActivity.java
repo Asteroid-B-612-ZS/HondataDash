@@ -7,8 +7,10 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.text.SpannableString;
@@ -28,7 +30,7 @@ import java.util.Locale;
 import android.os.SystemClock;
 
 /**
- * 主界面 - 硬核科技风格车载仪表盘 V2.3。
+ * 主界面 - 硬核科技风格车载仪表盘 V2.4。
  *
  * 4x2 HUD 网格 (英文缩写 + 刻度进度条 + MAX/MIN):
  *   Ethanol | ECT | IAT | BAT
@@ -64,6 +66,13 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private final long[] recentMaxTime = new long[8];   // Recent Peak 记录时间
     private final long[] recentMinTime = new long[8];
     private final boolean[] hasValue = new boolean[8];
+
+    // V2.4: 显示适配 — 语义模式控制 + auto-fit 缓存
+    private final View[] valueAreaViews = new View[8];
+    private final View[] extremePanelViews = new View[8];
+    private final boolean[] semanticMode = new boolean[8];
+    private final String[] lastMainCombinedText = new String[8];
+    private final String[] lastSemanticText = new String[8];
 
     // History Admission 参数表: [MAX cooldown, MIN cooldown] (ms)
     private static final long[][] COOLDOWN_MS = {
@@ -126,6 +135,18 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private static final float WOT_LAMBDA_WARN_RICH   = 0.68f;  // ~10.0 AFR
     private static final float CL_LAMBDA_ERR_GREEN = 0.03f;
     private static final float CL_LAMBDA_ERR_WARN  = 0.06f;
+
+    // V2.4: 每卡片 auto-fit 参数 {baseIntSp, baseDecSp, minSp, maxScaleX, minScaleX}
+    private static final float[][] FIT_PARAMS = {
+        {112f, 112f, 72f, 0.58f, 0.34f},  // 0 Ethanol
+        {112f, 112f, 76f, 0.72f, 0.40f},  // 1 ECT
+        {112f, 112f, 76f, 0.72f, 0.40f},  // 2 IAT
+        {99f,  99f,  66f, 0.72f, 0.38f},  // 3 L.TRIM
+        {99f,  99f,  64f, 0.66f, 0.36f},  // 4 MAP
+        {99f,  99f,  64f, 0.66f, 0.36f},  // 5 A/F
+        {99f,  99f,  58f, 0.58f, 0.32f},  // 6 IGN
+        {99f,  99f,  58f, 0.58f, 0.32f},  // 7 S.TRIM
+    };
 
     // V2.2: 数据新鲜度追踪 — 独立 Handler 250ms 刷新, 不依赖 onDataReceived
     private long lastValidFrameTimeMs = 0L;
@@ -212,8 +233,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
                     valueDecViews[2].setAlpha(alpha / 255f);
                 }
             }
-            // A/F闪烁 (红色区间) — V2.3: DFCO/SYNC 期间不压暗 alpha
-            if (afFlashing && !lastCombustionInvalid && !lastAfSync) {
+            // A/F闪烁 (红色区间) — V2.4: 语义模式期间不压暗 alpha
+            if (afFlashing && !semanticMode[5]) {
                 int alpha = flashVisible ? 255 : 40;
                 int color = 0xFFFF4444;
                 valueIntViews[5].setTextColor(color);
@@ -334,6 +355,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
             scaleBars[i] = (ScaleBarView) card.findViewById(R.id.scaleBar);
             maxValueViews[i] = (TextView) card.findViewById(R.id.maxValue);
             minValueViews[i] = (TextView) card.findViewById(R.id.minValue);
+            valueAreaViews[i] = card.findViewById(R.id.valueArea);
+            extremePanelViews[i] = card.findViewById(R.id.extremePanel);
 
             if (labelEnViews[i] != null) labelEnViews[i].setText(CARD_EN[i]);
             if (unitViews[i] != null) {
@@ -852,18 +875,27 @@ public class MainActivity extends Activity implements DataSource.Callback {
                         if (updateDisplay) {
                             lastUpdateTime[i] = now;
 
-                            // V2.3: 从 DFCO/SYNC 恢复时还原原始 scaleX
-                            restoreMainValueTextScale(i);
+                            // V2.4: 从语义模式恢复为正常数值模式
+                            setSemanticLayoutMode(i, false);
 
                             // 格式化并拆分整数/小数部分
                             String formatted = String.format(Locale.US, fmt, fVal);
-                            splitSetValue(i, formatted);
-                            valueIntViews[i].setAlpha(1f);
-                            valueIntViews[i].setTextColor(0xFFFFFFFF);
-                            if (valueDecViews[i] != null) {
-                                valueDecViews[i].setAlpha(1f);
-                                valueDecViews[i].setTextColor(0xFFFFFFFF);
+                            String intPart, decPart;
+                            int dotPos = formatted.indexOf('.');
+                            if (dotPos >= 0) {
+                                intPart = formatted.substring(0, dotPos);
+                                decPart = formatted.substring(dotPos);
+                            } else {
+                                intPart = formatted;
+                                decPart = "";
                             }
+                            // Ethanol: E 前缀
+                            if (i == 0) intPart = "E" + intPart;
+
+                            // V2.4: auto-fit 显示, 优先保持字号, 再压缩 scaleX, 最后降字号
+                            float[] fp = FIT_PARAMS[i];
+                            fitSplitValueText(i, intPart, decPart, 0xFFFFFFFF,
+                                    fp[0], fp[1], fp[2], fp[3], fp[4], 4);
 
                             if (scaleBars[i] != null) {
                                 // 更新情绪状态 (在 setValue 之前, setValue 内部会渐变)
@@ -890,9 +922,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                 minValueViews[i].setTextColor(0xFFCCCCCC);
                             }
 
-                            // Ethanol: E前缀压窄显示 + 按浓度变色
+                            // Ethanol: 按浓度变色 (E前缀已由 fitSplitValueText 设置)
                             if (i == 0) {
-                                valueIntViews[i].setText("E" + formatted);
                                 int ethColor;
                                 if (fVal < 20) ethColor = 0xFFFFFFFF;       // 白色
                                 else if (fVal < 40) ethColor = 0xFF3FB950;  // 绿色
@@ -1392,32 +1423,226 @@ public class MainActivity extends Activity implements DataSource.Callback {
         return isClosedLoop && stoichTarget && injectorActive;
     }
 
-    /** 统一渲染 DFCO / SYNC 语义标签 (灰色, scaleX=0.58) */
-    private void renderSemanticCard(int i, String label) {
-        if (valueIntViews[i] == null) return;
+    // === V2.4: Display Fit — 工具函数 ===
 
-        valueIntViews[i].setText(label);
-        valueIntViews[i].setTextColor(COLOR_SEMANTIC_SYNC);
-        valueIntViews[i].setAlpha(ALPHA_SEMANTIC_SYNC);
-        valueIntViews[i].setTextScaleX(0.58f);
+    private int dp(float v) {
+        return (int) (v * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private float spToPx(float sp) {
+        return sp * getResources().getDisplayMetrics().scaledDensity;
+    }
+
+    /** 语义模式: 全宽显示 DFCO/SYNC, 隐藏小数和极值面板 */
+    private void setSemanticLayoutMode(int i, boolean enable) {
+        if (semanticMode[i] == enable) return;
+        semanticMode[i] = enable;
 
         if (valueDecViews[i] != null) {
-            valueDecViews[i].setText("");
-            valueDecViews[i].setTextColor(COLOR_SEMANTIC_SYNC);
-            valueDecViews[i].setAlpha(ALPHA_SEMANTIC_SYNC);
+            valueDecViews[i].setVisibility(enable ? View.GONE : View.VISIBLE);
+            if (enable) valueDecViews[i].setText("");
         }
-        if (scaleBars[i] != null) {
-            scaleBars[i].setValue(Float.NaN);
+
+        if (extremePanelViews[i] != null) {
+            extremePanelViews[i].setVisibility(enable ? View.GONE : View.VISIBLE);
+        }
+
+        if (valueAreaViews[i] != null) {
+            LinearLayout.LayoutParams lp =
+                    (LinearLayout.LayoutParams) valueAreaViews[i].getLayoutParams();
+            lp.weight = enable ? 1f : 3f;
+            lp.width = 0;
+            valueAreaViews[i].setLayoutParams(lp);
+        }
+
+        if (valueIntViews[i] != null) {
+            valueIntViews[i].setIncludeFontPadding(false);
+            valueIntViews[i].setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        }
+
+        // 切换模式后清空缓存
+        lastMainCombinedText[i] = null;
+        lastSemanticText[i] = null;
+    }
+
+    /** 单 TextView 语义标签 auto-fit */
+    private void fitSingleText(
+            final TextView tv,
+            final String text,
+            final float baseSp,
+            final float minSp,
+            final float maxScaleX,
+            final float minScaleX,
+            final int safetyDp
+    ) {
+        if (tv == null || text == null) return;
+
+        if (tv.getWidth() <= 0) {
+            tv.post(new Runnable() {
+                @Override public void run() {
+                    fitSingleText(tv, text, baseSp, minSp, maxScaleX, minScaleX, safetyDp);
+                }
+            });
+            return;
+        }
+
+        float basePx = spToPx(baseSp);
+        float minPx = spToPx(minSp);
+
+        int available = tv.getWidth()
+                - tv.getPaddingLeft()
+                - tv.getPaddingRight()
+                - dp(safetyDp);
+
+        if (available <= 0) {
+            tv.setText(text);
+            return;
+        }
+
+        android.text.TextPaint paint = tv.getPaint();
+        paint.setTextSize(basePx);
+
+        float rawWidth = paint.measureText(text);
+        if (rawWidth <= 0f) {
+            tv.setText(text);
+            return;
+        }
+
+        float scaleX = available / rawWidth;
+
+        if (scaleX >= minScaleX) {
+            tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, basePx);
+            tv.setTextScaleX(Math.min(maxScaleX, scaleX));
+        } else {
+            float fittedPx = basePx * (available / (rawWidth * minScaleX));
+            if (fittedPx < minPx) fittedPx = minPx;
+            tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, fittedPx);
+            tv.setTextScaleX(minScaleX);
+        }
+
+        tv.setText(text);
+    }
+
+    /** 组合 valueInt + valueDec auto-fit (带缓存防重复) */
+    private void fitSplitValueText(
+            final int index,
+            final String intText,
+            final String decText,
+            final int color,
+            final float baseIntSp,
+            final float baseDecSp,
+            final float minSp,
+            final float maxScaleX,
+            final float minScaleX,
+            final int safetyDp
+    ) {
+        final TextView intView = valueIntViews[index];
+        final TextView decView = valueDecViews[index];
+
+        if (intView == null) return;
+
+        if (valueAreaViews[index] == null || valueAreaViews[index].getWidth() <= 0) {
+            intView.post(new Runnable() {
+                @Override public void run() {
+                    fitSplitValueText(index, intText, decText, color,
+                            baseIntSp, baseDecSp, minSp, maxScaleX, minScaleX, safetyDp);
+                }
+            });
+            return;
+        }
+
+        // 缓存检查: 文本和颜色相同则跳过
+        String combined = intText + "|" + (decText == null ? "" : decText) + "|" + color;
+        if (combined.equals(lastMainCombinedText[index])) {
+            return;
+        }
+        lastMainCombinedText[index] = combined;
+
+        float intPx = spToPx(baseIntSp);
+        float decPx = spToPx(baseDecSp);
+        float minPx = spToPx(minSp);
+
+        int available = valueAreaViews[index].getWidth()
+                - valueAreaViews[index].getPaddingLeft()
+                - valueAreaViews[index].getPaddingRight()
+                - dp(safetyDp);
+
+        if (available <= 0) {
+            intView.setText(intText);
+            if (decView != null) decView.setText(decText);
+            return;
+        }
+
+        android.text.TextPaint pInt = intView.getPaint();
+        android.text.TextPaint pDec = (decView != null) ? decView.getPaint() : intView.getPaint();
+
+        pInt.setTextSize(intPx);
+        pDec.setTextSize(decPx);
+
+        float wInt = pInt.measureText(intText);
+        float wDec = (decView != null && decText != null) ? pDec.measureText(decText) : 0f;
+        float rawWidth = wInt + wDec;
+
+        float scaleX = rawWidth > 0f ? available / rawWidth : maxScaleX;
+
+        float finalIntPx = intPx;
+        float finalDecPx = decPx;
+        float finalScaleX;
+
+        if (scaleX >= minScaleX) {
+            finalScaleX = Math.min(maxScaleX, scaleX);
+        } else {
+            float ratio = available / (rawWidth * minScaleX);
+            finalIntPx = Math.max(minPx, intPx * ratio);
+            finalDecPx = Math.max(minPx, decPx * ratio);
+            finalScaleX = minScaleX;
+        }
+
+        intView.setTextColor(color);
+        intView.setAlpha(1f);
+        intView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, finalIntPx);
+        intView.setTextScaleX(finalScaleX);
+        intView.setText(intText);
+
+        if (decView != null) {
+            decView.setVisibility(View.VISIBLE);
+            decView.setTextColor(color);
+            decView.setAlpha(1f);
+            decView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, finalDecPx);
+            decView.setTextScaleX(finalScaleX);
+            decView.setText(decText == null ? "" : decText);
         }
     }
 
-    /** 从 DFCO/SYNC 恢复时还原原始 textScaleX */
-    private void restoreMainValueTextScale(int i) {
+    /** 渲染 DFCO / SYNC 语义标签 — V2.4: 全宽模式 + auto-fit */
+    private void renderSemanticCard(int i, String label) {
+        setSemanticLayoutMode(i, true);
+
         if (valueIntViews[i] == null) return;
-        if (i < 3) {
-            valueIntViews[i].setTextScaleX((i == 0) ? 0.5f : 1f / 1.5f);
-        } else {
-            valueIntViews[i].setTextScaleX((i == 6 || i == 7) ? 0.5f : 1f / 1.65f);
+
+        if (label == null) label = "";
+
+        if (!label.equals(lastSemanticText[i])) {
+            lastSemanticText[i] = label;
+            fitSingleText(valueIntViews[i],
+                    label,
+                    88f,
+                    58f,
+                    0.70f,
+                    0.34f,
+                    4);
+        }
+
+        valueIntViews[i].setTextColor(COLOR_SEMANTIC_SYNC);
+        valueIntViews[i].setAlpha(1f);
+
+        if (valueDecViews[i] != null) {
+            valueDecViews[i].setText("");
+            valueDecViews[i].setAlpha(1f);
+        }
+
+        if (scaleBars[i] != null) {
+            scaleBars[i].setValue(Float.NaN);
         }
     }
 

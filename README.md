@@ -317,6 +317,41 @@ Pure Android Framework API, no third-party libraries:
 
 ## Version History
 
+### V2.4 (2026-06-03) — Display Fit Completion
+
+Final polish pass for display quality. All DFCO/SYNC labels now display fully without truncation. Main numeric values auto-fit to available card width.
+
+#### 1. Semantic Full-Width Mode
+
+When A/F, IGN, S.TRIM display `DFCO` or `SYNC`:
+- Hide decimal part and extreme (MAX/MIN) panel
+- Expand value area to full card width
+- Auto-fit label text using TextPaint measurement (base 88sp, min 58sp)
+
+#### 2. Main Value Auto-Fit
+
+Replace fixed `textSize` + `textScaleX` with TextPaint-based auto-fit for all 8 cards:
+- Measure combined `valueInt + valueDec` width at base size
+- First compress `textScaleX` (down to parameter-specific minimum)
+- Then reduce text size (down to parameter-specific minimum)
+- Per-card fit parameters (e.g., Ethanol: 112sp base, IGN/S.TRIM: 99sp base)
+
+#### 3. XML Layout IDs
+
+Added `@+id/valueArea` and `@+id/extremePanel` to `item_sensor_card.xml` for dynamic visibility control.
+
+#### 4. Cache-Optimized Rendering
+
+`lastMainCombinedText` and `lastSemanticText` caches prevent redundant TextPaint measurements at 20Hz refresh rate.
+
+#### 5. Modified Files
+
+| File | Changes |
+|------|---------|
+| `MainActivity.java` | fitSplitValueText, fitSingleText, setSemanticLayoutMode, FIT_PARAMS array, cache arrays |
+| `item_sensor_card.xml` | Added valueArea/extremePanel IDs, ellipsize=none |
+| `build.gradle` | versionCode 8→9, versionName "2.3"→"2.4" |
+
 ### V2.3 (2026-06-03) — Display Truth Pass
 
 Core principle: display real, valid data; gate meaningless data with DFCO/SYNC labels.

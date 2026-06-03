@@ -302,6 +302,40 @@ Android 无原生字高缩放，通过 `textSize × scale` + `textScaleX = 1/sca
 
 ## 版本历史
 
+### V2.4 (2026-06-03) — 显示适配收口
+
+最终显示质量收口。DFCO/SYNC 标签完整显示不再截断，主数值自动适配卡片宽度。
+
+#### 1. 语义标签全宽模式
+
+A/F、IGN、S.TRIM 显示 `DFCO` 或 `SYNC` 时：
+- 隐藏小数部分和极值面板
+- 展开数值区域为全卡片宽度
+- TextPaint 自动适配标签文字（基准 88sp，最小 58sp）
+
+#### 2. 主数值自动适配
+
+替换固定 `textSize` + `textScaleX` 为 TextPaint 测量的自动适配：
+- 测量 `valueInt + valueDec` 组合宽度
+- 先压缩 scaleX（到参数最小值），再降字号（到参数最小值）
+- 每卡片独立适配参数
+
+#### 3. XML 布局 ID
+
+`item_sensor_card.xml` 新增 `@+id/valueArea` 和 `@+id/extremePanel` 支持动态可见性控制。
+
+#### 4. 缓存优化
+
+`lastMainCombinedText` 和 `lastSemanticText` 缓存避免 20Hz 刷新时重复 TextPaint 测量。
+
+#### 5. 修改文件
+
+| 文件 | 变更 |
+|------|------|
+| `MainActivity.java` | fitSplitValueText、fitSingleText、setSemanticLayoutMode、FIT_PARAMS 数组、缓存数组 |
+| `item_sensor_card.xml` | 新增 valueArea/extremePanel ID、ellipsize=none |
+| `build.gradle` | versionCode 8→9，versionName "2.3"→"2.4" |
+
 ### V2.3 (2026-06-03) — 显示真实性优化
 
 核心理念：有效数据清晰显示，无燃烧意义的数据显示 DFCO/SYNC 标签。
