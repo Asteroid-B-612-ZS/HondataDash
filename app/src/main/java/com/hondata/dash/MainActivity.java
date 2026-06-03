@@ -5,6 +5,7 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.content.Intent;
 import android.os.Bundle;
+import android.util.TypedValue;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
@@ -30,7 +31,7 @@ import java.util.Locale;
 import android.os.SystemClock;
 
 /**
- * 主界面 - 硬核科技风格车载仪表盘 V2.4。
+ * 主界面 - 硬核科技风格车载仪表盘 V2.4.1。
  *
  * 4x2 HUD 网格 (英文缩写 + 刻度进度条 + MAX/MIN):
  *   Ethanol | ECT | IAT | BAT
@@ -73,6 +74,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private final boolean[] semanticMode = new boolean[8];
     private final String[] lastMainCombinedText = new String[8];
     private final String[] lastSemanticText = new String[8];
+    private final int[] lastFitWidth = new int[8];
 
     // History Admission 参数表: [MAX cooldown, MIN cooldown] (ms)
     private static final long[][] COOLDOWN_MS = {
@@ -136,16 +138,33 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private static final float CL_LAMBDA_ERR_GREEN = 0.03f;
     private static final float CL_LAMBDA_ERR_WARN  = 0.06f;
 
-    // V2.4: 每卡片 auto-fit 参数 {baseIntSp, baseDecSp, minSp, maxScaleX, minScaleX}
-    private static final float[][] FIT_PARAMS = {
-        {112f, 112f, 72f, 0.58f, 0.34f},  // 0 Ethanol
-        {112f, 112f, 76f, 0.72f, 0.40f},  // 1 ECT
-        {112f, 112f, 76f, 0.72f, 0.40f},  // 2 IAT
-        {99f,  99f,  66f, 0.72f, 0.38f},  // 3 L.TRIM
-        {99f,  99f,  64f, 0.66f, 0.36f},  // 4 MAP
-        {99f,  99f,  64f, 0.66f, 0.36f},  // 5 A/F
-        {99f,  99f,  58f, 0.58f, 0.32f},  // 6 IGN
-        {99f,  99f,  58f, 0.58f, 0.32f},  // 7 S.TRIM
+    // V2.4.1: Width-only fit 参数 — 高度固定, 只动态调整 textScaleX
+    private static class FitParam {
+        final float baseSp;
+        final float minScaleX;
+        final float maxScaleX;
+        final boolean useWorstCase;
+        final String worstCaseText;
+
+        FitParam(float baseSp, float minScaleX, float maxScaleX,
+                 boolean useWorstCase, String worstCaseText) {
+            this.baseSp = baseSp;
+            this.minScaleX = minScaleX;
+            this.maxScaleX = maxScaleX;
+            this.useWorstCase = useWorstCase;
+            this.worstCaseText = worstCaseText;
+        }
+    }
+
+    private static final FitParam[] FIT_PARAMS = new FitParam[] {
+        new FitParam(112.5f, 0.42f, 0.55f, true, "E100"),    // 0 Ethanol
+        new FitParam(112.5f, 0.48f, 0.70f, true, "120"),      // 1 ECT
+        new FitParam(112.5f, 0.48f, 0.70f, true, "120"),      // 2 IAT
+        new FitParam(99.0f,  0.34f, 0.62f, true, "+25.0"),    // 3 L.TRIM
+        new FitParam(99.0f,  0.42f, 0.62f, true, "+2.0"),     // 4 MAP
+        new FitParam(99.0f,  0.42f, 0.62f, true, "18.0"),     // 5 A/F
+        new FitParam(99.0f,  0.32f, 0.58f, true, "+40.0"),    // 6 IGN
+        new FitParam(99.0f,  0.32f, 0.58f, true, "+25.0")     // 7 S.TRIM
     };
 
     // V2.2: 数据新鲜度追踪 — 独立 Handler 250ms 刷新, 不依赖 onDataReceived
@@ -892,10 +911,15 @@ public class MainActivity extends Activity implements DataSource.Callback {
                             // Ethanol: E 前缀
                             if (i == 0) intPart = "E" + intPart;
 
-                            // V2.4: auto-fit 显示, 优先保持字号, 再压缩 scaleX, 最后降字号
-                            float[] fp = FIT_PARAMS[i];
-                            fitSplitValueText(i, intPart, decPart, 0xFFFFFFFF,
-                                    fp[0], fp[1], fp[2], fp[3], fp[4], 4);
+                            // V2.4.1: width-only auto-fit — 高度固定, 只动态 textScaleX
+                            fitSplitValueTextWidthOnly(i, intPart, decPart);
+                            // 默认白色, 后面各卡片按条件覆盖颜色
+                            valueIntViews[i].setTextColor(0xFFFFFFFF);
+                            valueIntViews[i].setAlpha(1f);
+                            if (valueDecViews[i] != null) {
+                                valueDecViews[i].setTextColor(0xFFFFFFFF);
+                                valueDecViews[i].setAlpha(1f);
+                            }
 
                             if (scaleBars[i] != null) {
                                 // 更新情绪状态 (在 setValue 之前, setValue 内部会渐变)
@@ -1460,161 +1484,138 @@ public class MainActivity extends Activity implements DataSource.Callback {
             valueIntViews[i].setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
         }
 
-        // 切换模式后清空缓存
+        // 切换模式后清空缓存, 退出语义模式时强制重新 fit
         lastMainCombinedText[i] = null;
         lastSemanticText[i] = null;
+        if (!enable) lastFitWidth[i] = -1;
     }
 
-    /** 单 TextView 语义标签 auto-fit */
-    private void fitSingleText(
+    /** V2.4.1: 语义标签 width-only fit — 高度固定, 只动态 textScaleX */
+    private void fitSingleTextWidthOnly(
             final TextView tv,
+            final View area,
             final String text,
             final float baseSp,
-            final float minSp,
-            final float maxScaleX,
             final float minScaleX,
-            final int safetyDp
+            final float maxScaleX
     ) {
-        if (tv == null || text == null) return;
+        if (tv == null || area == null) return;
 
-        if (tv.getWidth() <= 0) {
-            tv.post(new Runnable() {
+        int available = area.getWidth()
+                - area.getPaddingLeft()
+                - area.getPaddingRight()
+                - dp(8);
+
+        if (available <= 0) {
+            area.post(new Runnable() {
                 @Override public void run() {
-                    fitSingleText(tv, text, baseSp, minSp, maxScaleX, minScaleX, safetyDp);
+                    fitSingleTextWidthOnly(tv, area, text, baseSp, minScaleX, maxScaleX);
                 }
             });
             return;
         }
 
-        float basePx = spToPx(baseSp);
-        float minPx = spToPx(minSp);
-
-        int available = tv.getWidth()
-                - tv.getPaddingLeft()
-                - tv.getPaddingRight()
-                - dp(safetyDp);
-
-        if (available <= 0) {
-            tv.setText(text);
-            return;
-        }
-
-        android.text.TextPaint paint = tv.getPaint();
-        paint.setTextSize(basePx);
-
-        float rawWidth = paint.measureText(text);
-        if (rawWidth <= 0f) {
-            tv.setText(text);
-            return;
-        }
-
-        float scaleX = available / rawWidth;
-
-        if (scaleX >= minScaleX) {
-            tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, basePx);
-            tv.setTextScaleX(Math.min(maxScaleX, scaleX));
-        } else {
-            float fittedPx = basePx * (available / (rawWidth * minScaleX));
-            if (fittedPx < minPx) fittedPx = minPx;
-            tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, fittedPx);
-            tv.setTextScaleX(minScaleX);
-        }
-
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, baseSp);
+        tv.setSingleLine(true);
+        tv.setIncludeFontPadding(false);
+        tv.setEllipsize(null);
         tv.setText(text);
+
+        float rawWidth = tv.getPaint().measureText(text);
+        if (rawWidth <= 0f) return;
+
+        float scaleX = 1.0f;
+        if (rawWidth > available) {
+            scaleX = (float) available / rawWidth;
+        }
+        if (scaleX < minScaleX) scaleX = minScaleX;
+        if (scaleX > maxScaleX) scaleX = maxScaleX;
+
+        tv.setTextScaleX(scaleX);
     }
 
-    /** 组合 valueInt + valueDec auto-fit (带缓存防重复) */
-    private void fitSplitValueText(
-            final int index,
+    /** V2.4.1: 主数据 width-only fit — 高度固定, 只动态 textScaleX, worst-case 预适配 */
+    private void fitSplitValueTextWidthOnly(
+            final int i,
             final String intText,
-            final String decText,
-            final int color,
-            final float baseIntSp,
-            final float baseDecSp,
-            final float minSp,
-            final float maxScaleX,
-            final float minScaleX,
-            final int safetyDp
+            final String decText
     ) {
-        final TextView intView = valueIntViews[index];
-        final TextView decView = valueDecViews[index];
+        final TextView intView = valueIntViews[i];
+        final TextView decView = valueDecViews[i];
+        final View area = valueAreaViews[i];
 
-        if (intView == null) return;
+        if (intView == null || area == null) return;
 
-        if (valueAreaViews[index] == null || valueAreaViews[index].getWidth() <= 0) {
-            intView.post(new Runnable() {
+        int available = area.getWidth()
+                - area.getPaddingLeft()
+                - area.getPaddingRight()
+                - dp(8);
+
+        if (available <= 0) {
+            area.post(new Runnable() {
                 @Override public void run() {
-                    fitSplitValueText(index, intText, decText, color,
-                            baseIntSp, baseDecSp, minSp, maxScaleX, minScaleX, safetyDp);
+                    fitSplitValueTextWidthOnly(i, intText, decText);
                 }
             });
             return;
         }
 
-        // 缓存检查: 文本和颜色相同则跳过
-        String combined = intText + "|" + (decText == null ? "" : decText) + "|" + color;
-        if (combined.equals(lastMainCombinedText[index])) {
+        // 缓存检查: 文本+宽度没变则跳过
+        String combined = intText + "|" + (decText == null ? "" : decText);
+        int currentWidth = area.getWidth();
+        if (combined.equals(lastMainCombinedText[i]) && currentWidth == lastFitWidth[i]) {
             return;
         }
-        lastMainCombinedText[index] = combined;
+        lastMainCombinedText[i] = combined;
+        lastFitWidth[i] = currentWidth;
 
-        float intPx = spToPx(baseIntSp);
-        float decPx = spToPx(baseDecSp);
-        float minPx = spToPx(minSp);
+        FitParam p = FIT_PARAMS[i];
 
-        int available = valueAreaViews[index].getWidth()
-                - valueAreaViews[index].getPaddingLeft()
-                - valueAreaViews[index].getPaddingRight()
-                - dp(safetyDp);
-
-        if (available <= 0) {
-            intView.setText(intText);
-            if (decView != null) decView.setText(decText);
-            return;
-        }
-
-        android.text.TextPaint pInt = intView.getPaint();
-        android.text.TextPaint pDec = (decView != null) ? decView.getPaint() : intView.getPaint();
-
-        pInt.setTextSize(intPx);
-        pDec.setTextSize(decPx);
-
-        float wInt = pInt.measureText(intText);
-        float wDec = (decView != null && decText != null) ? pDec.measureText(decText) : 0f;
-        float rawWidth = wInt + wDec;
-
-        float scaleX = rawWidth > 0f ? available / rawWidth : maxScaleX;
-
-        float finalIntPx = intPx;
-        float finalDecPx = decPx;
-        float finalScaleX;
-
-        if (scaleX >= minScaleX) {
-            finalScaleX = Math.min(maxScaleX, scaleX);
-        } else {
-            float ratio = available / (rawWidth * minScaleX);
-            finalIntPx = Math.max(minPx, intPx * ratio);
-            finalDecPx = Math.max(minPx, decPx * ratio);
-            finalScaleX = minScaleX;
-        }
-
-        intView.setTextColor(color);
-        intView.setAlpha(1f);
-        intView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, finalIntPx);
-        intView.setTextScaleX(finalScaleX);
-        intView.setText(intText);
+        // 高度固定: 恢复 baseSp
+        intView.setTextSize(TypedValue.COMPLEX_UNIT_SP, p.baseSp);
+        intView.setSingleLine(true);
+        intView.setIncludeFontPadding(false);
+        intView.setEllipsize(null);
 
         if (decView != null) {
-            decView.setVisibility(View.VISIBLE);
-            decView.setTextColor(color);
-            decView.setAlpha(1f);
-            decView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, finalDecPx);
-            decView.setTextScaleX(finalScaleX);
+            decView.setTextSize(TypedValue.COMPLEX_UNIT_SP, p.baseSp);
+            decView.setSingleLine(true);
+            decView.setIncludeFontPadding(false);
+            decView.setEllipsize(null);
+        }
+
+        // 设置文本
+        intView.setText(intText);
+        if (decView != null) {
             decView.setText(decText == null ? "" : decText);
+        }
+
+        // 用 worst-case 测量, 保证任何值都不截断
+        String measureCombined;
+        if (p.useWorstCase && p.worstCaseText != null) {
+            measureCombined = p.worstCaseText;
+        } else {
+            measureCombined = intText + (decText == null ? "" : decText);
+        }
+
+        android.text.TextPaint paint = intView.getPaint();
+        float rawWidth = paint.measureText(measureCombined);
+        if (rawWidth <= 0f) return;
+
+        float scaleX = 1.0f;
+        if (rawWidth > available) {
+            scaleX = (float) available / rawWidth;
+        }
+        if (scaleX < p.minScaleX) scaleX = p.minScaleX;
+        if (scaleX > p.maxScaleX) scaleX = p.maxScaleX;
+
+        intView.setTextScaleX(scaleX);
+        if (decView != null) {
+            decView.setTextScaleX(scaleX);
         }
     }
 
-    /** 渲染 DFCO / SYNC 语义标签 — V2.4: 全宽模式 + auto-fit */
+    /** 渲染 DFCO / SYNC 语义标签 — V2.4.1: 全宽模式 + width-only fit */
     private void renderSemanticCard(int i, String label) {
         setSemanticLayoutMode(i, true);
 
@@ -1622,15 +1623,13 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
         if (label == null) label = "";
 
-        if (!label.equals(lastSemanticText[i])) {
-            lastSemanticText[i] = label;
-            fitSingleText(valueIntViews[i],
-                    label,
-                    88f,
-                    58f,
-                    0.70f,
-                    0.34f,
-                    4);
+        String cache = label;
+        if (!cache.equals(lastSemanticText[i])) {
+            lastSemanticText[i] = cache;
+            View area = valueAreaViews[i] != null
+                    ? valueAreaViews[i]
+                    : (View) valueIntViews[i].getParent();
+            fitSingleTextWidthOnly(valueIntViews[i], area, label, 88f, 0.36f, 0.62f);
         }
 
         valueIntViews[i].setTextColor(COLOR_SEMANTIC_SYNC);
@@ -1638,7 +1637,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
         if (valueDecViews[i] != null) {
             valueDecViews[i].setText("");
-            valueDecViews[i].setAlpha(1f);
+            valueDecViews[i].setVisibility(View.GONE);
         }
 
         if (scaleBars[i] != null) {

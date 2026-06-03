@@ -317,6 +317,19 @@ Pure Android Framework API, no third-party libraries:
 
 ## Version History
 
+### V2.4.1 (2026-06-03) — Width-Only Main Value Fit
+
+Fix clipping of signed large values (+25.0, +39.6, +24.4) by keeping text height fixed and only adjusting textScaleX.
+
+#### Changes
+
+1. **Width-Only Fit** — Main value textSize stays fixed at `FitParam.baseSp`, only `textScaleX` is dynamically adjusted. No more height fluctuations.
+2. **Worst-Case Pre-Fit** — L.TRIM, IGN, S.TRIM use worst-case text (e.g., "+25.0", "+40.0") for measurement, preventing sudden truncation when values change.
+3. **FitParam Class** — Replaces flat float array with structured `{baseSp, minScaleX, maxScaleX, useWorstCase, worstCaseText}` per card.
+4. **Semantic Width-Only** — DFCO/SYNC labels also use height-fixed width-only fit.
+5. **lastFitWidth Cache** — Skip re-measurement when text and width haven't changed.
+6. **setEllipsize(null)** — Prevents Android from adding "..." truncation.
+
 ### V2.4 (2026-06-03) — Display Fit Completion
 
 Final polish pass for display quality. All DFCO/SYNC labels now display fully without truncation. Main numeric values auto-fit to available card width.

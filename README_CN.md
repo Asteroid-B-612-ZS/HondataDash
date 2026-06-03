@@ -302,6 +302,18 @@ Android 无原生字高缩放，通过 `textSize × scale` + `textScaleX = 1/sca
 
 ## 版本历史
 
+### V2.4.1 (2026-06-03) — Width-Only 主数值适配
+
+修复带符号大值 (+25.0、+39.6、+24.4) 被截断的问题。高度固定，只横向压缩 textScaleX。
+
+#### 变更
+
+1. **Width-Only Fit** — 主数据 textSize 固定在 FitParam.baseSp，只动态调整 textScaleX，不再降低高度
+2. **Worst-Case 预适配** — L.TRIM、IGN、S.TRIM 用最坏情况文本测量，防止数值变化时突然截断
+3. **FitParam 类** — 替换平铺 float 数组，每卡片 {baseSp, minScaleX, maxScaleX, useWorstCase, worstCaseText}
+4. **语义标签 Width-Only** — DFCO/SYNC 也改为高度固定只压缩宽度
+5. **lastFitWidth 缓存** — 文本和宽度没变时跳过重复测量
+
 ### V2.4 (2026-06-03) — 显示适配收口
 
 最终显示质量收口。DFCO/SYNC 标签完整显示不再截断，主数值自动适配卡片宽度。
