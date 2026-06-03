@@ -28,7 +28,7 @@ import java.util.Locale;
 import android.os.SystemClock;
 
 /**
- * 主界面 - 硬核科技风格车载仪表盘 V2.2。
+ * 主界面 - 硬核科技风格车载仪表盘 V2.3。
  *
  * 4x2 HUD 网格 (英文缩写 + 刻度进度条 + MAX/MIN):
  *   Ethanol | ECT | IAT | BAT
@@ -113,6 +113,20 @@ public class MainActivity extends Activity implements DataSource.Callback {
         false   // 7 S.TRIM — 快速动态量, 用 recent
     };
 
+    // V2.3 Display Truth Pass — combustionInvalid / SYNC 门控
+    private static final long DFCO_EXIT_IGN_MIN_SYNC_MS = 250L;
+    private static final long DFCO_EXIT_AF_MIN_SYNC_MS = 300L;
+    private static final long DFCO_EXIT_STRIM_MIN_SYNC_MS = 500L;
+    private static final long DFCO_EXIT_MAX_SYNC_MS = 800L;
+    private static final int COLOR_SEMANTIC_SYNC = 0xFFA0A0A0;
+    private static final float ALPHA_SEMANTIC_SYNC = 1.0f;
+    // Lambda-based A/F thresholds
+    private static final float WOT_LAMBDA_DANGER_LEAN = 0.86f;  // ~12.6 AFR
+    private static final float WOT_LAMBDA_WARN_LEAN   = 0.83f;  // ~12.2 AFR
+    private static final float WOT_LAMBDA_WARN_RICH   = 0.68f;  // ~10.0 AFR
+    private static final float CL_LAMBDA_ERR_GREEN = 0.03f;
+    private static final float CL_LAMBDA_ERR_WARN  = 0.06f;
+
     // V2.2: 数据新鲜度追踪 — 独立 Handler 250ms 刷新, 不依赖 onDataReceived
     private long lastValidFrameTimeMs = 0L;
     private final Handler freshnessHandler = new Handler(Looper.getMainLooper());
@@ -165,6 +179,13 @@ public class MainActivity extends Activity implements DataSource.Callback {
     // DFCO 状态跟踪 (用于退出 DFCO 时即时恢复显示)
     private boolean lastDfcoState = false;
     private long dfcoExitTime = 0;  // DFCO 退出时间戳 (用于 History Admission 500ms 窗口)
+
+    // V2.3: combustionInvalid 显示层门控状态
+    private boolean lastCombustionInvalid = false;
+    private long combustionInvalidExitTimeMs = 0L;
+    private boolean lastAfSync = false;
+    private boolean lastIgnSync = false;
+    private boolean lastStrimSync = false;
     private final Runnable flashTick = new Runnable() {
         @Override
         public void run() {
@@ -191,8 +212,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
                     valueDecViews[2].setAlpha(alpha / 255f);
                 }
             }
-            // A/F闪烁 (红色区间 + 踩油门状态)
-            if (afFlashing) {
+            // A/F闪烁 (红色区间) — V2.3: DFCO/SYNC 期间不压暗 alpha
+            if (afFlashing && !lastCombustionInvalid && !lastAfSync) {
                 int alpha = flashVisible ? 255 : 40;
                 int color = 0xFFFF4444;
                 valueIntViews[5].setTextColor(color);
@@ -631,6 +652,20 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 boolean dfcoJustEnded = lastDfcoState && !isDfco;
                 lastDfcoState = isDfco;
                 if (dfcoJustEnded) dfcoExitTime = System.currentTimeMillis();
+
+                // V2.3: combustionInvalid 显示层门控
+                boolean combustionInvalid = isCombustionInvalid(data);
+                updateCombustionInvalidTransition(combustionInvalid);
+                long sinceDfcoExitMs = combustionInvalidExitTimeMs > 0L
+                    ? SystemClock.elapsedRealtime() - combustionInvalidExitTimeMs
+                    : Long.MAX_VALUE;
+                boolean ignSync = shouldSyncIgnAfterDfco(data, combustionInvalid, sinceDfcoExitMs);
+                boolean afSync = shouldSyncAfAfterDfco(data, combustionInvalid, sinceDfcoExitMs);
+                boolean strimSync = shouldSyncStrimAfterDfco(data, combustionInvalid, sinceDfcoExitMs);
+                lastIgnSync = ignSync;
+                lastAfSync = afSync;
+                lastStrimSync = strimSync;
+
                 long now = System.currentTimeMillis();
 
                 // 更新 8 个主卡片
@@ -670,22 +705,39 @@ public class MainActivity extends Activity implements DataSource.Callback {
                             continue;
                         }
 
-                        // DFCO 冻结: A/F / IGN / S.TRIM 显示灰色DFCO, L.TRIM不受影响(极慢变化)
-                        if (isDfco && (i == 5 || i == 6 || i == 7)) {
-                            // A/F / IGN / S.TRIM: 灰色 DFCO 标识 (压缩宽度防截断)
-                            SpannableString dfcoStr = new SpannableString("DFCO");
-                            dfcoStr.setSpan(new ScaleXSpan(0.75f), 0, 4, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                            valueIntViews[i].setText(dfcoStr);
-                            valueIntViews[i].setTextColor(0xFF888888);
-                            valueIntViews[i].setAlpha(1f);
-                            if (valueDecViews[i] != null) {
-                                valueDecViews[i].setText("");
-                                valueDecViews[i].setAlpha(1f); // 同步alpha, 防止退出DFCO后明暗不同步
+                        // V2.3: combustionInvalid / SYNC 显示层门控
+                        // 替代旧 isDfco 单一判断, 使用多源语义检测 + 独立 SYNC 释放
+                        if (i == 5) { // A/F
+                            if (combustionInvalid) {
+                                clearAfFlashIfNeeded();
+                                renderSemanticCard(i, "DFCO");
+                                continue;
                             }
-                            if (scaleBars[i] != null) {
-                                scaleBars[i].setValue(Float.NaN);
+                            if (afSync) {
+                                clearAfFlashIfNeeded();
+                                renderSemanticCard(i, "SYNC");
+                                continue;
                             }
-                            continue;
+                        }
+                        if (i == 6) { // IGN
+                            if (combustionInvalid) {
+                                renderSemanticCard(i, "DFCO");
+                                continue;
+                            }
+                            if (ignSync) {
+                                renderSemanticCard(i, "SYNC");
+                                continue;
+                            }
+                        }
+                        if (i == 7) { // S.TRIM
+                            if (combustionInvalid) {
+                                renderSemanticCard(i, "DFCO");
+                                continue;
+                            }
+                            if (strimSync || !isStrimDisplayValid(data, combustionInvalid, strimSync)) {
+                                renderSemanticCard(i, "SYNC");
+                                continue;
+                            }
                         }
 
                         // NaN 保护: 传感器异常值使用上次有效滤波值
@@ -800,6 +852,9 @@ public class MainActivity extends Activity implements DataSource.Callback {
                         if (updateDisplay) {
                             lastUpdateTime[i] = now;
 
+                            // V2.3: 从 DFCO/SYNC 恢复时还原原始 scaleX
+                            restoreMainValueTextScale(i);
+
                             // 格式化并拆分整数/小数部分
                             String formatted = String.format(Locale.US, fmt, fVal);
                             splitSetValue(i, formatted);
@@ -903,44 +958,27 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                 }
                             }
 
-                            // A/F: V2.2 按工况语义分层报警
-                            // DFCO: 不报警 (断油, 无燃烧); WOT: 防过稀优先; NORMAL: 宽泛异常提示
+                            // A/F: V2.3 Lambda 语义报警 — 使用 measured/target lambda 而非固定 AFR 阈值
                             if (i == 5) {
                                 lastAfVal = fVal;
-                                boolean isOnThrottle = lastTpPlate > 5;
+                                float measuredLambda = (float) data.getDouble(0x0320);
+                                float targetLambda = (float) data.getDouble(0x0322);
 
-                                // 闪烁判定
+                                // 闪烁判定: 只有 WOT 过稀才红闪, DFCO/SYNC 已被前置门控拦截
                                 boolean shouldFlash = false;
-                                if (isDfco) {
-                                    shouldFlash = false;
-                                } else if (isWot) {
-                                    shouldFlash = fVal > 12.2f;  // WOT 过稀危险闪烁
-                                } else {
-                                    shouldFlash = isOnThrottle && (fVal < 12.5f || fVal > 16.5f);
+                                if (!combustionInvalid && !afSync) {
+                                    if (isWot && !Double.isNaN(data.getDouble(0x0320))) {
+                                        shouldFlash = measuredLambda > WOT_LAMBDA_DANGER_LEAN;
+                                    }
                                 }
                                 if (shouldFlash != afFlashing) {
                                     afFlashing = shouldFlash;
                                     updateFlashState();
                                 }
 
-                                // 颜色判定
+                                // 颜色判定: lambda 语义
                                 if (!afFlashing) {
-                                    int color;
-                                    if (isDfco) {
-                                        // DFCO 已经在前面显示了灰色 "DFCO", 不会走到这里
-                                        color = 0xFF888888;
-                                    } else if (isWot) {
-                                        if (fVal > 12.2f) color = 0xFFFF4444;       // WOT 过稀: 危险红
-                                        else if (fVal > 11.8f) color = 0xFFD29922;   // WOT 偏稀: 警告黄
-                                        else if (fVal < 10.2f) color = 0xFFD29922;   // WOT 过浓: 警告黄 (非危险)
-                                        else color = 0xFF3FB950;                      // WOT 安全: 绿色
-                                    } else {
-                                        // NORMAL / IDLE / WARMUP: 基础四区变色
-                                        if (fVal < 11) color = 0xFFFF4444;
-                                        else if (fVal < 14.5f) color = 0xFFD29922;
-                                        else if (fVal <= 15.5f) color = 0xFF3FB950;
-                                        else color = 0xFFFF4444;
-                                    }
+                                    int color = getAfColorByLambda(measuredLambda, targetLambda, state);
                                     valueIntViews[i].setTextColor(color);
                                     valueIntViews[i].setAlpha(1f);
                                     if (valueDecViews[i] != null) {
@@ -950,13 +988,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                 }
                             }
 
-                            // P3: V2 置信度驱动透明度 — A/F, IGN, S.TRIM 同步调制
-                            if (i == 5 || i == 6 || i == 7) {
-                                float alpha = state.textAlpha(true);
-                                valueIntViews[i].setAlpha(alpha);
-                                if (valueDecViews[i] != null) valueDecViews[i].setAlpha(alpha);
-                                // ScaleBar 始终保持明亮, 不随文字变暗
-                            }
                         }
                     } else {
                         // Last-Valid 缓存: 数据缺失时保留最后有效值 (半透明)
@@ -1272,6 +1303,161 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 recentMin[i] = currentVal;
             }
         }
+    }
+
+    // === V2.3 Display Truth Pass: combustionInvalid + SYNC ===
+
+    /**
+     * 显示层 DFCO / overrun fuel cut 检测。
+     * 不依赖单一 TPlate < 2 阈值，使用多源语义：INJ=0 + lambda/target 极稀 + Open Loop + 低负荷。
+     * PID 0x0340 = ClosedLoop (0=open loop, 1=closed loop)
+     */
+    private boolean isCombustionInvalid(SensorData data) {
+        float rpm = (float) data.getDouble(0x0100);
+        float speed = (float) data.getDouble(0x0101);
+        float map = (float) data.getDouble(0x0110);
+        float pedal = (float) data.getDouble(0x0120);
+        float tp = (float) data.getDouble(0x0122);
+        float inj = (float) data.getDouble(0x0130);
+        float lambda = (float) data.getDouble(0x0320);
+        float target = (float) data.getDouble(0x0322);
+        float closedLoop = (float) data.getDouble(0x0340);
+
+        boolean fuelCut = inj <= 0.05f;
+        boolean overrunTarget = target >= 1.80f || lambda >= 1.80f;
+        boolean openLoopDriving = closedLoop < 0.5f;
+        boolean closedThrottleLike = pedal <= 0.5f || tp <= 3.0f || map < 35.0f;
+        boolean movingOrHighRpm = speed > 5.0f || rpm > 1200.0f;
+
+        return fuelCut && overrunTarget && openLoopDriving && closedThrottleLike && movingOrHighRpm;
+    }
+
+    /** 记录 combustionInvalid → valid 的退出时刻 */
+    private void updateCombustionInvalidTransition(boolean combustionInvalid) {
+        long now = SystemClock.elapsedRealtime();
+        if (lastCombustionInvalid && !combustionInvalid) {
+            combustionInvalidExitTimeMs = now;
+        }
+        lastCombustionInvalid = combustionInvalid;
+    }
+
+    /** IGN SYNC: 喷油恢复即可较早释放, 最短 250ms */
+    private boolean shouldSyncIgnAfterDfco(SensorData data, boolean combustionInvalid, long sinceExitMs) {
+        if (combustionInvalid) return true;
+        if (sinceExitMs < DFCO_EXIT_IGN_MIN_SYNC_MS) return true;
+
+        float inj = (float) data.getDouble(0x0130);
+        float closedLoop = (float) data.getDouble(0x0340);
+        return inj <= 0.20f || closedLoop < 0.5f;
+    }
+
+    /** A/F SYNC: 等待 lambda 脱离极稀状态, 最短 300ms, 最长 800ms */
+    private boolean shouldSyncAfAfterDfco(SensorData data, boolean combustionInvalid, long sinceExitMs) {
+        if (combustionInvalid) return true;
+        if (sinceExitMs < DFCO_EXIT_AF_MIN_SYNC_MS) return true;
+
+        float inj = (float) data.getDouble(0x0130);
+        float lambda = (float) data.getDouble(0x0320);
+        float target = (float) data.getDouble(0x0322);
+        float closedLoop = (float) data.getDouble(0x0340);
+
+        boolean lambdaStillInvalid = lambda > 1.35f || target > 1.30f;
+        boolean fuelStillInvalid = inj <= 0.20f || closedLoop < 0.5f;
+
+        if (sinceExitMs > DFCO_EXIT_MAX_SYNC_MS) {
+            return lambdaStillInvalid && fuelStillInvalid;
+        }
+        return lambdaStillInvalid || fuelStillInvalid;
+    }
+
+    /** S.TRIM SYNC: 最保守, 等 closed loop 稳定, 最短 500ms */
+    private boolean shouldSyncStrimAfterDfco(SensorData data, boolean combustionInvalid, long sinceExitMs) {
+        if (combustionInvalid) return true;
+        if (sinceExitMs < DFCO_EXIT_STRIM_MIN_SYNC_MS) return true;
+        return !isStrimDisplayValid(data, combustionInvalid, false);
+    }
+
+    /** S.TRIM 只在 closed loop + stoich target + injector active 时显示真实值 */
+    private boolean isStrimDisplayValid(SensorData data, boolean combustionInvalid, boolean strimSync) {
+        if (combustionInvalid || strimSync) return false;
+
+        float closedLoop = (float) data.getDouble(0x0340);
+        float target = (float) data.getDouble(0x0322);
+        float inj = (float) data.getDouble(0x0130);
+
+        boolean isClosedLoop = closedLoop > 0.5f;
+        boolean stoichTarget = target > 0.90f && target < 1.10f;
+        boolean injectorActive = inj > 0.30f;
+
+        return isClosedLoop && stoichTarget && injectorActive;
+    }
+
+    /** 统一渲染 DFCO / SYNC 语义标签 (灰色, scaleX=0.58) */
+    private void renderSemanticCard(int i, String label) {
+        if (valueIntViews[i] == null) return;
+
+        valueIntViews[i].setText(label);
+        valueIntViews[i].setTextColor(COLOR_SEMANTIC_SYNC);
+        valueIntViews[i].setAlpha(ALPHA_SEMANTIC_SYNC);
+        valueIntViews[i].setTextScaleX(0.58f);
+
+        if (valueDecViews[i] != null) {
+            valueDecViews[i].setText("");
+            valueDecViews[i].setTextColor(COLOR_SEMANTIC_SYNC);
+            valueDecViews[i].setAlpha(ALPHA_SEMANTIC_SYNC);
+        }
+        if (scaleBars[i] != null) {
+            scaleBars[i].setValue(Float.NaN);
+        }
+    }
+
+    /** 从 DFCO/SYNC 恢复时还原原始 textScaleX */
+    private void restoreMainValueTextScale(int i) {
+        if (valueIntViews[i] == null) return;
+        if (i < 3) {
+            valueIntViews[i].setTextScaleX((i == 0) ? 0.5f : 1f / 1.5f);
+        } else {
+            valueIntViews[i].setTextScaleX((i == 6 || i == 7) ? 0.5f : 1f / 1.65f);
+        }
+    }
+
+    /** DFCO/SYNC 期间清除 A/F 闪烁状态, 防止残留 flash 压暗 alpha */
+    private void clearAfFlashIfNeeded() {
+        if (!afFlashing) return;
+        afFlashing = false;
+        if (valueIntViews[5] != null) valueIntViews[5].setAlpha(1f);
+        if (valueDecViews[5] != null) valueDecViews[5].setAlpha(1f);
+        updateFlashState();
+    }
+
+    /** V2.3: Lambda 语义 A/F 颜色判定 — WOT 用绝对 lambda, 闭环用 lambda error */
+    private int getAfColorByLambda(float lambda, float targetLambda, EngineSemanticState state) {
+        boolean lambdaValid = !Float.isNaN(lambda);
+        boolean targetValid = !Float.isNaN(targetLambda);
+
+        if (state != null && state.isWot()) {
+            // WOT: 防过稀优先, 使用绝对 lambda 阈值
+            if (lambdaValid) {
+                if (lambda > WOT_LAMBDA_DANGER_LEAN) return 0xFFFF4444;   // 过稀: 危险红
+                if (lambda > WOT_LAMBDA_WARN_LEAN)   return 0xFFD29922;   // 偏稀: 警告黄
+                if (lambdaValid && lambda < WOT_LAMBDA_WARN_RICH) return 0xFFD29922;  // 过浓: 警告黄
+            }
+            return 0xFF3FB950;  // WOT 安全: 绿色
+        }
+
+        // 闭环 / NORMAL: 使用 lambda error 距离目标的偏差
+        if (lambdaValid && targetValid) {
+            float err = Math.abs(lambda - targetLambda);
+            if (err <= CL_LAMBDA_ERR_GREEN) return 0xFF3FB950;   // 绿色: 紧跟目标
+            if (err <= CL_LAMBDA_ERR_WARN)  return 0xFFD29922;   // 黄色: 轻微偏差
+            return 0xFFFF4444;                                     // 红色: 严重偏差
+        }
+
+        // lambda 数据缺失时退化到固定 AFR 阈值
+        float af = lambdaValid ? lambda * 14.7f : lastAfVal;
+        if (af < 12.5f || af > 16.0f) return 0xFFFF4444;
+        if (af < 14.0f || af > 15.5f) return 0xFFD29922;
+        return 0xFF3FB950;
     }
 
     /**

@@ -317,6 +317,52 @@ Pure Android Framework API, no third-party libraries:
 
 ## Version History
 
+### V2.3 (2026-06-03) — Display Truth Pass
+
+Core principle: display real, valid data; gate meaningless data with DFCO/SYNC labels.
+
+#### 1. CombustionInvalid — Multi-Source DFCO Detection
+
+Display-layer gate using multi-source semantics instead of relying solely on `TPlate < 2`. Detects DFCO/overrun fuel cut via: INJ=0 + Lambda/Target ≥ 1.8 + Open Loop + Closed Throttle (pedal/TP/MAP) + Moving. Correctly captures real DFCO frames where TPlate = 2~3.
+
+#### 2. Dynamic SYNC Windows After DFCO Exit
+
+Independent per-parameter release timing instead of a fixed 800ms hard lock:
+
+- **IGN**: Min 250ms, releases when injector restarts (~250~350ms)
+- **A/F**: Min 300ms, releases when lambda leaves extreme-lean state (~300~500ms), max 800ms
+- **S.TRIM**: Min 500ms, releases only when closed loop + stoich target + injector active (~500~800ms)
+
+#### 3. Lambda-Based A/F Alarm
+
+A/F color and flash logic uses measured lambda vs target lambda instead of fixed AFR thresholds:
+
+- **WOT**: Absolute lambda thresholds — danger lean > 0.86 (red flash), warn lean > 0.83 (yellow), warn rich < 0.68 (yellow), safe (green)
+- **Closed Loop**: Lambda error from target — green ≤ 0.03, yellow ≤ 0.06, red > 0.06
+
+#### 4. Confidence No Longer Dims Display
+
+Removed `state.textAlpha()` dimming on A/F, IGN, S.TRIM real-time values. Confidence continues to drive filter strength, WOT detection, boost release rate, and history admission — but never makes valid data appear dim.
+
+#### 5. S.TRIM Closed Loop Gate
+
+S.TRIM only displays real values when Fuel Status = closed loop + stoich target + injector active. During WOT/open loop, S.TRIM shows `SYNC` instead of meaningless open-loop values.
+
+#### 6. MAX/MIN Protected During DFCO/SYNC
+
+A/F, IGN, S.TRIM recent MAX/MIN are not updated while in DFCO or SYNC state. Prevents DFCO-exit transients from polluting extreme tracking.
+
+#### 7. A/F Flash Defense
+
+A/F red flash is suppressed during DFCO/SYNC state. Prevents residual flash state from dimming the DFCO/SYNC label.
+
+#### 8. Modified Files
+
+| File | Changes |
+|------|---------|
+| `MainActivity.java` | combustionInvalid gate, dynamic SYNC windows, lambda-based A/F alarm, S.TRIM closed loop gate, remove confidence dimming, flash defense |
+| `build.gradle` | versionCode 7→8, versionName "2.2"→"2.3" |
+
 ### V2.2 (2026-06-03) — Session Extreme & Semantic Alarm
 
 #### 1. Dual-Path MAX/MIN — Session Extreme vs Recent Extreme

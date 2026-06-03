@@ -302,6 +302,52 @@ Android 无原生字高缩放，通过 `textSize × scale` + `textScaleX = 1/sca
 
 ## 版本历史
 
+### V2.3 (2026-06-03) — 显示真实性优化
+
+核心理念：有效数据清晰显示，无燃烧意义的数据显示 DFCO/SYNC 标签。
+
+#### 1. CombustionInvalid — 多源 DFCO 检测
+
+显示层使用多源语义检测替代单一 `TPlate < 2` 判断。通过 INJ=0 + Lambda/Target ≥ 1.8 + Open Loop + 低负荷（pedal/TP/MAP）+ 行车中 来检测 DFCO/overrun fuel cut。正确捕捉 TPlate = 2~3 的真实 DFCO 帧。
+
+#### 2. DFCO 退出动态 SYNC 窗口
+
+每个参数独立释放时间，不使用固定 800ms 硬锁：
+
+- **IGN**：最短 250ms，喷油恢复即释放（约 250~350ms）
+- **A/F**：最短 300ms，lambda 脱离极稀状态后释放（约 300~500ms），最长 800ms
+- **S.TRIM**：最短 500ms，closed loop + stoich target + injector active 后释放（约 500~800ms）
+
+#### 3. Lambda 语义 A/F 报警
+
+A/F 颜色与闪烁使用 measured lambda vs target lambda 替代固定 AFR 阈值：
+
+- **WOT**：绝对 lambda 阈值 — 过稀危险 > 0.86（红闪），偏稀警告 > 0.83（黄），过浓警告 < 0.68（黄），安全（绿）
+- **闭环**：Lambda 偏差 — 绿 ≤ 0.03，黄 ≤ 0.06，红 > 0.06
+
+#### 4. 置信度不再压暗显示
+
+移除 `state.textAlpha()` 对 A/F、IGN、S.TRIM 实时值的压暗效果。置信度继续驱动滤波强度、WOT 检测、增压释放率、历史准入 — 但不再让有效数据看起来变暗。
+
+#### 5. S.TRIM 闭环门控
+
+S.TRIM 仅在 Fuel Status = closed loop + stoich target + injector active 时显示真实值。WOT/open loop 期间显示 `SYNC`。
+
+#### 6. MAX/MIN 在 DFCO/SYNC 期间保护
+
+A/F、IGN、S.TRIM 的 recent MAX/MIN 在 DFCO 或 SYNC 状态下不更新。防止 DFCO 退出瞬态污染极值追踪。
+
+#### 7. A/F 闪烁防御
+
+A/F 红色闪烁在 DFCO/SYNC 期间被抑制，防止残留闪烁状态压暗 DFCO/SYNC 标签。
+
+#### 8. 修改文件
+
+| 文件 | 变更 |
+|------|------|
+| `MainActivity.java` | combustionInvalid 门控、动态 SYNC 窗口、Lambda 语义 A/F 报警、S.TRIM 闭环门控、移除置信度压暗、闪烁防御 |
+| `build.gradle` | versionCode 7→8，versionName "2.2"→"2.3" |
+
 ### V2.2 (2026-06-03) — 全程极值与语义报警
 
 #### 1. 双路径 MAX/MIN — Session Extreme vs Recent Extreme
