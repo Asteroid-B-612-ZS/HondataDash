@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    传感器卡片 V7 - FrameLayout overlay 架构
-    顶部: 英文缩写(左) + 单位(右上角右对齐, 同标题大小)
-    中央: FrameLayout(normalValueLayer + semanticValue overlay)
-      - normalValueLayer: 主值(单TextView) + MAX/MIN(固定56dp, 18sp)
-      - semanticValue: DFCO/SYNC overlay (INVISIBLE/VISIBLE切换)
-    底部: 刻度进度条 (刻度在上方)
+    传感器卡片 V8 - Display Architecture Reset
+    顶部: 英文缩写(左) + 单位(右上角右对齐)
+    中央: mainValue(weight 3.6) + MAX/MIN(weight 1.2)
+      - valueInt: match_parent, 单 TextView 完整字符串
+      - extremePanel: INVISIBLE/VISIBLE 切换, 不用 GONE
+    底部: 刻度进度条
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -14,7 +14,7 @@
     android:background="@drawable/bg_card"
     android:padding="4dp">
 
-    <!-- 顶部: 标题(单位) 紧凑排列 -->
+    <!-- 顶部: 标题(单位) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -41,116 +41,93 @@
             android:gravity="center_vertical"/>
     </LinearLayout>
 
-    <!-- 中央: FrameLayout overlay — 正常层 + 语义层 -->
-    <FrameLayout
-        android:id="@+id/valueCenterFrame"
+    <!-- 中央: 主值 + MAX/MIN -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
 
-        <!-- 正常数据层：主值 + MAX/MIN -->
-        <LinearLayout
-            android:id="@+id/normalValueLayer"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-            <!-- 主值区：吃掉剩余空间 -->
-            <FrameLayout
-                android:id="@+id/valueArea"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:paddingStart="2dp"
-                android:paddingEnd="2dp"
-                android:clipChildren="true"
-                android:clipToPadding="true">
-
-                <TextView
-                    android:id="@+id/valueInt"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:textColor="#FFFFFFFF"
-                    android:textSize="100sp"
-                    android:textStyle="bold|italic"
-                    android:includeFontPadding="false"
-                    android:singleLine="true"
-                    android:ellipsize="none"
-                    android:gravity="center_vertical|start"
-                    android:text="--"/>
-            </FrameLayout>
-
-            <!-- 右侧 MAX/MIN：固定宽度，稳定显示 -->
-            <LinearLayout
-                android:id="@+id/extremePanel"
-                android:layout_width="56dp"
-                android:layout_height="match_parent"
-                android:orientation="vertical"
-                android:gravity="end"
-                android:paddingEnd="2dp"
-                android:clipChildren="true"
-                android:clipToPadding="true">
-
-                <TextView
-                    android:id="@+id/maxValue"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textColor="#FFBBBBBB"
-                    android:textSize="18sp"
-                    android:textStyle="bold"
-                    android:includeFontPadding="false"
-                    android:singleLine="true"
-                    android:ellipsize="none"
-                    android:gravity="end"
-                    android:text=""/>
-
-                <View
-                    android:layout_width="0dp"
-                    android:layout_height="0dp"
-                    android:layout_weight="1"/>
-
-                <TextView
-                    android:id="@+id/minValue"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textColor="#FFAAAAAA"
-                    android:textSize="18sp"
-                    android:textStyle="bold"
-                    android:includeFontPadding="false"
-                    android:singleLine="true"
-                    android:ellipsize="none"
-                    android:gravity="end"
-                    android:text=""/>
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- 语义标签层：DFCO / SYNC，覆盖整块中央区域 -->
-        <TextView
-            android:id="@+id/semanticValue"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:visibility="invisible"
-            android:textColor="#FFA0A0A0"
-            android:textSize="82sp"
-            android:textStyle="bold|italic"
-            android:includeFontPadding="false"
-            android:singleLine="true"
-            android:ellipsize="none"
-            android:gravity="center_vertical|start"
-            android:paddingStart="4dp"
-            android:paddingEnd="4dp"
-            android:text=""/>
-
-        <!-- 隐藏的 valueDec，Java 兼容保留 -->
-        <TextView
-            android:id="@+id/valueDec"
+        <!-- 主值区: weight 3.6 -->
+        <FrameLayout
+            android:id="@+id/valueArea"
             android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:visibility="gone"/>
-    </FrameLayout>
+            android:layout_height="match_parent"
+            android:layout_weight="3.6"
+            android:paddingStart="2dp"
+            android:paddingEnd="2dp"
+            android:clipChildren="true"
+            android:clipToPadding="true">
 
-    <!-- 底部: 刻度进度条 (刻度在上方) -->
+            <TextView
+                android:id="@+id/valueInt"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical|start"
+                android:textColor="#FFFFFFFF"
+                android:textSize="100sp"
+                android:textStyle="bold|italic"
+                android:includeFontPadding="false"
+                android:singleLine="true"
+                android:ellipsize="none"
+                android:text="--"/>
+
+            <!-- 兼容旧 id，不再用于显示 -->
+            <TextView
+                android:id="@+id/valueDec"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:visibility="gone"
+                android:text=""/>
+        </FrameLayout>
+
+        <!-- MAX/MIN: weight 1.2 -->
+        <LinearLayout
+            android:id="@+id/extremePanel"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1.2"
+            android:orientation="vertical"
+            android:gravity="end"
+            android:paddingEnd="2dp"
+            android:clipChildren="true"
+            android:clipToPadding="true">
+
+            <TextView
+                android:id="@+id/maxValue"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="end"
+                android:textColor="#FFBBBBBB"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:includeFontPadding="false"
+                android:singleLine="true"
+                android:ellipsize="none"
+                android:text=""/>
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1"/>
+
+            <TextView
+                android:id="@+id/minValue"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="end"
+                android:textColor="#FFAAAAAA"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:includeFontPadding="false"
+                android:singleLine="true"
+                android:ellipsize="none"
+                android:text=""/>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 底部: 刻度进度条 -->
     <com.hondata.dash.ScaleBarView
         android:id="@+id/scaleBar"
         android:layout_width="match_parent"

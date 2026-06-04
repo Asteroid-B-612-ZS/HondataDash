@@ -31,7 +31,7 @@ import java.util.Locale;
 import android.os.SystemClock;
 
 /**
- * 主界面 - 硬核科技风格车载仪表盘 V2.5。
+ * 主界面 - 硬核科技风格车载仪表盘 V2.6。
  *
  * 4x2 HUD 网格 (英文缩写 + 刻度进度条 + MAX/MIN):
  *   Ethanol | ECT | IAT | BAT
@@ -68,26 +68,10 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private final long[] recentMinTime = new long[8];
     private final boolean[] hasValue = new boolean[8];
 
-    // V2.5: 显示适配 — FrameLayout overlay + 固定 extremePanel
+    // V2.6: 显示适配 — 固定几何, 单 TextView, 无缓存
     private final View[] valueAreaViews = new View[8];
     private final View[] extremePanelViews = new View[8];
-    private final View[] normalValueLayerViews = new View[8];
-    private final TextView[] semanticValueViews = new TextView[8];
-    private final View[] valueCenterFrameViews = new View[8];
     private final boolean[] semanticMode = new boolean[8];
-
-    // 文本/缩放缓存
-    private final String[] lastMainText = new String[8];
-    private final String[] lastMaxText = new String[8];
-    private final String[] lastMinText = new String[8];
-    private final String[] lastSemanticText = new String[8];
-    private final int[] lastMainWidth = new int[8];
-    private final int[] lastExtremeWidth = new int[8];
-    private final int[] lastSemanticWidth = new int[8];
-    private final float[] lastMainScaleX = new float[8];
-    private final float[] lastMaxScaleX = new float[8];
-    private final float[] lastMinScaleX = new float[8];
-    private final float[] lastSemanticScaleX = new float[8];
 
     // History Admission 参数表: [MAX cooldown, MIN cooldown] (ms)
     private static final long[][] COOLDOWN_MS = {
@@ -151,29 +135,34 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private static final float CL_LAMBDA_ERR_GREEN = 0.03f;
     private static final float CL_LAMBDA_ERR_WARN  = 0.06f;
 
-    // V2.5: Font constants — single-TextView + overlay + fixed extremePanel
-    private static final float ROW1_VALUE_SP = 112f;     // Ethanol, ECT, IAT, L.TRIM
-    private static final float ROW2_VALUE_SP = 102f;     // MAP, A/F, IGN, S.TRIM
-    private static final float SEMANTIC_VALUE_SP = 82f;   // DFCO/SYNC overlay
-    private static final float EXTREME_VALUE_SP = 18f;    // MAX/MIN
-
-    private static float getBaseSp(int i) {
-        return i < 4 ? ROW1_VALUE_SP : ROW2_VALUE_SP;
+    // V2.6: per-card 字号和最小压缩
+    private float getBaseSpForMain(int i) {
+        switch (i) {
+            case 0: return 112f; // Ethanol
+            case 1: return 112f; // ECT
+            case 2: return 112f; // IAT
+            case 3: return 104f; // L.TRIM
+            case 4: return 102f; // MAP
+            case 5: return 102f; // A/F
+            case 6: return 100f; // IGN
+            case 7: return 100f; // S.TRIM
+            default: return 100f;
+        }
     }
 
-    // Per-card minimum scaleX for main value
-    private static final float[] MAIN_MIN_SCALE_X = {
-        0.40f,  // 0 Ethanol
-        0.42f,  // 1 ECT
-        0.42f,  // 2 IAT
-        0.32f,  // 3 L.TRIM
-        0.36f,  // 4 MAP
-        0.36f,  // 5 A/F
-        0.30f,  // 6 IGN
-        0.30f   // 7 S.TRIM
-    };
-    private static final float EXTREME_MIN_SCALE_X = 0.72f;
-    private static final float SEMANTIC_MIN_SCALE_X = 0.55f;
+    private float getMinScaleXForMain(int i) {
+        switch (i) {
+            case 0: return 0.38f; // E100
+            case 1: return 0.42f; // 120
+            case 2: return 0.42f; // 120
+            case 3: return 0.30f; // +25.0
+            case 4: return 0.34f; // -1.0 / +2.0
+            case 5: return 0.36f; // 18.0
+            case 6: return 0.28f; // +45.0
+            case 7: return 0.28f; // -25.0
+            default: return 0.34f;
+        }
+    }
 
     // V2.2: 数据新鲜度追踪 — 独立 Handler 250ms 刷新, 不依赖 onDataReceived
     private long lastValidFrameTimeMs = 0L;
@@ -372,9 +361,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
             minValueViews[i] = (TextView) card.findViewById(R.id.minValue);
             valueAreaViews[i] = card.findViewById(R.id.valueArea);
             extremePanelViews[i] = card.findViewById(R.id.extremePanel);
-            normalValueLayerViews[i] = card.findViewById(R.id.normalValueLayer);
-            semanticValueViews[i] = (TextView) card.findViewById(R.id.semanticValue);
-            valueCenterFrameViews[i] = card.findViewById(R.id.valueCenterFrame);
 
             if (labelEnViews[i] != null) labelEnViews[i].setText(CARD_EN[i]);
             if (unitViews[i] != null) {
@@ -382,39 +368,28 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 unitViews[i].setText(u.isEmpty() ? "" : "(" + u + ")");
             }
 
-            // valueDec 永久 gone
             if (valueDecViews[i] != null) {
                 valueDecViews[i].setVisibility(View.GONE);
+                valueDecViews[i].setText("");
             }
 
-            // V2.5: 基础属性初始化 — 不设置 textSize/textScaleX
             if (valueIntViews[i] != null) {
                 valueIntViews[i].setSingleLine(true);
                 valueIntViews[i].setEllipsize(null);
                 valueIntViews[i].setIncludeFontPadding(false);
-                valueIntViews[i].setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
-                valueIntViews[i].setTextScaleX(1f);
-            }
-
-            if (semanticValueViews[i] != null) {
-                semanticValueViews[i].setSingleLine(true);
-                semanticValueViews[i].setEllipsize(null);
-                semanticValueViews[i].setIncludeFontPadding(false);
-                semanticValueViews[i].setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
-                semanticValueViews[i].setVisibility(View.INVISIBLE);
             }
 
             if (maxValueViews[i] != null) {
+                maxValueViews[i].setTextSize(20);
                 maxValueViews[i].setSingleLine(true);
                 maxValueViews[i].setEllipsize(null);
-                maxValueViews[i].setIncludeFontPadding(false);
                 maxValueViews[i].setGravity(Gravity.END);
             }
 
             if (minValueViews[i] != null) {
+                minValueViews[i].setTextSize(20);
                 minValueViews[i].setSingleLine(true);
                 minValueViews[i].setEllipsize(null);
-                minValueViews[i].setIncludeFontPadding(false);
                 minValueViews[i].setGravity(Gravity.END);
             }
 
@@ -911,8 +886,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
                             lastUpdateTime[i] = now;
 
                             // V2.5: 单 TextView 完整字符串 + overlay 语义恢复
-                            String mainText = formatMainText(i, fVal, fmt);
-                            renderMainValue(i, mainText);
+                            String mainText = formatMainText(i, fVal);
+                            renderMainText(i, mainText);
                             // 默认白色, 后面各卡片按条件覆盖颜色
                             valueIntViews[i].setTextColor(0xFFFFFFFF);
                             valueIntViews[i].setAlpha(1f);
@@ -926,13 +901,13 @@ public class MainActivity extends Activity implements DataSource.Callback {
                             if (maxValueViews[i] != null) {
                                 float displayMax = SHOW_SESSION_EXTREME[i] ? maxTrack[i] : recentMax[i];
                                 String maxText = formatExtremeText(i, displayMax);
-                                renderExtremeText(i, maxValueViews[i], maxText, true);
+                                renderExtremeText(maxValueViews[i], maxText);
                                 maxValueViews[i].setTextColor(0xFFCCCCCC);
                             }
                             if (minValueViews[i] != null) {
                                 float displayMin = SHOW_SESSION_EXTREME[i] ? minTrack[i] : recentMin[i];
                                 String minText = formatExtremeText(i, displayMin);
-                                renderExtremeText(i, minValueViews[i], minText, false);
+                                renderExtremeText(minValueViews[i], minText);
                                 minValueViews[i].setTextColor(0xFFCCCCCC);
                             }
 
@@ -1403,187 +1378,132 @@ public class MainActivity extends Activity implements DataSource.Callback {
         return (int) (v * getResources().getDisplayMetrics().density + 0.5f);
     }
 
-    /** 语义模式: 全宽显示 DFCO/SYNC, 隐藏小数和极值面板 */
-    // ===== V2.5: 语义模式 — INVISIBLE/VISIBLE, 禁止 GONE =====
-    private void setSemanticMode(int i, boolean semantic) {
-        if (semanticMode[i] == semantic) return;
+    // ===== V2.6: 轻量格式函数 =====
+    private String fmt1NoSign(float v) {
+        int x = Math.round(v * 10f);
+        int abs = Math.abs(x);
+        return (x < 0 ? "-" : "") + (abs / 10) + "." + (abs % 10);
+    }
 
-        semanticMode[i] = semantic;
+    private String fmtSigned1(float v) {
+        int x = Math.round(v * 10f);
+        int abs = Math.abs(x);
+        return (x >= 0 ? "+" : "-") + (abs / 10) + "." + (abs % 10);
+    }
 
-        if (normalValueLayerViews[i] != null) {
-            normalValueLayerViews[i].setVisibility(semantic ? View.INVISIBLE : View.VISIBLE);
-        }
-
-        if (semanticValueViews[i] != null) {
-            semanticValueViews[i].setVisibility(semantic ? View.VISIBLE : View.INVISIBLE);
+    /** V2.6: 格式化主值完整字符串 */
+    private String formatMainText(int i, float v) {
+        switch (i) {
+            case 0: return "E" + Math.round(v);
+            case 1:
+            case 2: return String.valueOf(Math.round(v));
+            case 5: return fmt1NoSign(v);   // A/F
+            default: return fmtSigned1(v);  // L.TRIM, MAP, IGN, S.TRIM
         }
     }
 
-    /** V2.5: 格式化主值完整字符串 */
-    private String formatMainText(int i, float v, String fmt) {
-        if (i == 0) {
-            return "E" + Math.round(v);
-        }
-        if (i == 1 || i == 2) {
-            return String.valueOf(Math.round(v));
-        }
-        if (i == 5) {
-            // A/F: 无正号, 一位小数
-            return String.format(Locale.US, "%.1f", v);
-        }
-        // L.TRIM / MAP / IGN / S.TRIM: 带正负号, 一位小数
-        return String.format(Locale.US, "%+.1f", v);
+    /** V2.6: 格式化极值 */
+    private String formatExtremeText(int i, float v) {
+        if (i < 3) return String.valueOf(Math.round(v));
+        if (i == 5) return fmt1NoSign(v);
+        return fmtSigned1(v);
     }
 
-    /** V2.5: 主值 scale 稳定策略 — 变窄立即, 变宽滞后 */
-    private float applyMainScaleStability(int i, float targetScale) {
-        float last = lastMainScaleX[i];
-
-        if (last <= 0f) {
-            return targetScale;
-        }
-
-        // 变窄: 立即响应, 防止截断
-        if (targetScale < last) {
-            return targetScale;
-        }
-
-        // 变宽: 差距超过 0.08 才放大, 防止视觉跳动
-        if (targetScale - last > 0.08f) {
-            return targetScale;
-        }
-
-        return last;
-    }
-
-    /** V2.5: 渲染主值 — 单 TextView, 完整字符串, scale stability */
-    private void renderMainValue(final int i, final String text) {
+    /** V2.6: 唯一主值渲染 — 无 hysteresis, 无缓存, 每帧重新计算 */
+    private void renderMainText(final int i, final String text) {
         final TextView tv = valueIntViews[i];
         final View area = valueAreaViews[i];
 
         if (tv == null || area == null) return;
 
-        setSemanticMode(i, false);
+        // 退出语义模式
+        semanticMode[i] = false;
 
-        final int width = area.getWidth();
-        if (width <= 0) {
-            area.post(new Runnable() {
-                @Override public void run() {
-                    renderMainValue(i, text);
-                }
-            });
-            return;
+        // valueDec 永久不用
+        if (valueDecViews[i] != null) {
+            valueDecViews[i].setVisibility(View.GONE);
+            valueDecViews[i].setText("");
         }
 
-        final float baseSp = (i < 4) ? ROW1_VALUE_SP : ROW2_VALUE_SP;
+        // 恢复 extremePanel
+        if (extremePanelViews[i] != null) {
+            extremePanelViews[i].setVisibility(View.VISIBLE);
+        }
 
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, baseSp);
+        tv.setVisibility(View.VISIBLE);
         tv.setSingleLine(true);
         tv.setEllipsize(null);
         tv.setIncludeFontPadding(false);
         tv.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
 
-        if (!text.equals(lastMainText[i])) {
-            tv.setText(text);
-            lastMainText[i] = text;
-        }
+        final float baseSp = getBaseSpForMain(i);
 
-        int available = width
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, baseSp);
+        tv.setText(text);
+
+        final int available = area.getWidth()
                 - area.getPaddingLeft()
                 - area.getPaddingRight()
-                - dp(3);
+                - dp(2);
 
-        if (available <= 0) return;
-
-        float rawWidth = tv.getPaint().measureText(text);
-        if (rawWidth <= 0f) return;
-
-        float targetScale = available / rawWidth;
-
-        if (targetScale > 1.0f) targetScale = 1.0f;
-        if (targetScale < MAIN_MIN_SCALE_X[i]) targetScale = MAIN_MIN_SCALE_X[i];
-
-        float stableScale = applyMainScaleStability(i, targetScale);
-
-        if (Math.abs(stableScale - lastMainScaleX[i]) > 0.005f || lastMainWidth[i] != width) {
-            tv.setTextScaleX(stableScale);
-            lastMainScaleX[i] = stableScale;
-            lastMainWidth[i] = width;
-        }
-    }
-
-    /** V2.5: 格式化极值 */
-    private String formatExtremeText(int i, float v) {
-        if (i < 3) {
-            return String.format(Locale.US, "%.0f", v);
-        }
-        if (i == 5) {
-            return String.format(Locale.US, "%.1f", v);
-        }
-        return String.format(Locale.US, "%+.1f", v);
-    }
-
-    /** V2.5: 渲染极值 TextView — 独立 fit, 固定 56dp 面板 */
-    private void renderExtremeText(final int i, final TextView tv, final String text, final boolean isMax) {
-        final View panel = extremePanelViews[i];
-        if (tv == null || panel == null) return;
-
-        final int width = panel.getWidth();
-        if (width <= 0) {
-            panel.post(new Runnable() {
+        if (available <= 0) {
+            area.post(new Runnable() {
                 @Override public void run() {
-                    renderExtremeText(i, tv, text, isMax);
+                    renderMainText(i, text);
                 }
             });
             return;
         }
-
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, EXTREME_VALUE_SP);
-        tv.setSingleLine(true);
-        tv.setEllipsize(null);
-        tv.setIncludeFontPadding(false);
-        tv.setGravity(Gravity.END);
-
-        String[] lastArr = isMax ? lastMaxText : lastMinText;
-        float[] scaleArr = isMax ? lastMaxScaleX : lastMinScaleX;
-
-        if (!text.equals(lastArr[i])) {
-            tv.setText(text);
-            lastArr[i] = text;
-        }
-
-        int available = width
-                - panel.getPaddingLeft()
-                - panel.getPaddingRight()
-                - dp(1);
-
-        if (available <= 0) return;
 
         float rawWidth = tv.getPaint().measureText(text);
         if (rawWidth <= 0f) return;
 
         float scaleX = available / rawWidth;
         if (scaleX > 1.0f) scaleX = 1.0f;
-        if (scaleX < EXTREME_MIN_SCALE_X) scaleX = EXTREME_MIN_SCALE_X;
+        if (scaleX < getMinScaleXForMain(i)) scaleX = getMinScaleXForMain(i);
 
-        if (Math.abs(scaleX - scaleArr[i]) > 0.005f || lastExtremeWidth[i] != width) {
-            tv.setTextScaleX(scaleX);
-            scaleArr[i] = scaleX;
-            lastExtremeWidth[i] = width;
-        }
+        tv.setTextScaleX(scaleX);
     }
 
-    /** V2.5: 渲染 DFCO / SYNC 语义标签 — overlay semanticValue, 不改变布局 */
+    /** V2.6: 渲染 DFCO/SYNC — 复用 valueInt, INVISIBLE extremePanel */
     private void renderSemanticCard(final int i, final String label) {
-        final TextView tv = semanticValueViews[i];
+        final TextView tv = valueIntViews[i];
+        final View area = valueAreaViews[i];
 
-        if (tv == null) return;
+        if (tv == null || area == null) return;
 
-        setSemanticMode(i, true);
+        semanticMode[i] = true;
 
-        final int width = tv.getWidth();
-        if (width <= 0) {
-            tv.post(new Runnable() {
+        if (valueDecViews[i] != null) {
+            valueDecViews[i].setVisibility(View.GONE);
+            valueDecViews[i].setText("");
+        }
+
+        // INVISIBLE, 不改变布局
+        if (extremePanelViews[i] != null) {
+            extremePanelViews[i].setVisibility(View.INVISIBLE);
+        }
+
+        tv.setVisibility(View.VISIBLE);
+        tv.setSingleLine(true);
+        tv.setEllipsize(null);
+        tv.setIncludeFontPadding(false);
+        tv.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        tv.setTextColor(COLOR_SEMANTIC_SYNC);
+        tv.setAlpha(1f);
+
+        final float baseSp = 84f;
+
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, baseSp);
+        tv.setText(label);
+
+        final int available = area.getWidth()
+                - area.getPaddingLeft()
+                - area.getPaddingRight()
+                - dp(2);
+
+        if (available <= 0) {
+            area.post(new Runnable() {
                 @Override public void run() {
                     renderSemanticCard(i, label);
                 }
@@ -1591,42 +1511,52 @@ public class MainActivity extends Activity implements DataSource.Callback {
             return;
         }
 
-        tv.setTextColor(COLOR_SEMANTIC_SYNC);
-        tv.setAlpha(ALPHA_SEMANTIC_SYNC);
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, SEMANTIC_VALUE_SP);
-        tv.setSingleLine(true);
-        tv.setEllipsize(null);
-        tv.setIncludeFontPadding(false);
-        tv.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
-
-        if (!label.equals(lastSemanticText[i])) {
-            tv.setText(label);
-            lastSemanticText[i] = label;
-        }
-
-        int available = width
-                - tv.getPaddingLeft()
-                - tv.getPaddingRight()
-                - dp(4);
-
-        if (available <= 0) return;
-
         float rawWidth = tv.getPaint().measureText(label);
         if (rawWidth <= 0f) return;
 
         float scaleX = available / rawWidth;
         if (scaleX > 1.0f) scaleX = 1.0f;
-        if (scaleX < SEMANTIC_MIN_SCALE_X) scaleX = SEMANTIC_MIN_SCALE_X;
+        if (scaleX < 0.38f) scaleX = 0.38f;
 
-        if (Math.abs(scaleX - lastSemanticScaleX[i]) > 0.005f || lastSemanticWidth[i] != width) {
-            tv.setTextScaleX(scaleX);
-            lastSemanticScaleX[i] = scaleX;
-            lastSemanticWidth[i] = width;
-        }
+        tv.setTextScaleX(scaleX);
 
         if (scaleBars[i] != null) {
             scaleBars[i].setValue(Float.NaN);
         }
+    }
+
+    /** V2.6: MAX/MIN 独立 fit — 无缓存, 每帧重算 */
+    private void renderExtremeText(final TextView tv, final String text) {
+        if (tv == null) return;
+
+        tv.setSingleLine(true);
+        tv.setEllipsize(null);
+        tv.setIncludeFontPadding(false);
+        tv.setGravity(Gravity.END);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f);
+        tv.setText(text);
+
+        int available = tv.getWidth()
+                - tv.getPaddingLeft()
+                - tv.getPaddingRight();
+
+        if (available <= 0) {
+            tv.post(new Runnable() {
+                @Override public void run() {
+                    renderExtremeText(tv, text);
+                }
+            });
+            return;
+        }
+
+        float rawWidth = tv.getPaint().measureText(text);
+        if (rawWidth <= 0f) return;
+
+        float scaleX = available / rawWidth;
+        if (scaleX > 1.0f) scaleX = 1.0f;
+        if (scaleX < 0.55f) scaleX = 0.55f;
+
+        tv.setTextScaleX(scaleX);
     }
 
     /** DFCO/SYNC 期间清除 A/F 闪烁状态, 防止残留 flash 压暗 alpha */
