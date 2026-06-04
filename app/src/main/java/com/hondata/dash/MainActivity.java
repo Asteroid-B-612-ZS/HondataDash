@@ -5,6 +5,8 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.content.Intent;
 import android.os.Bundle;
+import android.graphics.Paint;
+import android.text.TextPaint;
 import android.util.TypedValue;
 import android.os.Handler;
 import android.os.Looper;
@@ -31,7 +33,7 @@ import java.util.Locale;
 import android.os.SystemClock;
 
 /**
- * 主界面 - 硬核科技风格车载仪表盘 V2.6.1。
+ * 主界面 - 硬核科技风格车载仪表盘 V2.6.2。
  *
  * 4x2 HUD 网格 (英文缩写 + 刻度进度条 + MAX/MIN):
  *   Ethanol | ECT | IAT | BAT
@@ -72,6 +74,10 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private final View[] valueAreaViews = new View[8];
     private final View[] extremePanelViews = new View[8];
     private final boolean[] semanticMode = new boolean[8];
+
+    // V2.6.2: 独立测量 Paint, 避免 TextView 当前 textScaleX 污染 measureText()
+    private final TextPaint mainMeasurePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    private final TextPaint extremeMeasurePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
 
     // History Admission 参数表: [MAX cooldown, MIN cooldown] (ms)
     private static final long[][] COOLDOWN_MS = {
@@ -151,16 +157,21 @@ public class MainActivity extends Activity implements DataSource.Callback {
     }
 
     private float getMinScaleXForMain(int i) {
+        // 保留兼容, 但实际使用 getHardMinScaleXForMain
+        return getHardMinScaleXForMain(i);
+    }
+
+    private float getHardMinScaleXForMain(int i) {
         switch (i) {
-            case 0: return 0.38f; // E100
-            case 1: return 0.42f; // 120
-            case 2: return 0.42f; // 120
-            case 3: return 0.30f; // +25.0
-            case 4: return 0.34f; // -1.0 / +2.0
-            case 5: return 0.36f; // 18.0
-            case 6: return 0.28f; // +45.0
-            case 7: return 0.28f; // -25.0
-            default: return 0.34f;
+            case 0: return 0.28f; // E100
+            case 1: return 0.34f; // 120
+            case 2: return 0.34f; // 120
+            case 3: return 0.22f; // +25.0
+            case 4: return 0.26f; // -1.0 / +2.0
+            case 5: return 0.28f; // 18.0
+            case 6: return 0.22f; // +45.0
+            case 7: return 0.22f; // -25.0
+            default: return 0.25f;
         }
     }
 
@@ -1382,6 +1393,21 @@ public class MainActivity extends Activity implements DataSource.Callback {
         return (int) (v * getResources().getDisplayMetrics().density + 0.5f);
     }
 
+    private float spToPx(float sp) {
+        return sp * getResources().getDisplayMetrics().scaledDensity;
+    }
+
+    /** V2.6.2: 独立测量 — 清除上一帧 textScaleX 污染 */
+    private float measureTextUnscaled(TextView tv, TextPaint paint, String text, float sp) {
+        if (tv == null || text == null) return 0f;
+
+        paint.set(tv.getPaint());
+        paint.setTextScaleX(1.0f);      // 关键: 清除上一帧横向缩放
+        paint.setTextSize(spToPx(sp));  // 关键: 使用本次准备显示的字号
+
+        return paint.measureText(text);
+    }
+
     // ===== V2.6: 轻量格式函数 =====
     private String fmt1NoSign(float v) {
         int x = Math.round(v * 10f);
@@ -1448,7 +1474,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
         final int available = area.getWidth()
                 - area.getPaddingLeft()
                 - area.getPaddingRight()
-                - dp(2);
+                - dp(4);
 
         if (available <= 0) {
             area.post(new Runnable() {
@@ -1459,12 +1485,15 @@ public class MainActivity extends Activity implements DataSource.Callback {
             return;
         }
 
-        float rawWidth = tv.getPaint().measureText(text);
+        // V2.6.2 核心: 用独立 Paint 测量未缩放宽度
+        float rawWidth = measureTextUnscaled(tv, mainMeasurePaint, text, baseSp);
         if (rawWidth <= 0f) return;
 
         float scaleX = available / rawWidth;
         if (scaleX > 1.0f) scaleX = 1.0f;
-        if (scaleX < getMinScaleXForMain(i)) scaleX = getMinScaleXForMain(i);
+
+        float hardMin = getHardMinScaleXForMain(i);
+        if (scaleX < hardMin) scaleX = hardMin;
 
         tv.setTextScaleX(scaleX);
     }
@@ -1496,15 +1525,15 @@ public class MainActivity extends Activity implements DataSource.Callback {
         tv.setTextColor(COLOR_SEMANTIC_SYNC);
         tv.setAlpha(1f);
 
-        final float baseSp = 84f;
+        final float semanticSp = 84f;
 
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, baseSp);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, semanticSp);
         tv.setText(label);
 
         final int available = area.getWidth()
                 - area.getPaddingLeft()
                 - area.getPaddingRight()
-                - dp(2);
+                - dp(4);
 
         if (available <= 0) {
             area.post(new Runnable() {
@@ -1515,12 +1544,13 @@ public class MainActivity extends Activity implements DataSource.Callback {
             return;
         }
 
-        float rawWidth = tv.getPaint().measureText(label);
+        // V2.6.2 核心: 用独立 Paint 测量
+        float rawWidth = measureTextUnscaled(tv, mainMeasurePaint, label, semanticSp);
         if (rawWidth <= 0f) return;
 
         float scaleX = available / rawWidth;
         if (scaleX > 1.0f) scaleX = 1.0f;
-        if (scaleX < 0.38f) scaleX = 0.38f;
+        if (scaleX < 0.28f) scaleX = 0.28f;
 
         tv.setTextScaleX(scaleX);
 
@@ -1533,16 +1563,19 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private void renderExtremeText(final TextView tv, final String text) {
         if (tv == null) return;
 
+        final float extremeSp = 20f;
+
         tv.setSingleLine(true);
         tv.setEllipsize(null);
         tv.setIncludeFontPadding(false);
         tv.setGravity(Gravity.END);
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, extremeSp);
         tv.setText(text);
 
         int available = tv.getWidth()
                 - tv.getPaddingLeft()
-                - tv.getPaddingRight();
+                - tv.getPaddingRight()
+                - dp(1);
 
         if (available <= 0) {
             tv.post(new Runnable() {
@@ -1553,12 +1586,13 @@ public class MainActivity extends Activity implements DataSource.Callback {
             return;
         }
 
-        float rawWidth = tv.getPaint().measureText(text);
+        // V2.6.2 核心: 不要用 tv.getPaint().measureText()
+        float rawWidth = measureTextUnscaled(tv, extremeMeasurePaint, text, extremeSp);
         if (rawWidth <= 0f) return;
 
         float scaleX = available / rawWidth;
         if (scaleX > 1.0f) scaleX = 1.0f;
-        if (scaleX < 0.55f) scaleX = 0.55f;
+        if (scaleX < 0.35f) scaleX = 0.35f;
 
         tv.setTextScaleX(scaleX);
     }
