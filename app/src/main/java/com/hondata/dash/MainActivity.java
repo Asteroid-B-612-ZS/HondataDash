@@ -31,7 +31,7 @@ import java.util.Locale;
 import android.os.SystemClock;
 
 /**
- * 主界面 - 硬核科技风格车载仪表盘 V2.4.2。
+ * 主界面 - 硬核科技风格车载仪表盘 V2.4.3。
  *
  * 4x2 HUD 网格 (英文缩写 + 刻度进度条 + MAX/MIN):
  *   Ethanol | ECT | IAT | BAT
@@ -139,10 +139,10 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private static final float CL_LAMBDA_ERR_GREEN = 0.03f;
     private static final float CL_LAMBDA_ERR_WARN  = 0.06f;
 
-    // V2.4.2: Font constants — per-row base sizes (maximize font, width-only adaptive scaleX)
-    private static final float ROW1_VALUE_SP = 112f;     // Ethanol, ECT, IAT, L.TRIM
-    private static final float ROW2_VALUE_SP = 102f;     // MAP, A/F, IGN, S.TRIM
-    private static final float SEMANTIC_VALUE_SP = 92f;  // DFCO/SYNC labels
+    // V2.4.3: Font constants — single-TextView adaptive fit
+    private static final float ROW1_VALUE_SP = 95f;      // Ethanol, ECT, IAT, L.TRIM
+    private static final float ROW2_VALUE_SP = 85f;      // MAP, A/F, IGN, S.TRIM
+    private static final float SEMANTIC_VALUE_SP = 82f;   // DFCO/SYNC labels
 
     private static float getBaseSp(int i) {
         return i < 4 ? ROW1_VALUE_SP : ROW2_VALUE_SP;
@@ -150,14 +150,14 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
     // Per-card minimum scaleX (no max cap — let it go up to 1.0)
     private static final float[] MIN_SCALE_X = {
-        0.40f,  // 0 Ethanol
-        0.42f,  // 1 ECT
-        0.42f,  // 2 IAT
-        0.34f,  // 3 L.TRIM
-        0.38f,  // 4 MAP
-        0.38f,  // 5 A/F
-        0.30f,  // 6 IGN
-        0.30f   // 7 S.TRIM
+        0.50f,  // 0 Ethanol (E-prefix, wider)
+        0.55f,  // 1 ECT
+        0.55f,  // 2 IAT
+        0.45f,  // 3 L.TRIM
+        0.45f,  // 4 MAP
+        0.45f,  // 5 A/F
+        0.38f,  // 6 IGN
+        0.38f   // 7 S.TRIM
     };
 
     // V2.2: 数据新鲜度追踪 — 独立 Handler 250ms 刷新, 不依赖 onDataReceived
@@ -229,10 +229,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 int color = 0xFFB040FF;
                 valueIntViews[1].setTextColor(color);
                 valueIntViews[1].setAlpha(alpha / 255f);
-                if (valueDecViews[1] != null) {
-                    valueDecViews[1].setTextColor(color);
-                    valueDecViews[1].setAlpha(alpha / 255f);
-                }
             }
             // IAT闪烁 (>=65)
             if (iatFlashing) {
@@ -240,10 +236,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 int color = 0xFFB040FF;
                 valueIntViews[2].setTextColor(color);
                 valueIntViews[2].setAlpha(alpha / 255f);
-                if (valueDecViews[2] != null) {
-                    valueDecViews[2].setTextColor(color);
-                    valueDecViews[2].setAlpha(alpha / 255f);
-                }
             }
             // A/F闪烁 (红色区间) — V2.4: 语义模式期间不压暗 alpha
             if (afFlashing && !semanticMode[5]) {
@@ -251,10 +243,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 int color = 0xFFFF4444;
                 valueIntViews[5].setTextColor(color);
                 valueIntViews[5].setAlpha(alpha / 255f);
-                if (valueDecViews[5] != null) {
-                    valueDecViews[5].setTextColor(color);
-                    valueDecViews[5].setAlpha(alpha / 255f);
-                }
             }
             // K.C闪烁 (>65)
             if (kcFlashing && knockRetValue != null) {
@@ -376,22 +364,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 unitViews[i].setText(u.isEmpty() ? "" : "(" + u + ")");
             }
 
-            // 第1行(0-2): 整数, 字高×1.5; 第1行(3) + 第2行(4-7): 小数, 字高×1.65
-            if (i < 3) {
-                float scale = 1.5f;
-                // Ethanol(0): "E" 前缀多一个字符, 需要更窄 scaleX 避免溢出容器
-                float scaleX = (i == 0) ? 0.5f : 1f / scale;
-                if (valueIntViews[i] != null) { valueIntViews[i].setTextSize(75 * scale); valueIntViews[i].setTextScaleX(scaleX); }
-                if (valueDecViews[i] != null) { valueDecViews[i].setTextSize(75 * scale); valueDecViews[i].setTextScaleX(scaleX); }
-            } else {
-                float scale = 1.65f;
-                // IGN(6), S.TRIM(7): 压窄字体避免带符号两位数+小数溢出
-                float scaleX = (i == 6 || i == 7) ? 0.5f : 1f / scale;
-                if (valueIntViews[i] != null) { valueIntViews[i].setTextSize(60 * scale); valueIntViews[i].setTextScaleX(scaleX); }
-                if (valueDecViews[i] != null) { valueDecViews[i].setTextSize(60 * scale); valueDecViews[i].setTextScaleX(scaleX); }
-                if (maxValueViews[i] != null) maxValueViews[i].setTextSize(21);
-                if (minValueViews[i] != null) minValueViews[i].setTextSize(21);
-            }
+            // V2.4.3: textSize/textScaleX 由 renderMainValueText/renderSemanticCard 动态控制
+            // 这里不再设置固定 textSize/textScaleX
 
             configureScaleBar(i);
         }
@@ -731,10 +705,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
                         if (fVal < range[0] || fVal > range[1]) {
                             if (hasValidValue[i]) {
                                 valueIntViews[i].setAlpha(0.4f);
-                                if (valueDecViews[i] != null) valueDecViews[i].setAlpha(0.4f);
                             } else {
                                 valueIntViews[i].setText("--");
-                                if (valueDecViews[i] != null) valueDecViews[i].setText("");
                             }
                             if (scaleBars[i] != null) scaleBars[i].setValue(Float.NaN);
                             continue;
@@ -890,29 +862,12 @@ public class MainActivity extends Activity implements DataSource.Callback {
                             // V2.4: 从语义模式恢复为正常数值模式
                             setSemanticLayoutMode(i, false);
 
-                            // 格式化并拆分整数/小数部分
-                            String formatted = String.format(Locale.US, fmt, fVal);
-                            String intPart, decPart;
-                            int dotPos = formatted.indexOf('.');
-                            if (dotPos >= 0) {
-                                intPart = formatted.substring(0, dotPos);
-                                decPart = formatted.substring(dotPos);
-                            } else {
-                                intPart = formatted;
-                                decPart = "";
-                            }
-                            // Ethanol: E 前缀
-                            if (i == 0) intPart = "E" + intPart;
-
-                            // V2.4.1: width-only auto-fit — 高度固定, 只动态 textScaleX
-                            renderMainValueMaxFit(i, intPart, decPart);
+                            // V2.4.3: 单 TextView 完整字符串
+                            String mainText = formatMainText(i, fVal);
+                            renderMainValueText(i, mainText);
                             // 默认白色, 后面各卡片按条件覆盖颜色
                             valueIntViews[i].setTextColor(0xFFFFFFFF);
                             valueIntViews[i].setAlpha(1f);
-                            if (valueDecViews[i] != null) {
-                                valueDecViews[i].setTextColor(0xFFFFFFFF);
-                                valueDecViews[i].setAlpha(1f);
-                            }
 
                             if (scaleBars[i] != null) {
                                 // 更新情绪状态 (在 setValue 之前, setValue 内部会渐变)
@@ -947,9 +902,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                 else if (fVal < 60) ethColor = 0xFFD29922;  // 黄色
                                 else ethColor = 0xFFFF4444;                  // 红色
                                 valueIntViews[i].setTextColor(ethColor);
-                                if (valueDecViews[i] != null) {
-                                    valueDecViews[i].setTextColor(ethColor);
-                                }
                             }
 
                             // ECT: 温度变色 <80蓝 80~95白 96~100红 >100紫闪烁
@@ -971,10 +923,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                     }
                                     valueIntViews[i].setTextColor(color);
                                     valueIntViews[i].setAlpha(1f);
-                                    if (valueDecViews[i] != null) {
-                                        valueDecViews[i].setTextColor(color);
-                                        valueDecViews[i].setAlpha(1f);
-                                    }
                                 }
                             }
 
@@ -999,10 +947,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                     }
                                     valueIntViews[i].setTextColor(color);
                                     valueIntViews[i].setAlpha(1f);
-                                    if (valueDecViews[i] != null) {
-                                        valueDecViews[i].setTextColor(color);
-                                        valueDecViews[i].setAlpha(1f);
-                                    }
                                 }
                             }
 
@@ -1029,10 +973,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                     int color = getAfColorByLambda(measuredLambda, targetLambda, state);
                                     valueIntViews[i].setTextColor(color);
                                     valueIntViews[i].setAlpha(1f);
-                                    if (valueDecViews[i] != null) {
-                                        valueDecViews[i].setTextColor(color);
-                                        valueDecViews[i].setAlpha(1f);
-                                    }
                                 }
                             }
 
@@ -1041,13 +981,9 @@ public class MainActivity extends Activity implements DataSource.Callback {
                         // Last-Valid 缓存: 数据缺失时保留最后有效值 (半透明)
                         if (hasValidValue[i]) {
                             valueIntViews[i].setAlpha(0.4f);
-                            if (valueDecViews[i] != null) {
-                                valueDecViews[i].setAlpha(0.4f);
-                            }
                         } else {
                             valueIntViews[i].setText("--");
                             valueIntViews[i].setAlpha(1f);
-                            if (valueDecViews[i] != null) valueDecViews[i].setText("");
                         }
                         if (scaleBars[i] != null) {
                             scaleBars[i].setValue(Float.NaN);
@@ -1242,27 +1178,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
         }
     }
 
-    /**
-     * 将格式化后的字符串拆分为整数部分和小数部分, 分别设置到两个TextView。
-     * 例如 "14.2" -> valueInt="14", valueDec=".2"
-     * 例如 "85" -> valueInt="85", valueDec=""
-     * 例如 "-3.5" -> valueInt="-3", valueDec=".5"
-     */
-    private void splitSetValue(int i, String formatted) {
-        int dotPos = formatted.indexOf('.');
-        if (dotPos >= 0) {
-            valueIntViews[i].setText(formatted.substring(0, dotPos));
-            if (valueDecViews[i] != null) {
-                valueDecViews[i].setText(formatted.substring(dotPos));
-            }
-        } else {
-            valueIntViews[i].setText(formatted);
-            if (valueDecViews[i] != null) {
-                valueDecViews[i].setText("");
-            }
-        }
-    }
-
     private float getFloat(SensorData data, int pid) {
         Double v = data.get(pid);
         return v != null ? v.floatValue() : 0f;
@@ -1451,11 +1366,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
         if (semanticMode[i] == enable) return;
         semanticMode[i] = enable;
 
-        if (valueDecViews[i] != null) {
-            valueDecViews[i].setVisibility(enable ? View.GONE : View.VISIBLE);
-            if (enable) valueDecViews[i].setText("");
-        }
-
         if (extremePanelViews[i] != null) {
             extremePanelViews[i].setVisibility(enable ? View.GONE : View.VISIBLE);
         }
@@ -1523,72 +1433,59 @@ public class MainActivity extends Activity implements DataSource.Callback {
         tv.setTextScaleX(scaleX);
     }
 
-    /** V2.4.2: 主数据最大化字体 — 测量当前文本, scaleX hysteresis 防跳动 */
-    private void renderMainValueMaxFit(
-            final int i,
-            final String intText,
-            final String decText
-    ) {
-        final TextView intView = valueIntViews[i];
-        final TextView decView = valueDecViews[i];
+    /** V2.4.3: 格式化主值完整字符串 — 单 TextView 架构 */
+    private String formatMainText(int i, float fVal) {
+        String fmt = CARD_FMT[i];
+        String formatted = String.format(Locale.US, fmt, fVal);
+        // Ethanol: E 前缀
+        if (i == 0) formatted = "E" + formatted;
+        return formatted;
+    }
+
+    /** V2.4.3: 单 TextView 自适应渲染 — 一个 measureText, 一个 scaleX */
+    private void renderMainValueText(final int i, final String text) {
+        final TextView tv = valueIntViews[i];
         final View area = valueAreaViews[i];
 
-        if (intView == null || area == null) return;
+        if (tv == null || area == null) return;
 
-        // 安全余量 dp(4): 两个 TextView 间距 + 右侧微量不贴边
+        // 安全余量: padding + 少量不贴边
         int available = area.getWidth()
                 - area.getPaddingLeft()
                 - area.getPaddingRight()
-                - dp(4);
+                - dp(12);
 
         if (available <= 0) {
             area.post(new Runnable() {
                 @Override public void run() {
-                    renderMainValueMaxFit(i, intText, decText);
+                    renderMainValueText(i, text);
                 }
             });
             return;
         }
 
         // 缓存检查: 文本+宽度没变则跳过
-        String combined = intText + "|" + (decText == null ? "" : decText);
         int currentWidth = area.getWidth();
-        if (combined.equals(lastMainCombinedText[i]) && currentWidth == lastFitWidth[i]) {
+        if (text.equals(lastMainCombinedText[i]) && currentWidth == lastFitWidth[i]) {
             return;
         }
-        lastMainCombinedText[i] = combined;
+        lastMainCombinedText[i] = text;
         lastFitWidth[i] = currentWidth;
 
         float baseSp = getBaseSp(i);
 
-        // 高度固定: 恢复 baseSp
-        intView.setTextSize(TypedValue.COMPLEX_UNIT_SP, baseSp);
-        intView.setSingleLine(true);
-        intView.setIncludeFontPadding(false);
-        intView.setEllipsize(null);
+        // 唯一设置 textSize 的地方
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, baseSp);
+        tv.setSingleLine(true);
+        tv.setIncludeFontPadding(false);
+        tv.setEllipsize(null);
+        tv.setText(text);
 
-        if (decView != null) {
-            decView.setTextSize(TypedValue.COMPLEX_UNIT_SP, baseSp);
-            decView.setSingleLine(true);
-            decView.setIncludeFontPadding(false);
-            decView.setEllipsize(null);
-        }
-
-        // 设置文本
-        intView.setText(intText);
-        if (decView != null) {
-            decView.setText(decText == null ? "" : decText);
-        }
-
-        // 测量当前文本宽度 (不是 worst-case)
-        android.text.TextPaint paint = intView.getPaint();
-        float wInt = paint.measureText(intText);
-        float wDec = (decView != null && decText != null && !decText.isEmpty())
-                ? paint.measureText(decText) : 0f;
-        float rawWidth = wInt + wDec;
+        // 单次 measureText
+        float rawWidth = tv.getPaint().measureText(text);
         if (rawWidth <= 0f) return;
 
-        // 计算目标 scaleX — 不设上限, 最大限度利用空间
+        // 计算 scaleX
         float targetScaleX = 1.0f;
         if (rawWidth > available) {
             targetScaleX = (float) available / rawWidth;
@@ -1606,13 +1503,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
             }
         }
 
-        intView.setTextScaleX(lastMainScaleX[i]);
-        if (decView != null) {
-            decView.setTextScaleX(lastMainScaleX[i]);
-        }
+        // 唯一设置 textScaleX 的地方 (正常模式)
+        tv.setTextScaleX(lastMainScaleX[i]);
     }
 
-    /** 渲染 DFCO / SYNC 语义标签 — V2.4.1: 全宽模式 + width-only fit */
+    /** 渲染 DFCO / SYNC 语义标签 — V2.4.3: 单 TextView, SEMANTIC_VALUE_SP=82 */
     private void renderSemanticCard(int i, String label) {
         setSemanticLayoutMode(i, true);
 
@@ -1626,16 +1521,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
             View area = valueAreaViews[i] != null
                     ? valueAreaViews[i]
                     : (View) valueIntViews[i].getParent();
-            fitSingleTextWidthOnly(valueIntViews[i], area, label, SEMANTIC_VALUE_SP, 0.40f, 1.0f);
+            fitSingleTextWidthOnly(valueIntViews[i], area, label, SEMANTIC_VALUE_SP, 0.45f, 1.0f);
         }
 
         valueIntViews[i].setTextColor(COLOR_SEMANTIC_SYNC);
         valueIntViews[i].setAlpha(1f);
-
-        if (valueDecViews[i] != null) {
-            valueDecViews[i].setText("");
-            valueDecViews[i].setVisibility(View.GONE);
-        }
 
         if (scaleBars[i] != null) {
             scaleBars[i].setValue(Float.NaN);
@@ -1647,7 +1537,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
         if (!afFlashing) return;
         afFlashing = false;
         if (valueIntViews[5] != null) valueIntViews[5].setAlpha(1f);
-        if (valueDecViews[5] != null) valueDecViews[5].setAlpha(1f);
         updateFlashState();
     }
 

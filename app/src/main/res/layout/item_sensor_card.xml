@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    传感器卡片 V5 - 整数/小数分体字体
+    传感器卡片 V6 - 单 TextView 完整字符串
     顶部: 英文缩写(左) + 单位(右上角右对齐, 同标题大小)
-    中央: 大数值(整数68sp + 小数60sp) + MAX/MIN(右, 纯数字24sp)
+    中央: 大数值(单TextView, 自适应scaleX) + MAX/MIN(右, 纯数字19sp)
     底部: 刻度进度条 (刻度在上方)
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -47,7 +47,7 @@
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
-        <!-- 数值 (左侧, 占2/3) -->
+        <!-- 数值 (左侧, 占4/5) -->
         <LinearLayout
             android:id="@+id/valueArea"
             android:layout_width="0dp"
@@ -60,7 +60,7 @@
 
             <TextView
                 android:id="@+id/valueInt"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:textColor="#FFFFFFFF"
                 android:textSize="65sp"
@@ -72,9 +72,9 @@
 
             <TextView
                 android:id="@+id/valueDec"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="bottom"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:visibility="gone"
                 android:textColor="#FFFFFFFF"
                 android:textSize="65sp"
                 android:textStyle="bold|italic"
@@ -99,7 +99,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textColor="#FFBBBBBB"
-                android:textSize="24sp"
+                android:textSize="19sp"
                 android:textStyle="bold"
                 android:singleLine="true"
                 android:text=""/>
@@ -114,7 +114,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textColor="#FFAAAAAA"
-                android:textSize="24sp"
+                android:textSize="19sp"
                 android:textStyle="bold"
                 android:singleLine="true"
                 android:text=""/>
