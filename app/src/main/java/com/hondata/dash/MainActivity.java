@@ -31,7 +31,7 @@ import java.util.Locale;
 import android.os.SystemClock;
 
 /**
- * 主界面 - 硬核科技风格车载仪表盘 V2.6。
+ * 主界面 - 硬核科技风格车载仪表盘 V2.6.1。
  *
  * 4x2 HUD 网格 (英文缩写 + 刻度进度条 + MAX/MIN):
  *   Ethanol | ECT | IAT | BAT
@@ -377,20 +377,24 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 valueIntViews[i].setSingleLine(true);
                 valueIntViews[i].setEllipsize(null);
                 valueIntViews[i].setIncludeFontPadding(false);
+                valueIntViews[i].setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+                valueIntViews[i].setTextScaleX(1f);
             }
 
             if (maxValueViews[i] != null) {
-                maxValueViews[i].setTextSize(20);
                 maxValueViews[i].setSingleLine(true);
                 maxValueViews[i].setEllipsize(null);
+                maxValueViews[i].setIncludeFontPadding(false);
                 maxValueViews[i].setGravity(Gravity.END);
+                maxValueViews[i].setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f);
             }
 
             if (minValueViews[i] != null) {
-                minValueViews[i].setTextSize(20);
                 minValueViews[i].setSingleLine(true);
                 minValueViews[i].setEllipsize(null);
+                minValueViews[i].setIncludeFontPadding(false);
                 minValueViews[i].setGravity(Gravity.END);
+                minValueViews[i].setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f);
             }
 
             configureScaleBar(i);
