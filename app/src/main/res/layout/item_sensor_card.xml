@@ -39,7 +39,7 @@
             android:gravity="center_vertical"/>
     </LinearLayout>
 
-    <!-- 中央: 数值(左2/3) + MAX/MIN(右1/3) -->
+    <!-- 中央: 数值(左4/5) + MAX/MIN(右1/5) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -52,7 +52,7 @@
             android:id="@+id/valueArea"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_weight="3"
+            android:layout_weight="4.0"
             android:orientation="horizontal"
             android:gravity="center_vertical|start"
             android:baselineAligned="false"
@@ -89,7 +89,7 @@
             android:id="@+id/extremePanel"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1.5"
+            android:layout_weight="1.0"
             android:orientation="vertical"
             android:gravity="end"
             android:paddingEnd="2dp">

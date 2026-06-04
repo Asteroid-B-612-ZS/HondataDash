@@ -31,7 +31,7 @@ import java.util.Locale;
 import android.os.SystemClock;
 
 /**
- * 主界面 - 硬核科技风格车载仪表盘 V2.4.1。
+ * 主界面 - 硬核科技风格车载仪表盘 V2.4.2。
  *
  * 4x2 HUD 网格 (英文缩写 + 刻度进度条 + MAX/MIN):
  *   Ethanol | ECT | IAT | BAT
@@ -75,6 +75,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private final String[] lastMainCombinedText = new String[8];
     private final String[] lastSemanticText = new String[8];
     private final int[] lastFitWidth = new int[8];
+    private final float[] lastMainScaleX = new float[8]; // V2.4.2: scaleX hysteresis
 
     // History Admission 参数表: [MAX cooldown, MIN cooldown] (ms)
     private static final long[][] COOLDOWN_MS = {
@@ -138,33 +139,25 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private static final float CL_LAMBDA_ERR_GREEN = 0.03f;
     private static final float CL_LAMBDA_ERR_WARN  = 0.06f;
 
-    // V2.4.1: Width-only fit 参数 — 高度固定, 只动态调整 textScaleX
-    private static class FitParam {
-        final float baseSp;
-        final float minScaleX;
-        final float maxScaleX;
-        final boolean useWorstCase;
-        final String worstCaseText;
+    // V2.4.2: Font constants — per-row base sizes (maximize font, width-only adaptive scaleX)
+    private static final float ROW1_VALUE_SP = 112f;     // Ethanol, ECT, IAT, L.TRIM
+    private static final float ROW2_VALUE_SP = 102f;     // MAP, A/F, IGN, S.TRIM
+    private static final float SEMANTIC_VALUE_SP = 92f;  // DFCO/SYNC labels
 
-        FitParam(float baseSp, float minScaleX, float maxScaleX,
-                 boolean useWorstCase, String worstCaseText) {
-            this.baseSp = baseSp;
-            this.minScaleX = minScaleX;
-            this.maxScaleX = maxScaleX;
-            this.useWorstCase = useWorstCase;
-            this.worstCaseText = worstCaseText;
-        }
+    private static float getBaseSp(int i) {
+        return i < 4 ? ROW1_VALUE_SP : ROW2_VALUE_SP;
     }
 
-    private static final FitParam[] FIT_PARAMS = new FitParam[] {
-        new FitParam(112.5f, 0.36f, 0.50f, true, "E100"),    // 0 Ethanol
-        new FitParam(112.5f, 0.40f, 0.58f, true, "120"),      // 1 ECT
-        new FitParam(112.5f, 0.40f, 0.58f, true, "120"),      // 2 IAT
-        new FitParam(99.0f,  0.28f, 0.48f, true, "+25.0"),    // 3 L.TRIM
-        new FitParam(99.0f,  0.36f, 0.50f, true, "+2.0"),     // 4 MAP
-        new FitParam(99.0f,  0.36f, 0.50f, true, "18.0"),     // 5 A/F
-        new FitParam(99.0f,  0.26f, 0.44f, true, "+40.0"),    // 6 IGN
-        new FitParam(99.0f,  0.26f, 0.44f, true, "+25.0")     // 7 S.TRIM
+    // Per-card minimum scaleX (no max cap — let it go up to 1.0)
+    private static final float[] MIN_SCALE_X = {
+        0.40f,  // 0 Ethanol
+        0.42f,  // 1 ECT
+        0.42f,  // 2 IAT
+        0.34f,  // 3 L.TRIM
+        0.38f,  // 4 MAP
+        0.38f,  // 5 A/F
+        0.30f,  // 6 IGN
+        0.30f   // 7 S.TRIM
     };
 
     // V2.2: 数据新鲜度追踪 — 独立 Handler 250ms 刷新, 不依赖 onDataReceived
@@ -912,7 +905,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
                             if (i == 0) intPart = "E" + intPart;
 
                             // V2.4.1: width-only auto-fit — 高度固定, 只动态 textScaleX
-                            fitSplitValueTextWidthOnly(i, intPart, decPart);
+                            renderMainValueMaxFit(i, intPart, decPart);
                             // 默认白色, 后面各卡片按条件覆盖颜色
                             valueIntViews[i].setTextColor(0xFFFFFFFF);
                             valueIntViews[i].setAlpha(1f);
@@ -1453,10 +1446,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
         return (int) (v * getResources().getDisplayMetrics().density + 0.5f);
     }
 
-    private float spToPx(float sp) {
-        return sp * getResources().getDisplayMetrics().scaledDensity;
-    }
-
     /** 语义模式: 全宽显示 DFCO/SYNC, 隐藏小数和极值面板 */
     private void setSemanticLayoutMode(int i, boolean enable) {
         if (semanticMode[i] == enable) return;
@@ -1474,7 +1463,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
         if (valueAreaViews[i] != null) {
             LinearLayout.LayoutParams lp =
                     (LinearLayout.LayoutParams) valueAreaViews[i].getLayoutParams();
-            lp.weight = enable ? 1f : 3f;
+            lp.weight = enable ? 1f : 4.0f;
             lp.width = 0;
             valueAreaViews[i].setLayoutParams(lp);
         }
@@ -1504,7 +1493,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
         int available = area.getWidth()
                 - area.getPaddingLeft()
                 - area.getPaddingRight()
-                - dp(8);
+                - dp(4);
 
         if (available <= 0) {
             area.post(new Runnable() {
@@ -1534,8 +1523,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
         tv.setTextScaleX(scaleX);
     }
 
-    /** V2.4.1: 主数据 width-only fit — 高度固定, 只动态 textScaleX, worst-case 预适配 */
-    private void fitSplitValueTextWidthOnly(
+    /** V2.4.2: 主数据最大化字体 — 测量当前文本, scaleX hysteresis 防跳动 */
+    private void renderMainValueMaxFit(
             final int i,
             final String intText,
             final String decText
@@ -1546,16 +1535,16 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
         if (intView == null || area == null) return;
 
-        // 安全余量 dp(28): 两个 TextView 的内边距 + 间距 + 右侧不贴边
+        // 安全余量 dp(4): 两个 TextView 间距 + 右侧微量不贴边
         int available = area.getWidth()
                 - area.getPaddingLeft()
                 - area.getPaddingRight()
-                - dp(28);
+                - dp(4);
 
         if (available <= 0) {
             area.post(new Runnable() {
                 @Override public void run() {
-                    fitSplitValueTextWidthOnly(i, intText, decText);
+                    renderMainValueMaxFit(i, intText, decText);
                 }
             });
             return;
@@ -1570,16 +1559,16 @@ public class MainActivity extends Activity implements DataSource.Callback {
         lastMainCombinedText[i] = combined;
         lastFitWidth[i] = currentWidth;
 
-        FitParam p = FIT_PARAMS[i];
+        float baseSp = getBaseSp(i);
 
         // 高度固定: 恢复 baseSp
-        intView.setTextSize(TypedValue.COMPLEX_UNIT_SP, p.baseSp);
+        intView.setTextSize(TypedValue.COMPLEX_UNIT_SP, baseSp);
         intView.setSingleLine(true);
         intView.setIncludeFontPadding(false);
         intView.setEllipsize(null);
 
         if (decView != null) {
-            decView.setTextSize(TypedValue.COMPLEX_UNIT_SP, p.baseSp);
+            decView.setTextSize(TypedValue.COMPLEX_UNIT_SP, baseSp);
             decView.setSingleLine(true);
             decView.setIncludeFontPadding(false);
             decView.setEllipsize(null);
@@ -1591,15 +1580,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
             decView.setText(decText == null ? "" : decText);
         }
 
-        // 用 worst-case 测量, 保证任何值都不截断
-        String measureCombined;
-        if (p.useWorstCase && p.worstCaseText != null) {
-            measureCombined = p.worstCaseText;
-        } else {
-            measureCombined = intText + (decText == null ? "" : decText);
-        }
-
-        // 分别测量 int 和 dec 部分, 更准确反映两个 TextView 实际宽度
+        // 测量当前文本宽度 (不是 worst-case)
         android.text.TextPaint paint = intView.getPaint();
         float wInt = paint.measureText(intText);
         float wDec = (decView != null && decText != null && !decText.isEmpty())
@@ -1607,16 +1588,27 @@ public class MainActivity extends Activity implements DataSource.Callback {
         float rawWidth = wInt + wDec;
         if (rawWidth <= 0f) return;
 
-        float scaleX = 1.0f;
+        // 计算目标 scaleX — 不设上限, 最大限度利用空间
+        float targetScaleX = 1.0f;
         if (rawWidth > available) {
-            scaleX = (float) available / rawWidth;
+            targetScaleX = (float) available / rawWidth;
         }
-        if (scaleX < p.minScaleX) scaleX = p.minScaleX;
-        if (scaleX > p.maxScaleX) scaleX = p.maxScaleX;
+        float minSx = MIN_SCALE_X[i];
+        if (targetScaleX < minSx) targetScaleX = minSx;
 
-        intView.setTextScaleX(scaleX);
+        // Hysteresis: 缩窄立即应用, 放宽需 gap > 0.06 才生效
+        float current = lastMainScaleX[i];
+        if (targetScaleX < current) {
+            lastMainScaleX[i] = targetScaleX;
+        } else {
+            if (targetScaleX - current > 0.06f) {
+                lastMainScaleX[i] = targetScaleX;
+            }
+        }
+
+        intView.setTextScaleX(lastMainScaleX[i]);
         if (decView != null) {
-            decView.setTextScaleX(scaleX);
+            decView.setTextScaleX(lastMainScaleX[i]);
         }
     }
 
@@ -1634,7 +1626,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
             View area = valueAreaViews[i] != null
                     ? valueAreaViews[i]
                     : (View) valueIntViews[i].getParent();
-            fitSingleTextWidthOnly(valueIntViews[i], area, label, 88f, 0.36f, 0.62f);
+            fitSingleTextWidthOnly(valueIntViews[i], area, label, SEMANTIC_VALUE_SP, 0.40f, 1.0f);
         }
 
         valueIntViews[i].setTextColor(COLOR_SEMANTIC_SYNC);

@@ -291,11 +291,12 @@ Text alpha alternates between 255↔40 during flash, restored to 1 when not flas
 
 ### Vertical Font Stretching
 
-Android has no native font height scaling. Achieved via `textSize × scale` + `textScaleX = 1/scale`:
-- Row 1 (i=0~2): scale=1.5 → textSize=112.5sp, scaleX=0.667
-- Row 1 (i=0, Ethanol): scaleX=0.50 (extra narrow for "E85" prefix to fit container)
-- Row 2 (i=3~7): scale=1.65 → textSize=99sp, scaleX=0.606
-- Row 2 (i=6,7 IGN/S.TRIM): scaleX=0.50 (narrower for signed two-digit + decimal)
+Android has no native font height scaling. V2.4.2 uses adaptive width-only scaling:
+- **Row 1** (Ethanol, ECT, IAT, L.TRIM): textSize=112sp, textScaleX dynamically adapted per measured text width
+- **Row 2** (MAP, A/F, IGN, S.TRIM): textSize=102sp, textScaleX dynamically adapted per measured text width
+- **Per-card minimum scaleX**: Ethanol 0.40, ECT/IAT 0.42, L.TRIM 0.34, MAP/A.F 0.38, IGN/S.TRIM 0.30
+- **Hysteresis**: Narrow immediately, widen only when gap > 0.06 (prevents width jumping)
+- **Layout weights**: valueArea 4.0 (80%), extremePanel 1.0 (20%) — maximizes main value space
 
 ### Fullscreen
 
@@ -316,6 +317,21 @@ Pure Android Framework API, no third-party libraries:
 - Release APK: **45 KB**
 
 ## Version History
+
+### V2.4.2 (2026-06-04) — Maximize Main Value Font
+
+Previous V2.4.1 fit was too conservative — fonts too small due to worst-case pre-fit + large safety margin (dp(28)) + low maxScaleX. V2.4.2 shifts philosophy from "never truncate" to "maximize font while never truncating."
+
+#### Changes
+
+1. **Restore large base font sizes** — Row 1: 112sp, Row 2: 102sp, Semantic: 92sp (up from 112.5/99/88 but with much tighter scaleX)
+2. **Remove worst-case default measurement** — Measure current text width, not hypothetical worst-case. No more pre-shrinking for values that may never appear.
+3. **Safety margin dp(28) → dp(4)** — Previous margin was 5× larger than needed. TextPaint measureText is accurate; only minimal padding for rounding.
+4. **No maxScaleX cap** — Let scaleX go up to 1.0 when text is narrow (e.g., single-digit values).
+5. **ScaleX hysteresis** — `lastMainScaleX[]` array: narrow immediately when text grows, widen only when gap > 0.06. Prevents width oscillation when values alternate (e.g., +2.5 → +2.6 → +2.5).
+6. **Layout weights 3:1.5 → 4.0:1.0** — Main value area 80%, MAX/MIN panel 20%. More space for large values, less for extremes.
+7. **Remove FitParam class** — Replaced with simpler `getBaseSp(i)` + `MIN_SCALE_X[]` array. Removed `spToPx()` helper (unused).
+8. **Single render path** — `renderMainValueMaxFit()` replaces `fitSplitValueTextWidthOnly()`. Only this function and `renderSemanticCard()` set textSize/textScaleX.
 
 ### V2.4.1 (2026-06-03) — Width-Only Main Value Fit
 

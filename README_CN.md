@@ -276,11 +276,12 @@ app/src/main/res/
 
 ### 字体纵向拉伸
 
-Android 无原生字高缩放，通过 `textSize × scale` + `textScaleX = 1/scale` 实现:
-- 第1行 (i=0~2): scale=1.5 → textSize=112.5sp, scaleX=0.667
-- 第1行 (i=0, Ethanol): scaleX=0.50 (额外压窄，"E85"前缀适配容器宽度)
-- 第2行 (i=3~7): scale=1.65 → textSize=99sp, scaleX=0.606
-- 第2行 (i=6,7 IGN/S.TRIM): scaleX=0.50 (带符号两位数+小数更窄)
+Android 无原生字高缩放。V2.4.2 使用自适应宽度缩放:
+- **第1行** (Ethanol, ECT, IAT, L.TRIM): textSize=112sp, textScaleX 根据实测文本宽度动态适配
+- **第2行** (MAP, A/F, IGN, S.TRIM): textSize=102sp, textScaleX 根据实测文本宽度动态适配
+- **每卡最小 scaleX**: Ethanol 0.40, ECT/IAT 0.42, L.TRIM 0.34, MAP/A.F 0.38, IGN/S.TRIM 0.30
+- **滞后防抖**: 缩窄立即生效，放宽需 gap > 0.06（防止宽度跳动）
+- **布局权重**: valueArea 4.0 (80%), extremePanel 1.0 (20%) — 最大化主值显示空间
 
 ### 全屏方案
 
@@ -301,6 +302,21 @@ Android 无原生字高缩放，通过 `textSize × scale` + `textScaleX = 1/sca
 - Release APK: **45 KB**
 
 ## 版本历史
+
+### V2.4.2 (2026-06-04) — 最大化主值字体
+
+V2.4.1 适配策略过于保守 — 字体太小，根因：worst-case 预适配 + 过大安全边距 (dp(28)) + 低 maxScaleX。V2.4.2 从"永不截断"转为"最大化字体且永不截断"。
+
+#### 变更
+
+1. **恢复大字体** — 第1行 112sp，第2行 102sp，语义标签 92sp
+2. **移除 worst-case 默认测量** — 测量当前文本宽度，不再为假设的最长值预缩窄
+3. **安全边距 dp(28) → dp(4)** — TextPaint measureText 精确，仅需微量余量
+4. **不设 maxScaleX 上限** — scaleX 可达 1.0（窄文本如单位数不压缩）
+5. **scaleX 滞后防抖** — `lastMainScaleX[]` 数组：缩窄立即生效，放宽需 gap > 0.06
+6. **布局权重 3:1.5 → 4.0:1.0** — 主值区 80%，MAX/MIN 区 20%
+7. **移除 FitParam 类** — 替换为更简单的 `getBaseSp(i)` + `MIN_SCALE_X[]` 数组
+8. **统一渲染路径** — `renderMainValueMaxFit()` 替代 `fitSplitValueTextWidthOnly()`
 
 ### V2.4.1 (2026-06-03) — Width-Only 主数值适配
 
