@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    传感器卡片 V6 - 单 TextView 完整字符串
+    传感器卡片 V7 - FrameLayout overlay 架构
     顶部: 英文缩写(左) + 单位(右上角右对齐, 同标题大小)
-    中央: 大数值(单TextView, 自适应scaleX) + MAX/MIN(右, 纯数字19sp)
+    中央: FrameLayout(normalValueLayer + semanticValue overlay)
+      - normalValueLayer: 主值(单TextView) + MAX/MIN(固定56dp, 18sp)
+      - semanticValue: DFCO/SYNC overlay (INVISIBLE/VISIBLE切换)
     底部: 刻度进度条 (刻度在上方)
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -39,87 +41,114 @@
             android:gravity="center_vertical"/>
     </LinearLayout>
 
-    <!-- 中央: 数值(左4/5) + MAX/MIN(右1/5) -->
-    <LinearLayout
+    <!-- 中央: FrameLayout overlay — 正常层 + 语义层 -->
+    <FrameLayout
+        android:id="@+id/valueCenterFrame"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:layout_weight="1">
 
-        <!-- 数值 (左侧, 占4/5) -->
+        <!-- 正常数据层：主值 + MAX/MIN -->
         <LinearLayout
-            android:id="@+id/valueArea"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="4.0"
-            android:orientation="horizontal"
-            android:gravity="center_vertical|start"
-            android:baselineAligned="false"
-            android:paddingStart="2dp">
-
-            <TextView
-                android:id="@+id/valueInt"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textColor="#FFFFFFFF"
-                android:textSize="65sp"
-                android:textStyle="bold|italic"
-                android:includeFontPadding="false"
-                android:singleLine="true"
-                android:ellipsize="none"
-                android:text="--"/>
-
-            <TextView
-                android:id="@+id/valueDec"
-                android:layout_width="0dp"
-                android:layout_height="0dp"
-                android:visibility="gone"
-                android:textColor="#FFFFFFFF"
-                android:textSize="65sp"
-                android:textStyle="bold|italic"
-                android:includeFontPadding="false"
-                android:singleLine="true"
-                android:ellipsize="none"/>
-
-        </LinearLayout>
-
-        <!-- MAX / MIN (右侧右对齐, MAX靠上 MIN靠下) -->
-        <LinearLayout
-            android:id="@+id/extremePanel"
-            android:layout_width="0dp"
+            android:id="@+id/normalValueLayer"
+            android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_weight="1.0"
-            android:orientation="vertical"
-            android:gravity="end"
-            android:paddingEnd="2dp">
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
-            <TextView
-                android:id="@+id/maxValue"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="#FFBBBBBB"
-                android:textSize="19sp"
-                android:textStyle="bold"
-                android:singleLine="true"
-                android:text=""/>
-
-            <View
+            <!-- 主值区：吃掉剩余空间 -->
+            <FrameLayout
+                android:id="@+id/valueArea"
                 android:layout_width="0dp"
-                android:layout_height="0dp"
-                android:layout_weight="1"/>
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:paddingStart="2dp"
+                android:paddingEnd="2dp"
+                android:clipChildren="true"
+                android:clipToPadding="true">
 
-            <TextView
-                android:id="@+id/minValue"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="#FFAAAAAA"
-                android:textSize="19sp"
-                android:textStyle="bold"
-                android:singleLine="true"
-                android:text=""/>
+                <TextView
+                    android:id="@+id/valueInt"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="100sp"
+                    android:textStyle="bold|italic"
+                    android:includeFontPadding="false"
+                    android:singleLine="true"
+                    android:ellipsize="none"
+                    android:gravity="center_vertical|start"
+                    android:text="--"/>
+            </FrameLayout>
+
+            <!-- 右侧 MAX/MIN：固定宽度，稳定显示 -->
+            <LinearLayout
+                android:id="@+id/extremePanel"
+                android:layout_width="56dp"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:gravity="end"
+                android:paddingEnd="2dp"
+                android:clipChildren="true"
+                android:clipToPadding="true">
+
+                <TextView
+                    android:id="@+id/maxValue"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="#FFBBBBBB"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:includeFontPadding="false"
+                    android:singleLine="true"
+                    android:ellipsize="none"
+                    android:gravity="end"
+                    android:text=""/>
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"/>
+
+                <TextView
+                    android:id="@+id/minValue"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="#FFAAAAAA"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:includeFontPadding="false"
+                    android:singleLine="true"
+                    android:ellipsize="none"
+                    android:gravity="end"
+                    android:text=""/>
+            </LinearLayout>
         </LinearLayout>
-    </LinearLayout>
+
+        <!-- 语义标签层：DFCO / SYNC，覆盖整块中央区域 -->
+        <TextView
+            android:id="@+id/semanticValue"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="invisible"
+            android:textColor="#FFA0A0A0"
+            android:textSize="82sp"
+            android:textStyle="bold|italic"
+            android:includeFontPadding="false"
+            android:singleLine="true"
+            android:ellipsize="none"
+            android:gravity="center_vertical|start"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp"
+            android:text=""/>
+
+        <!-- 隐藏的 valueDec，Java 兼容保留 -->
+        <TextView
+            android:id="@+id/valueDec"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:visibility="gone"/>
+    </FrameLayout>
 
     <!-- 底部: 刻度进度条 (刻度在上方) -->
     <com.hondata.dash.ScaleBarView
