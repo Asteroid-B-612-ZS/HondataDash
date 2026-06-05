@@ -48,12 +48,14 @@
             android:paddingBottom="1dp">
 
             <TextView
+                android:id="@+id/poweredByText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Powered by Helijohnny"
                 android:textColor="#FFFF0000"
                 android:textSize="10sp"
-                android:textStyle="bold|italic"/>
+                android:textStyle="bold|italic"
+                android:visibility="gone"/>
 
             <View
                 android:layout_width="0dp"
@@ -160,44 +162,43 @@
             android:layout_margin="1dp"
             android:padding="2dp">
 
-            <TextView
+            <LinearLayout
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:layout_gravity="top"
+                android:orientation="vertical"
                 android:gravity="top|start"
                 android:paddingStart="2dp"
-                android:paddingTop="2dp"
-                android:text="K.C"
-                android:textColor="#FFAAAAAA"
-                android:textSize="20sp"
-                android:textStyle="bold"/>
+                android:paddingTop="2dp">
 
-            <LinearLayout
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="K.C"
+                    android:textColor="@color/dash_label"
+                    android:textSize="20sp"
+                    android:textStyle="bold"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="(%)"
+                    android:textColor="@color/dash_label"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:includeFontPadding="false"/>
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/knockRetValue"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
                 android:layout_gravity="center_vertical"
-                android:gravity="center_vertical">
-
-                <TextView
-                    android:id="@+id/knockRetValue"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textColor="#FF3FB950"
-                    android:textSize="55sp"
-                    android:textStyle="bold|italic"
-                    android:includeFontPadding="false"
-                    android:text="0"/>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="%"
-                    android:textColor="#FF999999"
-                    android:textSize="14sp"
-                    android:layout_marginStart="1dp"/>
-            </LinearLayout>
+                android:textColor="#FF3FB950"
+                android:textSize="55sp"
+                android:textStyle="bold|italic"
+                android:includeFontPadding="false"
+                android:text="0"/>
         </LinearLayout>
 
         <!-- CYL 1-4 (each weight=1) -->
@@ -244,7 +245,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="K.R"
-                android:textColor="#FFCCCCCC"
+                android:textColor="@color/dash_label"
                 android:textSize="12sp"
                 android:textStyle="bold"/>
 
@@ -277,7 +278,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="K.L"
-                android:textColor="#FFCCCCCC"
+                android:textColor="@color/dash_label"
                 android:textSize="12sp"
                 android:textStyle="bold"/>
 
@@ -310,7 +311,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="BAT(V)"
-                android:textColor="#FFCCCCCC"
+                android:textColor="@color/dash_label"
                 android:textSize="12sp"
                 android:textStyle="bold"/>
 
@@ -343,7 +344,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="F.P(bar)"
-                android:textColor="#FFCCCCCC"
+                android:textColor="@color/dash_label"
                 android:textSize="12sp"
                 android:textStyle="bold"/>
 
@@ -376,7 +377,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="W.G(%)"
-                android:textColor="#FFCCCCCC"
+                android:textColor="@color/dash_label"
                 android:textSize="12sp"
                 android:textStyle="bold"/>
 
@@ -409,7 +410,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="T.P(%)"
-                android:textColor="#FFCCCCCC"
+                android:textColor="@color/dash_label"
                 android:textSize="12sp"
                 android:textStyle="bold"/>
 

@@ -5,6 +5,7 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.content.Intent;
 import android.os.Bundle;
+import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.text.TextPaint;
 import android.util.TypedValue;
@@ -18,8 +19,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 import android.text.SpannableString;
 import android.text.Spanned;
-import android.text.style.RelativeSizeSpan;
-import android.text.style.ScaleXSpan;
+import android.text.style.ReplacementSpan;
 
 import com.hondata.dash.data.BluetoothSource;
 import com.hondata.dash.data.DataSource;
@@ -83,10 +83,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
     // V2.6.3: 主数据横向缩放显示态 — 变窄立即响应，变宽阻尼释放
     private final float[] displayedMainScaleX = new float[8];
 
-    // V2.6.3: Compact +/- sign
+    // V2.6.4: Compact +/- sign — fixed size via ReplacementSpan
     private static final boolean ENABLE_COMPACT_SIGN = true;
     private static final float SIGN_RELATIVE_SIZE = 0.70f;
-    private static final float SIGN_SCALE_X = 0.82f;
+    private static final float SIGN_SCALE_X = 0.78f;
+    private static final int SIGN_GAP_DP = 1;
 
     // History Admission 参数表: [MAX cooldown, MIN cooldown] (ms)
     private static final long[][] COOLDOWN_MS = {
@@ -311,6 +312,43 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private TextView bottomWgValue;     // W.G (Wastegate)
     private TextView bottomTpValue;     // T.P (Throttle Plate)
 
+    // V2.6.4: Powered by Helijohnny — 仅自检期间显示
+    private TextView poweredByText;
+
+    // V2.6.4: 发动机运转极值门控 — RPM≥500 持续 1s 后才记录 L.TRIM/MAP/A.F/IGN/S.TRIM 极值
+    private static final float ENGINE_RUNNING_RPM_THRESHOLD = 500f;
+    private static final long ENGINE_RUNNING_STABLE_MS = 1000L;
+    private long engineRunningSinceMs = 0L;
+    private boolean engineRunningStable = false;
+
+    // V2.6.4: 启动自检 — 2.2s sweep
+    private static final long STARTUP_SELF_TEST_DURATION_MS = 2200L;
+    private static final long STARTUP_SELF_TEST_FRAME_MS = 40L;
+    private final Handler startupSelfTestHandler = new Handler(Looper.getMainLooper());
+    private boolean startupSelfTestActive = false;
+    private long startupSelfTestStartMs = 0L;
+
+    private static final float[] SELF_TEST_MIN = {
+        0f,    // Ethanol
+        40f,   // ECT
+        20f,   // IAT
+        -25f,  // L.TRIM
+        -1.0f, // MAP
+        9.0f,  // A/F
+        -20f,  // IGN
+        -25f   // S.TRIM
+    };
+    private static final float[] SELF_TEST_MAX = {
+        100f,  // Ethanol
+        120f,  // ECT
+        100f,  // IAT
+        25f,   // L.TRIM
+        2.0f,  // MAP
+        18.0f, // A/F
+        45f,   // IGN
+        25f    // S.TRIM
+    };
+
     // ===== 卡片配置 =====
     // 第1行 (慢数据): Ethanol, ECT, IAT, L.TRIM
     // 第2行 (快数据): MAP, A/F, IGN, S.TRIM
@@ -462,13 +500,12 @@ public class MainActivity extends Activity implements DataSource.Callback {
             dataSource = btSource;
         }
         dataSource.setCallback(this);
-        sourceName.setText(dataSource.getName());
+        sourceName.setText("");
 
-        if (USE_DEMO) {
-            dataSource.connect(null);
-        } else {
-            connectBluetooth();
-        }
+        poweredByText = (TextView) findViewById(R.id.poweredByText);
+
+        // V2.6.4: 先自检再连接蓝牙
+        startStartupSelfTest();
 
         // V2.2: 启动数据新鲜度独立刷新 (250ms)
         freshnessHandler.post(freshnessRunnable);
@@ -620,6 +657,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
     protected void onDestroy() {
         super.onDestroy();
         freshnessHandler.removeCallbacks(freshnessRunnable);
+        startupSelfTestHandler.removeCallbacks(startupSelfTestRunnable);
         dataSource.disconnect();
     }
 
@@ -629,6 +667,9 @@ public class MainActivity extends Activity implements DataSource.Callback {
     public void onConnected() {
         runOnUiThread(new Runnable() {
             @Override public void run() {
+                if (poweredByText != null) {
+                    poweredByText.setVisibility(View.GONE);
+                }
                 statusText.setText("已连接");
                 statusText.setTextColor(0xFF3FB950);
                 dataSource.startPolling();
@@ -705,6 +746,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
     public void onDataReceived(final SensorData data) {
         runOnUiThread(new Runnable() {
             @Override public void run() {
+                // V2.6.4: 自检期间拒绝数据覆盖
+                if (startupSelfTestActive) {
+                    return;
+                }
+
                 // V2.2: 数据新鲜度追踪
                 lastValidFrameTimeMs = SystemClock.elapsedRealtime();
 
@@ -714,6 +760,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
                 // 检测引擎状态 (V2 语义模型)
                 EngineSemanticState state = engineState.update(data);
+                // V2.6.4: 更新发动机运转门控
+                updateEngineRunningGate(data);
                 boolean isDfco = state.isDfco();
                 boolean dfcoJustEnded = lastDfcoState && !isDfco;
                 lastDfcoState = isDfco;
@@ -862,55 +910,59 @@ public class MainActivity extends Activity implements DataSource.Callback {
                         lastValidValue[i] = fVal;
                         hasValidValue[i] = true;
 
-                        // History Admission System: V2.2 双路径
+                        // History Admission System: V2.6.4 双路径 + 发动机运转门控
                         // Session Extreme: 全程极值, 不衰减; Recent Extreme: 近期动态, 可衰减
                         float valueForExtreme = (i == 4) ? rawValueForExtreme : fVal;
 
-                        if (!hasValue[i]) {
-                            // V2.2: Session Extreme 初始化用 valueForExtreme (MAP 用原始值)
-                            float initVal = SHOW_SESSION_EXTREME[i] ? valueForExtreme : fVal;
-                            if (!SHOW_SESSION_EXTREME[i] || isTrustedForSessionExtreme(i, initVal)) {
-                                maxTrack[i] = initVal;
-                                minTrack[i] = initVal;
-                                recentMax[i] = fVal;
-                                recentMin[i] = fVal;
-                                lastMaxTime[i] = lastMinTime[i] = now;
-                                recentMaxTime[i] = recentMinTime[i] = now;
-                                hasValue[i] = true;
-                            }
-                        } else if (SHOW_SESSION_EXTREME[i]) {
-                            // Session Extreme 路径: 只做可信值过滤, 无 cooldown/decay
-                            if (isTrustedForSessionExtreme(i, valueForExtreme)) {
-                                if (valueForExtreme > maxTrack[i]) maxTrack[i] = valueForExtreme;
-                                if (valueForExtreme < minTrack[i]) minTrack[i] = valueForExtreme;
-                            }
-                            // recent 数组也保持同步 (ScaleBar 可能引用)
-                            if (fVal > recentMax[i]) { recentMax[i] = fVal; recentMaxTime[i] = now; }
-                            if (fVal < recentMin[i]) { recentMin[i] = fVal; recentMinTime[i] = now; }
-                            // Session Extreme 不做 recent decay
-                        } else if (isEligibleForHistory(i, state)) {
-                            // Recent Extreme 路径: 三层准入 + cooldown + breakthrough + decay
-                            boolean maxExpired = (now - lastMaxTime[i] >= getCooldown(i, true, isWot));
-                            boolean minExpired = (now - lastMinTime[i] >= getCooldown(i, false, isWot));
+                        boolean canRecordExtreme = canRecordExtremeNow(i);
 
-                            if (fVal > maxTrack[i]) {
-                                if (maxExpired || isBreakthrough(i, true, fVal, maxTrack[i])) {
-                                    maxTrack[i] = fVal;
+                        if (canRecordExtreme) {
+                            if (!hasValue[i]) {
+                                // V2.2: Session Extreme 初始化用 valueForExtreme (MAP 用原始值)
+                                float initVal = SHOW_SESSION_EXTREME[i] ? valueForExtreme : fVal;
+                                if (!SHOW_SESSION_EXTREME[i] || isTrustedForSessionExtreme(i, initVal)) {
+                                    maxTrack[i] = initVal;
+                                    minTrack[i] = initVal;
                                     recentMax[i] = fVal;
-                                    lastMaxTime[i] = now;
-                                    recentMaxTime[i] = now;
-                                }
-                            }
-                            if (fVal < minTrack[i]) {
-                                if (minExpired || isBreakthrough(i, false, fVal, minTrack[i])) {
-                                    minTrack[i] = fVal;
                                     recentMin[i] = fVal;
-                                    lastMinTime[i] = now;
-                                    recentMinTime[i] = now;
+                                    lastMaxTime[i] = lastMinTime[i] = now;
+                                    recentMaxTime[i] = recentMinTime[i] = now;
+                                    hasValue[i] = true;
                                 }
+                            } else if (SHOW_SESSION_EXTREME[i]) {
+                                // Session Extreme 路径: 只做可信值过滤, 无 cooldown/decay
+                                if (isTrustedForSessionExtreme(i, valueForExtreme)) {
+                                    if (valueForExtreme > maxTrack[i]) maxTrack[i] = valueForExtreme;
+                                    if (valueForExtreme < minTrack[i]) minTrack[i] = valueForExtreme;
+                                }
+                                // recent 数组也保持同步 (ScaleBar 可能引用)
+                                if (fVal > recentMax[i]) { recentMax[i] = fVal; recentMaxTime[i] = now; }
+                                if (fVal < recentMin[i]) { recentMin[i] = fVal; recentMinTime[i] = now; }
+                                // Session Extreme 不做 recent decay
+                            } else if (isEligibleForHistory(i, state)) {
+                                // Recent Extreme 路径: 三层准入 + cooldown + breakthrough + decay
+                                boolean maxExpired = (now - lastMaxTime[i] >= getCooldown(i, true, isWot));
+                                boolean minExpired = (now - lastMinTime[i] >= getCooldown(i, false, isWot));
+
+                                if (fVal > maxTrack[i]) {
+                                    if (maxExpired || isBreakthrough(i, true, fVal, maxTrack[i])) {
+                                        maxTrack[i] = fVal;
+                                        recentMax[i] = fVal;
+                                        lastMaxTime[i] = now;
+                                        recentMaxTime[i] = now;
+                                    }
+                                }
+                                if (fVal < minTrack[i]) {
+                                    if (minExpired || isBreakthrough(i, false, fVal, minTrack[i])) {
+                                        minTrack[i] = fVal;
+                                        recentMin[i] = fVal;
+                                        lastMinTime[i] = now;
+                                        recentMinTime[i] = now;
+                                    }
+                                }
+                                // Recent Peak 30s 衰减 (每帧)
+                                updateRecentPeak(i, fVal, now);
                             }
-                            // Recent Peak 30s 衰减 (每帧)
-                            updateRecentPeak(i, fVal, now);
                         }
 
                         if (updateDisplay) {
@@ -930,16 +982,24 @@ public class MainActivity extends Activity implements DataSource.Callback {
                             }
 
                             if (maxValueViews[i] != null) {
-                                float displayMax = SHOW_SESSION_EXTREME[i] ? maxTrack[i] : recentMax[i];
-                                String maxText = formatExtremeText(i, displayMax);
-                                renderExtremeText(maxValueViews[i], maxText);
-                                maxValueViews[i].setTextColor(0xFFCCCCCC);
+                                if (hasValue[i]) {
+                                    float displayMax = SHOW_SESSION_EXTREME[i] ? maxTrack[i] : recentMax[i];
+                                    String maxText = formatExtremeText(i, displayMax);
+                                    renderExtremeText(maxValueViews[i], maxText);
+                                    maxValueViews[i].setTextColor(0xFFCCCCCC);
+                                } else {
+                                    renderExtremeText(maxValueViews[i], "");
+                                }
                             }
                             if (minValueViews[i] != null) {
-                                float displayMin = SHOW_SESSION_EXTREME[i] ? minTrack[i] : recentMin[i];
-                                String minText = formatExtremeText(i, displayMin);
-                                renderExtremeText(minValueViews[i], minText);
-                                minValueViews[i].setTextColor(0xFFCCCCCC);
+                                if (hasValue[i]) {
+                                    float displayMin = SHOW_SESSION_EXTREME[i] ? minTrack[i] : recentMin[i];
+                                    String minText = formatExtremeText(i, displayMin);
+                                    renderExtremeText(minValueViews[i], minText);
+                                    minValueViews[i].setTextColor(0xFFCCCCCC);
+                                } else {
+                                    renderExtremeText(minValueViews[i], "");
+                                }
                             }
 
                             // Ethanol: 按浓度变色 (E前缀已由 fitSplitValueText 设置)
@@ -1482,12 +1542,56 @@ public class MainActivity extends Activity implements DataSource.Callback {
         return next;
     }
 
+    /** V2.6.4: 固定尺寸符号 Span — 不受 TextView textScaleX 影响 */
+    private static class FixedSignSpan extends ReplacementSpan {
+        private final float signTextSizePx;
+        private final float signScaleX;
+        private final float gapPx;
+
+        FixedSignSpan(float signTextSizePx, float signScaleX, float gapPx) {
+            this.signTextSizePx = signTextSizePx;
+            this.signScaleX = signScaleX;
+            this.gapPx = gapPx;
+        }
+
+        @Override
+        public int getSize(Paint paint, CharSequence text, int start, int end, Paint.FontMetricsInt fm) {
+            float oldSize = paint.getTextSize();
+            float oldScaleX = paint.getTextScaleX();
+
+            paint.setTextSize(signTextSizePx);
+            paint.setTextScaleX(signScaleX);
+
+            int width = Math.round(paint.measureText(text, start, end) + gapPx);
+
+            paint.setTextSize(oldSize);
+            paint.setTextScaleX(oldScaleX);
+
+            return width;
+        }
+
+        @Override
+        public void draw(Canvas canvas, CharSequence text, int start, int end,
+                         float x, int top, int y, int bottom, Paint paint) {
+            float oldSize = paint.getTextSize();
+            float oldScaleX = paint.getTextScaleX();
+
+            paint.setTextSize(signTextSizePx);
+            paint.setTextScaleX(signScaleX);
+
+            canvas.drawText(text, start, end, x, y, paint);
+
+            paint.setTextSize(oldSize);
+            paint.setTextScaleX(oldScaleX);
+        }
+    }
+
     /** V2.6.3: 是否为带符号主卡片 (L.TRIM, MAP, IGN, S.TRIM) */
     private boolean isSignedMainCard(int i) {
         return i == 3 || i == 4 || i == 6 || i == 7;
     }
 
-    /** V2.6.3: 构建 +/- 缩小显示的 SpannableString */
+    /** V2.6.4: 构建 +/- 固定尺寸 SpannableString */
     private CharSequence buildMainDisplayText(int i, String plainText) {
         if (!ENABLE_COMPACT_SIGN) return plainText;
         if (plainText == null || plainText.length() == 0) return "";
@@ -1496,43 +1600,75 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
         if (isSignedMainCard(i) && (c == '+' || c == '-')) {
             SpannableString ss = new SpannableString(plainText);
-            ss.setSpan(new RelativeSizeSpan(SIGN_RELATIVE_SIZE), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            ss.setSpan(new ScaleXSpan(SIGN_SCALE_X), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+            float baseSp = getBaseSpForMain(i);
+            float signPx = spToPx(baseSp * SIGN_RELATIVE_SIZE);
+            float gapPx = dp(SIGN_GAP_DP);
+
+            ss.setSpan(
+                    new FixedSignSpan(signPx, SIGN_SCALE_X, gapPx),
+                    0,
+                    1,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            );
+
             return ss;
         }
 
         return plainText;
     }
 
-    /** V2.6.3: 智能测量主数据 — 同步 +/- 缩小后的实际宽度 */
-    private float measureMainTextSmart(TextView tv, String text, float sp, int cardIndex) {
-        if (!ENABLE_COMPACT_SIGN) {
-            return measureTextUnscaled(tv, mainMeasurePaint, text, sp);
-        }
+    /** V2.6.4: 测量固定符号宽度 */
+    private float measureFixedSignWidth(float baseSp) {
+        TextPaint p = mainMeasurePaint;
 
-        if (text == null || text.length() == 0) return 0f;
+        p.setTextSize(spToPx(baseSp * SIGN_RELATIVE_SIZE));
+        p.setTextScaleX(SIGN_SCALE_X);
+
+        return p.measureText("+") + dp(SIGN_GAP_DP);
+    }
+
+    /** V2.6.4: 测量数字主体宽度 */
+    private float measureMainBodyWidth(TextView tv, String text, float sp, int startIndex) {
+        if (text == null || startIndex >= text.length()) return 0f;
+
+        TextPaint p = mainMeasurePaint;
+
+        p.set(tv.getPaint());
+        p.setTextScaleX(1.0f);
+        p.setTextSize(spToPx(sp));
+
+        return p.measureText(text, startIndex, text.length());
+    }
+
+    /** V2.6.4: 固定符号 + 主体分开计算 targetScaleX */
+    private float calculateMainTargetScaleX(TextView tv, String text, float baseSp, int cardIndex, int available) {
+        if (text == null || text.length() == 0 || available <= 0) return 1f;
 
         char c = text.charAt(0);
 
-        if (isSignedMainCard(cardIndex) && (c == '+' || c == '-') && text.length() > 1) {
-            TextPaint p = mainMeasurePaint;
-            p.set(tv.getPaint());
-            p.setTextScaleX(1.0f);
+        if (ENABLE_COMPACT_SIGN
+                && isSignedMainCard(cardIndex)
+                && (c == '+' || c == '-')
+                && text.length() > 1) {
 
-            // 测量 +/-: 70% 高度 + 82% 横向压缩
-            p.setTextSize(spToPx(sp * SIGN_RELATIVE_SIZE));
-            p.setTextScaleX(SIGN_SCALE_X);
-            float signW = p.measureText(text, 0, 1);
+            float signW = measureFixedSignWidth(baseSp);
+            float bodyW = measureMainBodyWidth(tv, text, baseSp, 1);
 
-            // 测量数字主体: 100% 高度 + 正常宽度
-            p.setTextSize(spToPx(sp));
-            p.setTextScaleX(1.0f);
-            float bodyW = p.measureText(text, 1, text.length());
+            float bodyAvailable = available - signW;
 
-            return signW + bodyW;
+            if (bodyAvailable <= 1f || bodyW <= 0f) {
+                return getHardMinScaleXForMain(cardIndex);
+            }
+
+            return bodyAvailable / bodyW;
         }
 
-        return measureTextUnscaled(tv, mainMeasurePaint, text, sp);
+        float rawWidth = measureTextUnscaled(tv, mainMeasurePaint, text, baseSp);
+
+        if (rawWidth <= 0f) return 1f;
+
+        return available / rawWidth;
     }
 
     /** V2.6: 唯一主值渲染 — V2.6.3: smooth scale + compact sign */
@@ -1585,11 +1721,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
             return;
         }
 
-        // V2.6.3: 智能测量 — 同步 compact sign 的实际宽度
-        float rawWidth = measureMainTextSmart(tv, text, baseSp, i);
-        if (rawWidth <= 0f) return;
-
-        float targetScaleX = available / rawWidth;
+        // V2.6.4: 固定符号 + 主体数字分开测量
+        float targetScaleX = calculateMainTargetScaleX(tv, text, baseSp, i, available);
         if (targetScaleX > 1.0f) targetScaleX = 1.0f;
 
         float hardMin = getHardMinScaleXForMain(i);
@@ -1739,6 +1872,220 @@ public class MainActivity extends Activity implements DataSource.Callback {
         }
 
         updateFlashState();
+    }
+
+    // === V2.6.4: 发动机运转极值门控 ===
+
+    private void updateEngineRunningGate(SensorData data) {
+        float rpm = (float) data.getDouble(0x0100);
+        long now = SystemClock.elapsedRealtime();
+
+        if (rpm >= ENGINE_RUNNING_RPM_THRESHOLD) {
+            if (engineRunningSinceMs <= 0L) {
+                engineRunningSinceMs = now;
+            }
+            engineRunningStable = (now - engineRunningSinceMs) >= ENGINE_RUNNING_STABLE_MS;
+        } else {
+            engineRunningSinceMs = 0L;
+            engineRunningStable = false;
+        }
+    }
+
+    private boolean isEngineIndependentExtremeCard(int i) {
+        return i == 0 || i == 1 || i == 2; // Ethanol, ECT, IAT
+    }
+
+    private boolean canRecordExtremeNow(int i) {
+        return isEngineIndependentExtremeCard(i) || engineRunningStable;
+    }
+
+    // === V2.6.4: 启动自检 ===
+
+    private void startStartupSelfTest() {
+        startupSelfTestActive = true;
+        startupSelfTestStartMs = SystemClock.elapsedRealtime();
+
+        if (poweredByText != null) {
+            poweredByText.setVisibility(View.VISIBLE);
+        }
+
+        if (statusText != null) {
+            statusText.setText("CHECK");
+            statusText.setTextColor(0xFFD29922);
+        }
+
+        if (sourceName != null) {
+            sourceName.setText("SELF TEST");
+            sourceName.setTextColor(0xFF777777);
+        }
+
+        startupSelfTestHandler.removeCallbacks(startupSelfTestRunnable);
+        startupSelfTestHandler.post(startupSelfTestRunnable);
+    }
+
+    private final Runnable startupSelfTestRunnable = new Runnable() {
+        @Override public void run() {
+            long now = SystemClock.elapsedRealtime();
+            float t = (now - startupSelfTestStartMs) / (float) STARTUP_SELF_TEST_DURATION_MS;
+
+            if (t >= 1.0f) {
+                renderStartupSelfTestFrame(1.0f);
+                finishStartupSelfTest();
+                return;
+            }
+
+            renderStartupSelfTestFrame(t);
+            startupSelfTestHandler.postDelayed(this, STARTUP_SELF_TEST_FRAME_MS);
+        }
+    };
+
+    private float easeInOut(float t) {
+        if (t < 0f) t = 0f;
+        if (t > 1f) t = 1f;
+
+        return (float) (0.5f - 0.5f * Math.cos(Math.PI * t));
+    }
+
+    private void renderStartupSelfTestFrame(float rawT) {
+        float t = easeInOut(rawT);
+
+        for (int i = 0; i < 8; i++) {
+            float v = SELF_TEST_MIN[i] + (SELF_TEST_MAX[i] - SELF_TEST_MIN[i]) * t;
+
+            String mainText = formatMainText(i, v);
+            renderMainText(i, mainText);
+
+            if (valueIntViews[i] != null) {
+                valueIntViews[i].setTextColor(0xFFFFFFFF);
+                valueIntViews[i].setAlpha(1f);
+            }
+
+            if (maxValueViews[i] != null) {
+                renderExtremeText(maxValueViews[i], formatExtremeText(i, SELF_TEST_MAX[i]));
+                maxValueViews[i].setTextColor(0xFFCCCCCC);
+            }
+
+            if (minValueViews[i] != null) {
+                renderExtremeText(minValueViews[i], formatExtremeText(i, SELF_TEST_MIN[i]));
+                minValueViews[i].setTextColor(0xFFCCCCCC);
+            }
+
+            if (scaleBars[i] != null) {
+                scaleBars[i].setValue(v);
+            }
+        }
+
+        // K.C 0→100
+        if (knockRetValue != null) {
+            int kc = Math.round(100f * t);
+            knockRetValue.setText(String.valueOf(kc));
+            knockRetValue.setTextColor(0xFF3FB950);
+            knockRetValue.setAlpha(1f);
+        }
+
+        // CYL 0→9
+        for (int i = 0; i < 4; i++) {
+            if (knockValues[i] != null) {
+                int val = Math.round(9f * t);
+                knockValues[i].setText(String.valueOf(val));
+                knockValues[i].setTextColor(0xFF3FB950);
+                knockValues[i].setAlpha(1f);
+            }
+        }
+
+        if (bottomTrimValue != null) {
+            bottomTrimValue.setText(String.format(Locale.US, "%.1f", -5f + 10f * t));
+        }
+
+        if (bottomAfmValue != null) {
+            bottomAfmValue.setText(String.format(Locale.US, "%.1f", 10f * t));
+        }
+
+        if (bottomBatValue != null) {
+            bottomBatValue.setText(String.format(Locale.US, "%.1f", 11.5f + 3.0f * t));
+        }
+
+        if (bottomFpValue != null) {
+            bottomFpValue.setText(String.format(Locale.US, "%.0f", 200f + 18000f * t));
+        }
+
+        if (bottomWgValue != null) {
+            bottomWgValue.setText(String.format(Locale.US, "%.0f", 100f * t));
+        }
+
+        if (bottomTpValue != null) {
+            bottomTpValue.setText(String.format(Locale.US, "%.0f", 100f * t));
+        }
+
+        if (shiftLight != null) {
+            float rpm = 800f + (6500f - 800f) * t;
+            shiftLight.setRpm(rpm);
+        }
+    }
+
+    private void finishStartupSelfTest() {
+        startupSelfTestActive = false;
+        startupSelfTestHandler.removeCallbacks(startupSelfTestRunnable);
+
+        if (poweredByText != null) {
+            poweredByText.setVisibility(View.GONE);
+        }
+
+        clearStartupSelfTestDisplay();
+
+        if (sourceName != null) {
+            sourceName.setText(dataSource.getName());
+            sourceName.setTextColor(0xFF777777);
+        }
+
+        if (statusText != null) {
+            statusText.setText("CONNECTING");
+            statusText.setTextColor(0xFFD29922);
+        }
+
+        if (USE_DEMO) {
+            dataSource.connect(null);
+        } else {
+            connectBluetooth();
+        }
+    }
+
+    private void clearStartupSelfTestDisplay() {
+        for (int i = 0; i < 8; i++) {
+            semanticMode[i] = false;
+            displayedMainScaleX[i] = 0f;
+
+            if (valueIntViews[i] != null) {
+                renderMainText(i, "--");
+                valueIntViews[i].setTextColor(0xFFFFFFFF);
+                valueIntViews[i].setAlpha(1f);
+            }
+
+            if (maxValueViews[i] != null) {
+                renderExtremeText(maxValueViews[i], "");
+            }
+
+            if (minValueViews[i] != null) {
+                renderExtremeText(minValueViews[i], "");
+            }
+
+            if (scaleBars[i] != null) {
+                scaleBars[i].setValue(Float.NaN);
+            }
+        }
+
+        if (knockRetValue != null) knockRetValue.setText("--");
+
+        for (int i = 0; i < 4; i++) {
+            if (knockValues[i] != null) knockValues[i].setText("0");
+        }
+
+        if (bottomTrimValue != null) bottomTrimValue.setText("--");
+        if (bottomAfmValue != null) bottomAfmValue.setText("--");
+        if (bottomBatValue != null) bottomBatValue.setText("--");
+        if (bottomFpValue != null) bottomFpValue.setText("--");
+        if (bottomWgValue != null) bottomWgValue.setText("--");
+        if (bottomTpValue != null) bottomTpValue.setText("--");
     }
 
     /** V2.3: Lambda 语义 A/F 颜色判定 — WOT 用绝对 lambda, 闭环用 lambda error */

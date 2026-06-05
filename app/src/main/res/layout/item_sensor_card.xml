@@ -25,7 +25,7 @@
             android:id="@+id/labelEn"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textColor="#FFCCCCCC"
+            android:textColor="@color/dash_label"
             android:textSize="18sp"
             android:textStyle="bold"
             android:singleLine="true"/>
@@ -34,7 +34,7 @@
             android:id="@+id/unit"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textColor="#FFBBBBBB"
+            android:textColor="@color/dash_label"
             android:textSize="18sp"
             android:includeFontPadding="false"
             android:singleLine="true"
