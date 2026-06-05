@@ -18,6 +18,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 import android.text.SpannableString;
 import android.text.Spanned;
+import android.text.style.RelativeSizeSpan;
 import android.text.style.ScaleXSpan;
 
 import com.hondata.dash.data.BluetoothSource;
@@ -78,6 +79,14 @@ public class MainActivity extends Activity implements DataSource.Callback {
     // V2.6.2: 独立测量 Paint, 避免 TextView 当前 textScaleX 污染 measureText()
     private final TextPaint mainMeasurePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     private final TextPaint extremeMeasurePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+
+    // V2.6.3: 主数据横向缩放显示态 — 变窄立即响应，变宽阻尼释放
+    private final float[] displayedMainScaleX = new float[8];
+
+    // V2.6.3: Compact +/- sign
+    private static final boolean ENABLE_COMPACT_SIGN = true;
+    private static final float SIGN_RELATIVE_SIZE = 0.70f;
+    private static final float SIGN_SCALE_X = 0.82f;
 
     // History Admission 参数表: [MAX cooldown, MIN cooldown] (ms)
     private static final long[][] COOLDOWN_MS = {
@@ -252,8 +261,15 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 valueIntViews[2].setTextColor(color);
                 valueIntViews[2].setAlpha(alpha / 255f);
             }
-            // A/F闪烁 (红色区间) — V2.4: 语义模式期间不压暗 alpha
-            if (afFlashing && !semanticMode[5]) {
+            // A/F闪烁 — V2.6.3: 语义模式下硬保护, 禁止闪烁残留
+            if (semanticMode[5]) {
+                if (afFlashing) {
+                    afFlashing = false;
+                    updateFlashState();
+                }
+                valueIntViews[5].setAlpha(ALPHA_SEMANTIC_SYNC);
+                valueIntViews[5].setTextColor(COLOR_SEMANTIC_SYNC);
+            } else if (afFlashing) {
                 int alpha = flashVisible ? 255 : 40;
                 int color = 0xFFFF4444;
                 valueIntViews[5].setTextColor(color);
@@ -741,28 +757,16 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
                         float fVal = (float) val;
 
-                        // P1: 范围校验 — 超出物理范围视为异常, 跳过处理
-                        float[] range = VALID_RANGE[i];
-                        if (fVal < range[0] || fVal > range[1]) {
-                            if (hasValidValue[i]) {
-                                valueIntViews[i].setAlpha(0.4f);
-                            } else {
-                                valueIntViews[i].setText("--");
-                            }
-                            if (scaleBars[i] != null) scaleBars[i].setValue(Float.NaN);
-                            continue;
-                        }
-
-                        // V2.3: combustionInvalid / SYNC 显示层门控
-                        // 替代旧 isDfco 单一判断, 使用多源语义检测 + 独立 SYNC 释放
+                        // V2.6.3: A/F / IGN / S.TRIM 语义门控必须早于 VALID_RANGE
+                        // A/F 在 DFCO 中可能显示为 29.4 AFR, 不能先走 invalid alpha=0.4
                         if (i == 5) { // A/F
                             if (combustionInvalid) {
-                                clearAfFlashIfNeeded();
+                                clearAfSemanticContamination();
                                 renderSemanticCard(i, "DFCO");
                                 continue;
                             }
                             if (afSync) {
-                                clearAfFlashIfNeeded();
+                                clearAfSemanticContamination();
                                 renderSemanticCard(i, "SYNC");
                                 continue;
                             }
@@ -786,6 +790,18 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                 renderSemanticCard(i, "SYNC");
                                 continue;
                             }
+                        }
+
+                        // 非语义状态才做范围校验
+                        float[] range = VALID_RANGE[i];
+                        if (fVal < range[0] || fVal > range[1]) {
+                            if (hasValidValue[i]) {
+                                valueIntViews[i].setAlpha(0.4f);
+                            } else {
+                                valueIntViews[i].setText("--");
+                            }
+                            if (scaleBars[i] != null) scaleBars[i].setValue(Float.NaN);
+                            continue;
                         }
 
                         // NaN 保护: 传感器异常值使用上次有效滤波值
@@ -1439,14 +1455,95 @@ public class MainActivity extends Activity implements DataSource.Callback {
         return fmtSigned1(v);
     }
 
-    /** V2.6: 唯一主值渲染 — 无 hysteresis, 无缓存, 每帧重新计算 */
+    /** V2.6.3: 主数据 scaleX 快收慢放 — 变窄立即, 变宽阻尼 */
+    private float smoothMainScaleX(int i, float targetScaleX) {
+        float current = displayedMainScaleX[i];
+
+        if (current <= 0f) {
+            displayedMainScaleX[i] = targetScaleX;
+            return targetScaleX;
+        }
+
+        // 文字变长需要更窄: 立即响应, 防止裁切
+        if (targetScaleX < current) {
+            displayedMainScaleX[i] = targetScaleX;
+            return targetScaleX;
+        }
+
+        // 文字变短可以更宽: 缓慢放大
+        float diff = targetScaleX - current;
+        if (diff < 0.012f) {
+            displayedMainScaleX[i] = targetScaleX;
+            return targetScaleX;
+        }
+
+        float next = current + diff * 0.22f;
+        displayedMainScaleX[i] = next;
+        return next;
+    }
+
+    /** V2.6.3: 是否为带符号主卡片 (L.TRIM, MAP, IGN, S.TRIM) */
+    private boolean isSignedMainCard(int i) {
+        return i == 3 || i == 4 || i == 6 || i == 7;
+    }
+
+    /** V2.6.3: 构建 +/- 缩小显示的 SpannableString */
+    private CharSequence buildMainDisplayText(int i, String plainText) {
+        if (!ENABLE_COMPACT_SIGN) return plainText;
+        if (plainText == null || plainText.length() == 0) return "";
+
+        char c = plainText.charAt(0);
+
+        if (isSignedMainCard(i) && (c == '+' || c == '-')) {
+            SpannableString ss = new SpannableString(plainText);
+            ss.setSpan(new RelativeSizeSpan(SIGN_RELATIVE_SIZE), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            ss.setSpan(new ScaleXSpan(SIGN_SCALE_X), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            return ss;
+        }
+
+        return plainText;
+    }
+
+    /** V2.6.3: 智能测量主数据 — 同步 +/- 缩小后的实际宽度 */
+    private float measureMainTextSmart(TextView tv, String text, float sp, int cardIndex) {
+        if (!ENABLE_COMPACT_SIGN) {
+            return measureTextUnscaled(tv, mainMeasurePaint, text, sp);
+        }
+
+        if (text == null || text.length() == 0) return 0f;
+
+        char c = text.charAt(0);
+
+        if (isSignedMainCard(cardIndex) && (c == '+' || c == '-') && text.length() > 1) {
+            TextPaint p = mainMeasurePaint;
+            p.set(tv.getPaint());
+            p.setTextScaleX(1.0f);
+
+            // 测量 +/-: 70% 高度 + 82% 横向压缩
+            p.setTextSize(spToPx(sp * SIGN_RELATIVE_SIZE));
+            p.setTextScaleX(SIGN_SCALE_X);
+            float signW = p.measureText(text, 0, 1);
+
+            // 测量数字主体: 100% 高度 + 正常宽度
+            p.setTextSize(spToPx(sp));
+            p.setTextScaleX(1.0f);
+            float bodyW = p.measureText(text, 1, text.length());
+
+            return signW + bodyW;
+        }
+
+        return measureTextUnscaled(tv, mainMeasurePaint, text, sp);
+    }
+
+    /** V2.6: 唯一主值渲染 — V2.6.3: smooth scale + compact sign */
     private void renderMainText(final int i, final String text) {
         final TextView tv = valueIntViews[i];
         final View area = valueAreaViews[i];
 
         if (tv == null || area == null) return;
 
-        // 退出语义模式
+        // V2.6.3: 记录是否从语义状态恢复
+        boolean wasSemantic = semanticMode[i];
         semanticMode[i] = false;
 
         // valueDec 永久不用
@@ -1469,7 +1566,10 @@ public class MainActivity extends Activity implements DataSource.Callback {
         final float baseSp = getBaseSpForMain(i);
 
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, baseSp);
-        tv.setText(text);
+
+        // V2.6.3: compact +/- sign
+        CharSequence displayText = buildMainDisplayText(i, text);
+        tv.setText(displayText);
 
         final int available = area.getWidth()
                 - area.getPaddingLeft()
@@ -1485,17 +1585,26 @@ public class MainActivity extends Activity implements DataSource.Callback {
             return;
         }
 
-        // V2.6.2 核心: 用独立 Paint 测量未缩放宽度
-        float rawWidth = measureTextUnscaled(tv, mainMeasurePaint, text, baseSp);
+        // V2.6.3: 智能测量 — 同步 compact sign 的实际宽度
+        float rawWidth = measureMainTextSmart(tv, text, baseSp, i);
         if (rawWidth <= 0f) return;
 
-        float scaleX = available / rawWidth;
-        if (scaleX > 1.0f) scaleX = 1.0f;
+        float targetScaleX = available / rawWidth;
+        if (targetScaleX > 1.0f) targetScaleX = 1.0f;
 
         float hardMin = getHardMinScaleXForMain(i);
-        if (scaleX < hardMin) scaleX = hardMin;
+        if (targetScaleX < hardMin) targetScaleX = hardMin;
 
-        tv.setTextScaleX(scaleX);
+        // V2.6.3: 从语义状态恢复时直接用正确 scale, 不拖旧值过渡
+        float displayScaleX;
+        if (wasSemantic) {
+            displayedMainScaleX[i] = targetScaleX;
+            displayScaleX = targetScaleX;
+        } else {
+            displayScaleX = smoothMainScaleX(i, targetScaleX);
+        }
+
+        tv.setTextScaleX(displayScaleX);
     }
 
     /** V2.6: 渲染 DFCO/SYNC — 复用 valueInt, INVISIBLE extremePanel */
@@ -1507,9 +1616,15 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
         semanticMode[i] = true;
 
+        // A/F 进入语义模式时, 强制清理闪烁和半透明残留
+        if (i == 5) {
+            clearAfSemanticContamination();
+        }
+
         if (valueDecViews[i] != null) {
             valueDecViews[i].setVisibility(View.GONE);
             valueDecViews[i].setText("");
+            valueDecViews[i].setAlpha(ALPHA_SEMANTIC_SYNC);
         }
 
         // INVISIBLE, 不改变布局
@@ -1523,7 +1638,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
         tv.setIncludeFontPadding(false);
         tv.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
         tv.setTextColor(COLOR_SEMANTIC_SYNC);
-        tv.setAlpha(1f);
+        tv.setAlpha(ALPHA_SEMANTIC_SYNC);
 
         final float semanticSp = 84f;
 
@@ -1548,11 +1663,14 @@ public class MainActivity extends Activity implements DataSource.Callback {
         float rawWidth = measureTextUnscaled(tv, mainMeasurePaint, label, semanticSp);
         if (rawWidth <= 0f) return;
 
-        float scaleX = available / rawWidth;
-        if (scaleX > 1.0f) scaleX = 1.0f;
-        if (scaleX < 0.28f) scaleX = 0.28f;
+        float targetScaleX = available / rawWidth;
+        if (targetScaleX > 1.0f) targetScaleX = 1.0f;
+        if (targetScaleX < 0.28f) targetScaleX = 0.28f;
 
-        tv.setTextScaleX(scaleX);
+        tv.setTextScaleX(targetScaleX);
+
+        // 防止 SYNC/DFCO 的 scale 影响下一帧普通数字
+        displayedMainScaleX[i] = 0f;
 
         if (scaleBars[i] != null) {
             scaleBars[i].setValue(Float.NaN);
@@ -1602,6 +1720,24 @@ public class MainActivity extends Activity implements DataSource.Callback {
         if (!afFlashing) return;
         afFlashing = false;
         if (valueIntViews[5] != null) valueIntViews[5].setAlpha(1f);
+        updateFlashState();
+    }
+
+    /** V2.6.3: A/F 进入 DFCO/SYNC 时, 清理 A/F 独有报警、闪烁、半透明残留 */
+    private void clearAfSemanticContamination() {
+        afFlashing = false;
+
+        if (valueIntViews[5] != null) {
+            valueIntViews[5].setAlpha(ALPHA_SEMANTIC_SYNC);
+            valueIntViews[5].setTextColor(COLOR_SEMANTIC_SYNC);
+        }
+
+        if (valueDecViews[5] != null) {
+            valueDecViews[5].setAlpha(ALPHA_SEMANTIC_SYNC);
+            valueDecViews[5].setText("");
+            valueDecViews[5].setVisibility(View.GONE);
+        }
+
         updateFlashState();
     }
 
