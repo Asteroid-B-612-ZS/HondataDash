@@ -66,7 +66,7 @@
                 android:layout_height="match_parent"
                 android:gravity="center_vertical|start"
                 android:textColor="#FFFFFFFF"
-                android:textSize="100sp"
+                android:textSize="112sp"
                 android:textStyle="bold|italic"
                 android:includeFontPadding="false"
                 android:singleLine="true"

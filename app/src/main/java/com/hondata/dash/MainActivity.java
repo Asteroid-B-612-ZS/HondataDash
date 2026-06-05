@@ -83,10 +83,13 @@ public class MainActivity extends Activity implements DataSource.Callback {
     // V2.6.3: 主数据横向缩放显示态 — 变窄立即响应，变宽阻尼释放
     private final float[] displayedMainScaleX = new float[8];
 
-    // V2.6.4: Compact +/- sign — fixed size via ReplacementSpan
+    // V2.6.5: 所有主数据使用统一固定字高，只做宽度缩放
+    private static final float MAIN_VALUE_SP = 112f;
+
+    // V2.6.4/V2.6.5: Compact +/- sign — fixed size via ReplacementSpan
     private static final boolean ENABLE_COMPACT_SIGN = true;
     private static final float SIGN_RELATIVE_SIZE = 0.70f;
-    private static final float SIGN_SCALE_X = 0.78f;
+    private static final float SIGN_TARGET_WIDTH_SCALE = 0.82f;
     private static final int SIGN_GAP_DP = 1;
 
     // History Admission 参数表: [MAX cooldown, MIN cooldown] (ms)
@@ -153,17 +156,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
     // V2.6: per-card 字号和最小压缩
     private float getBaseSpForMain(int i) {
-        switch (i) {
-            case 0: return 112f; // Ethanol
-            case 1: return 112f; // ECT
-            case 2: return 112f; // IAT
-            case 3: return 104f; // L.TRIM
-            case 4: return 102f; // MAP
-            case 5: return 102f; // A/F
-            case 6: return 100f; // IGN
-            case 7: return 100f; // S.TRIM
-            default: return 100f;
-        }
+        return MAIN_VALUE_SP;
     }
 
     private float getMinScaleXForMain(int i) {
@@ -1545,29 +1538,38 @@ public class MainActivity extends Activity implements DataSource.Callback {
     /** V2.6.4: 固定尺寸符号 Span — 不受 TextView textScaleX 影响 */
     private static class FixedSignSpan extends ReplacementSpan {
         private final float signTextSizePx;
-        private final float signScaleX;
+        private final float targetSignWidthPx;
         private final float gapPx;
 
-        FixedSignSpan(float signTextSizePx, float signScaleX, float gapPx) {
+        FixedSignSpan(float signTextSizePx, float targetSignWidthPx, float gapPx) {
             this.signTextSizePx = signTextSizePx;
-            this.signScaleX = signScaleX;
+            this.targetSignWidthPx = targetSignWidthPx;
             this.gapPx = gapPx;
         }
 
-        @Override
-        public int getSize(Paint paint, CharSequence text, int start, int end, Paint.FontMetricsInt fm) {
+        private float getScaleForChar(Paint paint, CharSequence text, int start, int end) {
             float oldSize = paint.getTextSize();
             float oldScaleX = paint.getTextScaleX();
 
             paint.setTextSize(signTextSizePx);
-            paint.setTextScaleX(signScaleX);
+            paint.setTextScaleX(1.0f);
 
-            int width = Math.round(paint.measureText(text, start, end) + gapPx);
+            float rawWidth = paint.measureText(text, start, end);
 
             paint.setTextSize(oldSize);
             paint.setTextScaleX(oldScaleX);
 
-            return width;
+            if (rawWidth <= 0f) {
+                return 1.0f;
+            }
+
+            return targetSignWidthPx / rawWidth;
+        }
+
+        @Override
+        public int getSize(Paint paint, CharSequence text, int start, int end, Paint.FontMetricsInt fm) {
+            // 无论 '+' 还是 '-'，占位宽度完全一致
+            return Math.round(targetSignWidthPx + gapPx);
         }
 
         @Override
@@ -1575,6 +1577,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
                          float x, int top, int y, int bottom, Paint paint) {
             float oldSize = paint.getTextSize();
             float oldScaleX = paint.getTextScaleX();
+
+            float signScaleX = getScaleForChar(paint, text, start, end);
 
             paint.setTextSize(signTextSizePx);
             paint.setTextScaleX(signScaleX);
@@ -1591,7 +1595,20 @@ public class MainActivity extends Activity implements DataSource.Callback {
         return i == 3 || i == 4 || i == 6 || i == 7;
     }
 
-    /** V2.6.4: 构建 +/- 固定尺寸 SpannableString */
+    /** V2.6.5: 测量符号目标宽度 — 以 '-' 为基准 */
+    private float measureFixedSignTargetWidth(float baseSp) {
+        TextPaint p = mainMeasurePaint;
+
+        p.setTextSize(spToPx(baseSp * SIGN_RELATIVE_SIZE));
+        p.setTextScaleX(1.0f);
+
+        // 以 '-' 的原始宽度为基准，让 '+' 压缩到这个宽度
+        float minusRaw = p.measureText("-");
+
+        return minusRaw * SIGN_TARGET_WIDTH_SCALE;
+    }
+
+    /** V2.6.5: 构建 +/- 固定等宽 SpannableString */
     private CharSequence buildMainDisplayText(int i, String plainText) {
         if (!ENABLE_COMPACT_SIGN) return plainText;
         if (plainText == null || plainText.length() == 0) return "";
@@ -1603,10 +1620,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
             float baseSp = getBaseSpForMain(i);
             float signPx = spToPx(baseSp * SIGN_RELATIVE_SIZE);
+            float targetSignWidthPx = measureFixedSignTargetWidth(baseSp);
             float gapPx = dp(SIGN_GAP_DP);
 
             ss.setSpan(
-                    new FixedSignSpan(signPx, SIGN_SCALE_X, gapPx),
+                    new FixedSignSpan(signPx, targetSignWidthPx, gapPx),
                     0,
                     1,
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
@@ -1618,14 +1636,9 @@ public class MainActivity extends Activity implements DataSource.Callback {
         return plainText;
     }
 
-    /** V2.6.4: 测量固定符号宽度 */
+    /** V2.6.5: 测量固定符号占位宽度（与 FixedSignSpan.getSize 一致） */
     private float measureFixedSignWidth(float baseSp) {
-        TextPaint p = mainMeasurePaint;
-
-        p.setTextSize(spToPx(baseSp * SIGN_RELATIVE_SIZE));
-        p.setTextScaleX(SIGN_SCALE_X);
-
-        return p.measureText("+") + dp(SIGN_GAP_DP);
+        return measureFixedSignTargetWidth(baseSp) + dp(SIGN_GAP_DP);
     }
 
     /** V2.6.4: 测量数字主体宽度 */
