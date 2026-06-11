@@ -319,6 +319,63 @@ Pure Android Framework API, no third-party libraries:
 
 ## Version History
 
+### V2.6.6 (2026-06-11) — Self-Test Extreme Isolation, Confidence Gray, Ethanol Settling Gate
+
+Three quality improvements for extreme values and low-confidence display.
+
+#### Changes
+
+1. **Self-test extreme isolation** — `resetAllExtremeHistory()` clears all MAX/MIN after startup self-test sweep, preventing self-test values from contaminating session extremes
+2. **Engine extreme session** — `engineExtremeSessionActive` tracks engine running cycles; engine-dependent extremes (L.TRIM, MAP, A/F, IGN, S.TRIM) reset when engine stops and restarts
+3. **Ethanol settling gate** — 3s minimum observation + 1.5s stability (delta < 0.3%) before recording ethanol extremes, fixes MIN=0 from stale readings
+4. **Low confidence gray mode** — A/F, IGN, S.TRIM cards show gray text when confidence < 0.82 threshold with alpha floor at 0.70
+5. **onDisconnected() refactor** — Engine-dependent extremes reset per card type on Bluetooth disconnect
+
+### V2.6.5 (2026-06-08) — Unified Main Value Height + Fixed-Width Sign
+
+Display consistency pass: all cards use identical main value height, +/- signs render at fixed equal width.
+
+#### Changes
+
+1. **MAIN_VALUE_SP = 112f** — All 8 cards unified to identical main value height (previously 112/104/102/100 varying by card)
+2. **FixedSignSpan refactor** — `targetSignWidthPx` replaces `signScaleX`, uses `-` glyph as baseline width, compresses `+` to match
+3. **getScaleForChar()** — Per-character dynamic scaleX calculation based on original glyph width
+4. **SIGN_TARGET_WIDTH_SCALE = 0.82f** — Replaces old SIGN_SCALE_X constant
+
+### V2.6.4 (2026-06-07) — Fixed Sign Span, Engine Gate, Startup Self-Test
+
+Six detail improvements: sign rendering, engine-run extreme gating, label color unification, K.C layout, startup self-test, Powered by visibility.
+
+#### Changes
+
+1. **FixedSignSpan** — `extends ReplacementSpan` for +/- signs with independent Paint, immune to main value textScaleX changes
+2. **Startup self-test** — 2.2s sweep animation defers Bluetooth connection until after self-test completes
+3. **Engine-run extreme gate** — RPM ≥ 500 for 1s before recording L.TRIM/MAP/A.F/IGN/S.TRIM extremes
+4. **Label color unification** — `dash_label` (#FFCCCCCC) for all card bottom labels
+5. **K.C layout restructure** — `%` moved under K.C label as `(%)` via vertical LinearLayout
+6. **Powered by hidden** — `android:visibility="gone"`
+
+### V2.6.3 (2026-06-06) — Semantic Alpha, Smooth Scale, Compact Sign
+
+Display polish: semantic gating priority, smooth scaleX transitions, sign compression.
+
+#### Changes
+
+1. **Semantic gating priority** — Semantic state evaluation moved before display logic
+2. **smoothMainScaleX()** — Gradual scaleX transitions instead of jumps
+3. **Compact sign** — Micro-compression for +/- signs
+
+### V2.6.2 (2026-06-04) — TextScaleX Measurement Fix (Golden Master)
+
+Root cause fix for display oscillation. First fully stable display version — the Golden Master baseline for all subsequent maintenance.
+
+#### Changes
+
+1. **Independent TextPaint measurement** — `mainMeasurePaint` / `extremeMeasurePaint`, force `setTextScaleX(1.0f)` before measuring
+2. **measureTextUnscaled()** — Core measurement function, replaces all `tv.getPaint().measureText()` calls
+3. **getHardMinScaleXForMain()** — Lowered minimum scaleX floor (0.22–0.34), prioritize no clipping
+4. **Three render entries** — `renderMainText()` / `renderSemanticCard()` / `renderExtremeText()` are the only places that set textSize/textScaleX
+
 ### V2.5 (2026-06-04) — FrameLayout Overlay Architecture
 
 Refactored sensor card layout to use FrameLayout overlay (`normalValueLayer` + `semanticValue`) with INVISIBLE/VISIBLE switching, eliminating layout reflow during DFCO/SYNC transitions.

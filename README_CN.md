@@ -304,6 +304,63 @@ Android 无原生字高缩放。V2.4.3 使用单 TextView 自适应架构:
 
 ## 版本历史
 
+### V2.6.6 (2026-06-11) — 自检极值隔离、置信度灰色、乙醇稳定门控
+
+三项极值质量改进：自检污染清除、低置信度灰色显示、乙醇稳定门控。
+
+#### 变更
+
+1. **自检极值隔离** — `resetAllExtremeHistory()` 在启动自检扫完后清除所有 MAX/MIN，防止自检数值污染
+2. **引擎极值会话** — `engineExtremeSessionActive` 跟踪引擎运行周期，熄火重启时重置引擎相关卡片极值 (L.TRIM/MAP/A.F/IGN/S.TRIM)
+3. **乙醇稳定门控** — 3s 最小观察 + 1.5s 稳定 (delta<0.3%) 后才记录乙醇极值，修复 MIN=0 问题
+4. **低置信度灰色模式** — A/F/IGN/S.TRIM 置信度 < 0.82 时灰色文字 + alpha 下限 0.70
+5. **断连重置重构** — `onDisconnected()` 按卡片类型分别重置引擎相关极值
+
+### V2.6.5 (2026-06-08) — 统一主值字高 + 等宽符号
+
+显示一致性收口：所有卡片统一主值高度，+/- 号固定等宽渲染。
+
+#### 变更
+
+1. **MAIN_VALUE_SP = 112f** — 所有 8 张卡片统一主值字高（之前按卡片分别为 112/104/102/100）
+2. **FixedSignSpan 重构** — `targetSignWidthPx` 替代 `signScaleX`，以 `-` 字形为基准宽度，`+` 压缩到同宽
+3. **getScaleForChar()** — 按字符原始宽度动态计算 scaleX
+4. **SIGN_TARGET_WIDTH_SCALE = 0.82f** — 替代旧 SIGN_SCALE_X 常量
+
+### V2.6.4 (2026-06-07) — FixedSignSpan、引擎门控、启动自检
+
+六项细节改进：符号渲染、引擎运行极值门控、标签颜色统一、K.C 布局重构、启动自检、Powered by 隐藏。
+
+#### 变更
+
+1. **FixedSignSpan** — `extends ReplacementSpan` 独立绘制 +/- 号，不受主值 textScaleX 影响
+2. **启动自检** — 2.2s 扫描动画推迟蓝牙连接，自检完成后恢复
+3. **引擎运行极值门控** — RPM ≥ 500 持续 1s 后才记录 L.TRIM/MAP/A.F/IGN/S.TRIM 极值
+4. **标签颜色统一** — `dash_label` (#FFCCCCCC) 统一所有卡片底部标签颜色
+5. **K.C 布局重构** — `%` 移到 K.C 标签下作为 `( )`
+6. **Powered by 隐藏** — `android:visibility="gone"`
+
+### V2.6.3 (2026-06-06) — 语义门控、平滑缩放、紧凑符号
+
+显示精修：语义判定优先、scaleX 平滑过渡、符号微压缩。
+
+#### 变更
+
+1. **语义门控前置** — 语义判定在显示逻辑之前执行
+2. **smoothMainScaleX()** — scaleX 渐变而非跳变
+3. **紧凑符号** — +/- 号微压缩
+
+### V2.6.2 (2026-06-04) — TextScaleX 测量修复 (Golden Master)
+
+显示振荡根因修复。首个显示完全稳定的版本 — 后续所有维护的 Golden Master 基线。
+
+#### 变更
+
+1. **独立 TextPaint 测量** — `mainMeasurePaint` / `extremeMeasurePaint`，测量前强制 `setTextScaleX(1.0f)`
+2. **measureTextUnscaled()** — 核心测量函数，替代所有 `tv.getPaint().measureText()` 调用
+3. **getHardMinScaleXForMain()** — 降低最小 scaleX 下限 (0.22~0.34)，优先不裁切
+4. **三渲染入口** — `renderMainText()` / `renderSemanticCard()` / `renderExtremeText()` 是唯一设置 textSize/textScaleX 的位置
+
 ### V2.5 (2026-06-04) — FrameLayout 叠加架构
 
 传感器卡片布局重构为 FrameLayout 叠加架构（`normalValueLayer` + `semanticValue`），使用 INVISIBLE/VISIBLE 切换，消除 DFCO/SYNC 过渡时的布局重排。
