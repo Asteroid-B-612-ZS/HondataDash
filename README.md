@@ -291,11 +291,12 @@ Text alpha alternates between 255↔40 during flash, restored to 1 when not flas
 
 ### Vertical Font Stretching
 
-Android has no native font height scaling. V2.4.2 uses adaptive width-only scaling:
-- **Row 1** (Ethanol, ECT, IAT, L.TRIM): textSize=112sp, textScaleX dynamically adapted per measured text width
-- **Row 2** (MAP, A/F, IGN, S.TRIM): textSize=102sp, textScaleX dynamically adapted per measured text width
-- **Per-card minimum scaleX**: Ethanol 0.40, ECT/IAT 0.42, L.TRIM 0.34, MAP/A.F 0.38, IGN/S.TRIM 0.30
-- **Hysteresis**: Narrow immediately, widen only when gap > 0.06 (prevents width jumping)
+Android has no native font height scaling. V2.4.3 uses single-TextView adaptive architecture:
+- **formatMainText()** returns complete formatted strings, **renderMainValueText()** uses single `measureText` for precise fitting
+- **Row 1** (Ethanol, ECT, IAT, L.TRIM): base 95sp
+- **Row 2** (MAP, A/F, IGN, S.TRIM): base 85sp
+- **Safety margin**: dp(12)
+- **MAX/MIN**: 19sp, **Semantic labels**: 82sp
 - **Layout weights**: valueArea 4.0 (80%), extremePanel 1.0 (20%) — maximizes main value space
 
 ### Fullscreen
@@ -317,6 +318,30 @@ Pure Android Framework API, no third-party libraries:
 - Release APK: **45 KB**
 
 ## Version History
+
+### V2.5 (2026-06-04) — FrameLayout Overlay Architecture
+
+Refactored sensor card layout to use FrameLayout overlay (`normalValueLayer` + `semanticValue`) with INVISIBLE/VISIBLE switching, eliminating layout reflow during DFCO/SYNC transitions.
+
+#### Changes
+
+1. **FrameLayout overlay** — Each card stacks `normalValueLayer` and `semanticValue` in a FrameLayout. Normal and semantic modes switch via INVISIBLE/VISIBLE — no GONE, no layout recalculation
+2. **Fixed extremePanel 56dp** — MAX/MIN panel gets a fixed 56dp width with independent `renderExtremeText()` that auto-fits text to available space. No more weight-based layout that shifts when content changes
+3. **renderMainValue() with applyMainScaleStability** — Unified main value render path. Narrow text gets immediate scaleX=1.0; wide text applies 0.08 hysteresis (shrink immediately, expand only when gap > 0.08). Eliminates main value width oscillation on alternating values (e.g., +2.5 → +2.6 → +2.5)
+4. **setSemanticMode() uses INVISIBLE instead of GONE** — No layout reflow during DFCO/SYNC transitions. Both layers always occupy their measured space; only visibility toggles
+5. **Solves** — Main value flicker from scaleX oscillation, MAX/MIN truncation showing "+...", SYNC/DFCO causing visible layout jumps as the card re-measures
+
+### V2.4.3 (2026-06-04) — Single TextView Adaptive Architecture
+
+Abandon the split `valueInt`/`valueDec` approach. A single `formatMainText()` returns the complete formatted string, and `renderMainValueText()` performs one `measureText` call for precise fitting.
+
+#### Changes
+
+1. **Single TextView rendering** — `formatMainText()` returns complete value strings (e.g., "+25.0", "E85"), `renderMainValueText()` uses a single `measureText` instead of split integer/decimal measurement
+2. **Safety margin dp(12)** — Conservative first-attempt margin for single-pass measurement
+3. **MAX/MIN font reduced to 19sp** — Smaller extreme values to allocate more space to main value
+4. **Semantic labels 82sp** — Base font size for DFCO/SYNC labels
+5. **Base font sizes: ROW1 95sp, ROW2 85sp** — Conservative first attempt for the single-TextView architecture
 
 ### V2.4.2 (2026-06-04) — Maximize Main Value Font
 

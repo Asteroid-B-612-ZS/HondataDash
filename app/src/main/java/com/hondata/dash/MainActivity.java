@@ -314,6 +314,26 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private long engineRunningSinceMs = 0L;
     private boolean engineRunningStable = false;
 
+    // V2.6.6: 发动机极值 session — 每次发动机运行周期重置发动机相关极值
+    private static final float ENGINE_STOPPED_RPM_THRESHOLD = 300f;
+    private static final long ENGINE_STOPPED_STABLE_MS = 5000L;
+    private boolean engineExtremeSessionActive = false;
+    private long engineStoppedSinceMs = 0L;
+
+    // V2.6.6: Ethanol 连接后爬升门控 — 防止 CANFlex 初始化 0→真实值 污染 MIN
+    private static final long ETHANOL_SETTLE_MIN_MS = 3000L;
+    private static final long ETHANOL_STABLE_MS = 1500L;
+    private static final float ETHANOL_STABLE_DELTA = 0.3f;
+    private long ethanolFirstSeenMs = 0L;
+    private long ethanolStableSinceMs = 0L;
+    private float lastEthanolForGate = Float.NaN;
+    private boolean ethanolExtremeReady = false;
+
+    // V2.6.6: A/F / IGN / S.TRIM 低置信度灰色模式
+    private static final float LOW_CONFIDENCE_THRESHOLD = 0.82f;
+    private static final int COLOR_LOW_CONFIDENCE = 0xFF888888;
+    private static final float LOW_CONFIDENCE_MIN_ALPHA = 0.70f;
+
     // V2.6.4: 启动自检 — 2.2s sweep
     private static final long STARTUP_SELF_TEST_DURATION_MS = 2200L;
     private static final long STARTUP_SELF_TEST_FRAME_MS = 40L;
@@ -674,18 +694,24 @@ public class MainActivity extends Activity implements DataSource.Callback {
     public void onDisconnected() {
         engineState.reset();
         for (int i = 0; i < 8; i++) {
-            // V2.2: Session Extreme 参数 (Ethanol/ECT/IAT/L.TRIM/MAP) 不清空全程极值
-            if (!SHOW_SESSION_EXTREME[i]) {
-                hasValue[i] = false;
-                lastMaxTime[i] = 0;
-                lastMinTime[i] = 0;
-                recentMaxTime[i] = 0;
-                recentMinTime[i] = 0;
+            // V2.6.6: Ethanol/ECT/IAT 可保留；发动机相关极值不跨断线保留
+            if (!isEngineIndependentExtremeCard(i)) {
+                resetExtremeHistoryForCard(i);
+            } else if (!SHOW_SESSION_EXTREME[i]) {
+                resetExtremeHistoryForCard(i);
             }
             // 滤波和显示有效标记可重置 (不是 session 历史)
             hasFiltered[i] = false;
             hasValidValue[i] = false;
         }
+
+        // V2.6.6: 重置发动机极值 session 和 ethanol settle gate
+        engineRunningSinceMs = 0L;
+        engineRunningStable = false;
+        engineExtremeSessionActive = false;
+        engineStoppedSinceMs = 0L;
+        resetEthanolSettlingGate();
+
         dfcoExitTime = 0;
         runOnUiThread(new Runnable() {
             @Override public void run() {
@@ -755,6 +781,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 EngineSemanticState state = engineState.update(data);
                 // V2.6.4: 更新发动机运转门控
                 updateEngineRunningGate(data);
+                // V2.6.6: 更新发动机极值 session
+                updateEngineExtremeSession(data);
                 boolean isDfco = state.isDfco();
                 boolean dfcoJustEnded = lastDfcoState && !isDfco;
                 lastDfcoState = isDfco;
@@ -902,6 +930,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
                         // 缓存有效值
                         lastValidValue[i] = fVal;
                         hasValidValue[i] = true;
+
+                        // V2.6.6: Ethanol 连接后爬升门控
+                        if (i == 0) {
+                            updateEthanolSettlingGate(fVal);
+                        }
 
                         // History Admission System: V2.6.4 双路径 + 发动机运转门控
                         // Session Extreme: 全程极值, 不衰减; Recent Extreme: 近期动态, 可衰减
@@ -1076,6 +1109,9 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                     valueIntViews[i].setAlpha(1f);
                                 }
                             }
+
+                            // V2.6.6: A/F / IGN / S.TRIM 低置信度灰色模式
+                            applyConfidenceVisual(i, state);
 
                         }
                     } else {
@@ -1909,7 +1945,134 @@ public class MainActivity extends Activity implements DataSource.Callback {
     }
 
     private boolean canRecordExtremeNow(int i) {
-        return isEngineIndependentExtremeCard(i) || engineRunningStable;
+        if (i == 0) {
+            return ethanolExtremeReady;
+        }
+
+        if (i == 1 || i == 2) {
+            return true;
+        }
+
+        return engineRunningStable && engineExtremeSessionActive;
+    }
+
+    // V2.6.6: 极值重置函数
+    private void resetExtremeHistoryForCard(int i) {
+        hasValue[i] = false;
+        maxTrack[i] = 0f;
+        minTrack[i] = 0f;
+        recentMax[i] = 0f;
+        recentMin[i] = 0f;
+        lastMaxTime[i] = 0L;
+        lastMinTime[i] = 0L;
+        recentMaxTime[i] = 0L;
+        recentMinTime[i] = 0L;
+    }
+
+    private void resetAllExtremeHistory() {
+        for (int i = 0; i < 8; i++) {
+            resetExtremeHistoryForCard(i);
+        }
+    }
+
+    private void resetEngineDependentExtremeHistory() {
+        for (int i = 0; i < 8; i++) {
+            if (!isEngineIndependentExtremeCard(i)) {
+                resetExtremeHistoryForCard(i);
+            }
+        }
+    }
+
+    // V2.6.6: 发动机极值 session — 每次运行周期重置
+    private void updateEngineExtremeSession(SensorData data) {
+        float rpm = (float) data.getDouble(0x0100);
+        long now = SystemClock.elapsedRealtime();
+
+        if (engineRunningStable && !engineExtremeSessionActive) {
+            resetEngineDependentExtremeHistory();
+            engineExtremeSessionActive = true;
+            engineStoppedSinceMs = 0L;
+        }
+
+        if (rpm <= ENGINE_STOPPED_RPM_THRESHOLD) {
+            if (engineStoppedSinceMs <= 0L) {
+                engineStoppedSinceMs = now;
+            }
+
+            if (now - engineStoppedSinceMs >= ENGINE_STOPPED_STABLE_MS) {
+                engineExtremeSessionActive = false;
+            }
+        } else {
+            engineStoppedSinceMs = 0L;
+        }
+    }
+
+    // V2.6.6: Ethanol 爬升门控
+    private void resetEthanolSettlingGate() {
+        ethanolFirstSeenMs = 0L;
+        ethanolStableSinceMs = 0L;
+        lastEthanolForGate = Float.NaN;
+        ethanolExtremeReady = false;
+    }
+
+    private void updateEthanolSettlingGate(float ethanol) {
+        if (Float.isNaN(ethanol) || Float.isInfinite(ethanol)) return;
+        if (ethanol < 0f || ethanol > 100f) return;
+
+        long now = SystemClock.elapsedRealtime();
+
+        if (ethanolFirstSeenMs <= 0L) {
+            ethanolFirstSeenMs = now;
+            ethanolStableSinceMs = now;
+            lastEthanolForGate = ethanol;
+            ethanolExtremeReady = false;
+            return;
+        }
+
+        if (Float.isNaN(lastEthanolForGate)) {
+            lastEthanolForGate = ethanol;
+            ethanolStableSinceMs = now;
+            return;
+        }
+
+        float delta = Math.abs(ethanol - lastEthanolForGate);
+
+        if (delta > ETHANOL_STABLE_DELTA) {
+            ethanolStableSinceMs = now;
+        }
+
+        lastEthanolForGate = ethanol;
+
+        boolean minObserved = (now - ethanolFirstSeenMs) >= ETHANOL_SETTLE_MIN_MS;
+        boolean stableEnough = (now - ethanolStableSinceMs) >= ETHANOL_STABLE_MS;
+
+        if (minObserved && stableEnough) {
+            ethanolExtremeReady = true;
+        }
+    }
+
+    // V2.6.6: A/F / IGN / S.TRIM 低置信度灰色模式
+    private boolean isConfidenceSensitiveCard(int i) {
+        return i == 5 || i == 6 || i == 7; // A/F, IGN, S.TRIM
+    }
+
+    private void applyConfidenceVisual(int i, EngineSemanticState state) {
+        if (!isConfidenceSensitiveCard(i)) return;
+        if (semanticMode[i]) return;
+        if (valueIntViews[i] == null) return;
+
+        // A/F 红色闪烁时，安全报警优先
+        if (i == 5 && afFlashing) return;
+
+        if (state.confidence < LOW_CONFIDENCE_THRESHOLD) {
+            float alpha = state.textAlpha(true);
+            if (alpha < LOW_CONFIDENCE_MIN_ALPHA) {
+                alpha = LOW_CONFIDENCE_MIN_ALPHA;
+            }
+
+            valueIntViews[i].setTextColor(COLOR_LOW_CONFIDENCE);
+            valueIntViews[i].setAlpha(alpha);
+        }
     }
 
     // === V2.6.4: 启动自检 ===
@@ -2043,6 +2206,10 @@ public class MainActivity extends Activity implements DataSource.Callback {
         if (poweredByText != null) {
             poweredByText.setVisibility(View.GONE);
         }
+
+        // V2.6.6: 自检结束后彻底清除所有极值历史，防止自检数据残留
+        resetAllExtremeHistory();
+        resetEthanolSettlingGate();
 
         clearStartupSelfTestDisplay();
 

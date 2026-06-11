@@ -276,11 +276,12 @@ app/src/main/res/
 
 ### 字体纵向拉伸
 
-Android 无原生字高缩放。V2.4.2 使用自适应宽度缩放:
-- **第1行** (Ethanol, ECT, IAT, L.TRIM): textSize=112sp, textScaleX 根据实测文本宽度动态适配
-- **第2行** (MAP, A/F, IGN, S.TRIM): textSize=102sp, textScaleX 根据实测文本宽度动态适配
-- **每卡最小 scaleX**: Ethanol 0.40, ECT/IAT 0.42, L.TRIM 0.34, MAP/A.F 0.38, IGN/S.TRIM 0.30
-- **滞后防抖**: 缩窄立即生效，放宽需 gap > 0.06（防止宽度跳动）
+Android 无原生字高缩放。V2.4.3 使用单 TextView 自适应架构:
+- **formatMainText()** 返回完整格式化字符串，**renderMainValueText()** 使用单次 `measureText` 精确适配
+- **第1行** (Ethanol, ECT, IAT, L.TRIM): 基准 95sp
+- **第2行** (MAP, A/F, IGN, S.TRIM): 基准 85sp
+- **安全边距**: dp(12)
+- **MAX/MIN**: 19sp, **语义标签**: 82sp
 - **布局权重**: valueArea 4.0 (80%), extremePanel 1.0 (20%) — 最大化主值显示空间
 
 ### 全屏方案
@@ -302,6 +303,30 @@ Android 无原生字高缩放。V2.4.2 使用自适应宽度缩放:
 - Release APK: **45 KB**
 
 ## 版本历史
+
+### V2.5 (2026-06-04) — FrameLayout 叠加架构
+
+传感器卡片布局重构为 FrameLayout 叠加架构（`normalValueLayer` + `semanticValue`），使用 INVISIBLE/VISIBLE 切换，消除 DFCO/SYNC 过渡时的布局重排。
+
+#### 变更
+
+1. **FrameLayout 叠加** — 每张卡片将 `normalValueLayer` 和 `semanticValue` 叠加在 FrameLayout 中。正常模式与语义模式通过 INVISIBLE/VISIBLE 切换 — 不使用 GONE，不触发布局重算
+2. **固定 extremePanel 56dp** — MAX/MIN 面板固定 56dp 宽度，独立的 `renderExtremeText()` 自动适配文本到可用空间。不再使用基于权重的布局，内容变化时不会位移
+3. **renderMainValue() + applyMainScaleStability** — 统一主值渲染路径。窄文本立即 scaleX=1.0；宽文本应用 0.08 滞后（缩窄立即生效，放宽需 gap > 0.08）。消除交替数值（如 +2.5 → +2.6 → +2.5）导致的主值宽度抖动
+4. **setSemanticMode() 使用 INVISIBLE 替代 GONE** — DFCO/SYNC 过渡不触发布局重排。两个层始终占据已测量空间，仅切换可见性
+5. **解决** — scaleX 振荡导致的主值闪烁、MAX/MIN 截断显示"+..."、SYNC/DFCO 导致卡片重测量时可见的布局跳动
+
+### V2.4.3 (2026-06-04) — 单 TextView 自适应架构
+
+放弃拆分 `valueInt`/`valueDec` 的方案。`formatMainText()` 返回完整的格式化字符串，`renderMainValueText()` 通过单次 `measureText` 精确适配。
+
+#### 变更
+
+1. **单 TextView 渲染** — `formatMainText()` 返回完整值字符串（如 "+25.0"、"E85"），`renderMainValueText()` 使用单次 `measureText`，不再拆分整数/小数分别测量
+2. **安全边距 dp(12)** — 首次尝试的保守边距
+3. **MAX/MIN 字号降至 19sp** — 缩小极值显示，为主值腾出更多空间
+4. **语义标签 82sp** — DFCO/SYNC 标签基准字号
+5. **基准字号: ROW1 95sp, ROW2 85sp** — 单 TextView 架构的首次保守尝试
 
 ### V2.4.2 (2026-06-04) — 最大化主值字体
 
