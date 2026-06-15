@@ -315,9 +315,23 @@ Three-layer defense for car head units:
 
 Pure Android Framework API, no third-party libraries:
 - No `androidx` / No Kotlin / No `.so` native libs
-- Release APK: **45 KB**
+- Release APK: **52 KB**
 
 ## Version History
+
+### V2.6.7 (2026-06-15) — Startup Simplification, Engine Baseline Override, BT Reconnect Hardening
+
+Defensive pass: remove startup self-test ceremony, give extremes a known-good baseline at ignition-on, keep the value layer alive across short Bluetooth dropouts, and stop the reconnect loop from silently dying.
+
+#### Changes
+
+1. **Startup self-test removed** — the LED/value sweep on launch added latency and risked contaminating session extremes; `onCreate` now goes straight to connecting
+2. **"Powered by Helijohnny" removed** — watermark text removed from the header and layout
+3. **Ignition temp extremes** — at engine start, cards get a one-shot baseline from the first valid sample (gated per-card; ethanol waits for the settling gate), so MAX/MIN begin from a realistic reading instead of the first noisy byte
+4. **Engine baseline override** — `engineBaselineApplied[8]` tracks one-time coverage per card per engine run; cleared when the engine stops so the next start re-baselines
+5. **BT reconnect session preserve** — a short Bluetooth dropout (under 5 min) keeps the value/extreme layer intact; only a long dropout with RPM≤300 resets the session
+6. **Confidence gray refined** — threshold 0.82→0.78, fixed `0xFF888888` color with full alpha (no alpha-floor gradient); warmup and dynamic low-reference detection no longer key off `closedLoop`
+7. **BluetoothSource hardening** — failed handshake no longer sets `intentionalDisconnect` (was blocking auto-reconnect); `RuntimeException` in the poll loop is now caught; RFCOMM cleanup wait 1s→2.5s for older Android Bluetooth stacks; resource release consolidated into `closeAllBluetoothResources`/`cleanupFailedConnection`/`scheduleReconnect`
 
 ### V2.6.6 (2026-06-11) — Self-Test Extreme Isolation, Confidence Gray, Ethanol Settling Gate
 

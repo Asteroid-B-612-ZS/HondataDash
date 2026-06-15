@@ -47,16 +47,6 @@
             android:paddingEnd="8dp"
             android:paddingBottom="1dp">
 
-            <TextView
-                android:id="@+id/poweredByText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Powered by Helijohnny"
-                android:textColor="#FFFF0000"
-                android:textSize="10sp"
-                android:textStyle="bold|italic"
-                android:visibility="gone"/>
-
             <View
                 android:layout_width="0dp"
                 android:layout_height="0dp"

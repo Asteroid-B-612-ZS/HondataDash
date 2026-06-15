@@ -32,7 +32,7 @@ public class BluetoothSource implements DataSource {
     private static final int READ_TIMEOUT_MS = 3000;
     private static final int RECONNECT_BASE_MS = 1000;
     private static final int RECONNECT_MAX_MS = 8000;
-    private static final int BT_STACK_CLEANUP_MS = 1000; // 蓝牙栈释放 channel 等待时间
+    private static final int BT_STACK_CLEANUP_MS = 2500; // V2.6.7: 1s→2.5s，老 Android SPP 释放更稳
 
     // FlashPro MAC 地址 (硬编码)
     public static final String FLASHPRO_MAC = "XX:XX:XX:XX:XX:XX";
@@ -88,16 +88,8 @@ public class BluetoothSource implements DataSource {
 
         Log.i(TAG, "fullReset: 开始重建数据层...");
 
-        // 1. 完全停止旧线程
-        running = false;
-        if (pollThread != null) {
-            pollThread.interrupt();
-            pollThread = null;
-        }
-
-        // 2. 关闭所有连接
-        closeSocket();
-        connected = false;
+        // V2.6.7: 先完整释放旧资源
+        closeAllBluetoothResources();
 
         // 3. 在后台线程执行: 等待蓝牙栈清理 → 重新连接
         Thread resetThread = new Thread(new Runnable() {
@@ -139,6 +131,8 @@ public class BluetoothSource implements DataSource {
                     }
                 } catch (InterruptedException e) {
                     Log.i(TAG, "fullReset: 被中断，取消重连");
+                } finally {
+                    // V2.6.7: 确保 reconnecting 在 finally 中释放
                     reconnecting = false;
                 }
             }
@@ -234,6 +228,7 @@ public class BluetoothSource implements DataSource {
 
             if (connectedSocket == null) {
                 postError("连接失败");
+                scheduleReconnect();
                 return;
             }
             socket = connectedSocket;
@@ -246,7 +241,8 @@ public class BluetoothSource implements DataSource {
 
             Log.i(TAG, "开始握手...");
             if (!handshake()) {
-                disconnect();
+                // V2.6.7: 握手失败不再调用 disconnect()（会误设 intentionalDisconnect，阻断自动重连）
+                cleanupFailedConnection();
                 postError("协议握手失败");
                 return;
             }
@@ -261,6 +257,8 @@ public class BluetoothSource implements DataSource {
 
         } catch (Exception e) {
             Log.e(TAG, "连接异常", e);
+            // V2.6.7: 连接异常也走 cleanup，不设 intentionalDisconnect
+            cleanupFailedConnection();
             postError("连接失败: " + e.getMessage());
         }
     }
@@ -268,41 +266,47 @@ public class BluetoothSource implements DataSource {
     // === 连接方式 ===
 
     private BluetoothSocket tryReflectChannel(BluetoothDevice device, int channel) {
+        BluetoothSocket sock = null;
         try {
             Log.i(TAG, "尝试反射 ch" + channel + "...");
             Method m = device.getClass().getMethod("createRfcommSocket", int.class);
-            BluetoothSocket sock = (BluetoothSocket) m.invoke(device, channel);
+            sock = (BluetoothSocket) m.invoke(device, channel);
             sock.connect();
             Log.i(TAG, "反射 ch" + channel + " 成功!");
             return sock;
         } catch (Exception e) {
             Log.w(TAG, "反射 ch" + channel + " 失败: " + e.getMessage());
+            closeQuietly(sock);
             return null;
         }
     }
 
     private BluetoothSocket tryInsecureSPP(BluetoothDevice device) {
+        BluetoothSocket sock = null;
         try {
             Log.i(TAG, "尝试不安全SPP...");
-            BluetoothSocket sock = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID);
+            sock = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID);
             sock.connect();
             Log.i(TAG, "不安全SPP成功!");
             return sock;
         } catch (Exception e) {
             Log.w(TAG, "不安全SPP失败: " + e.getMessage());
+            closeQuietly(sock);
             return null;
         }
     }
 
     private BluetoothSocket tryStandardSPP(BluetoothDevice device) {
+        BluetoothSocket sock = null;
         try {
             Log.i(TAG, "尝试标准SPP...");
-            BluetoothSocket sock = device.createRfcommSocketToServiceRecord(SPP_UUID);
+            sock = device.createRfcommSocketToServiceRecord(SPP_UUID);
             sock.connect();
             Log.i(TAG, "标准SPP成功!");
             return sock;
         } catch (Exception e) {
             Log.w(TAG, "标准SPP失败: " + e.getMessage());
+            closeQuietly(sock);
             return null;
         }
     }
@@ -393,6 +397,19 @@ public class BluetoothSource implements DataSource {
 
                     } catch (InterruptedException e) {
                         break;
+                    } catch (RuntimeException e) {
+                        // V2.6.7: 捕获协议解析等 RuntimeException，防止线程静默死亡
+                        Log.e(TAG, "数据处理异常: " + e.getMessage(), e);
+                        connected = false;
+
+                        uiHandler.post(new Runnable() {
+                            @Override public void run() {
+                                if (callback != null) callback.onDisconnected();
+                            }
+                        });
+
+                        if (intentionalDisconnect) break;
+                        break;
                     }
                 }
 
@@ -422,16 +439,8 @@ public class BluetoothSource implements DataSource {
     @Override
     public void disconnect() {
         intentionalDisconnect = true;
-        running = false;
-        connected = false;
+        closeAllBluetoothResources();
         reconnecting = false;
-
-        if (pollThread != null) {
-            pollThread.interrupt();
-            pollThread = null;
-        }
-
-        closeSocket();
 
         uiHandler.post(new Runnable() {
             @Override public void run() {
@@ -440,19 +449,69 @@ public class BluetoothSource implements DataSource {
         });
     }
 
-    private void closeSocket() {
-        try {
-            if (inputStream != null) inputStream.close();
-        } catch (IOException ignored) {}
-        try {
-            if (outputStream != null) outputStream.close();
-        } catch (IOException ignored) {}
-        try {
-            if (socket != null) socket.close();
-        } catch (IOException ignored) {}
+    // V2.6.7: 统一资源释放 — 中断 pollThread + 关闭所有流/socket
+    private synchronized void closeAllBluetoothResources() {
+        running = false;
+        connected = false;
+
+        Thread t = pollThread;
+        pollThread = null;
+
+        if (t != null && t != Thread.currentThread()) {
+            try {
+                t.interrupt();
+            } catch (Exception ignored) {}
+        }
+
+        closeSocket();
+    }
+
+    // V2.6.7: 连接/握手失败后清理 — 不设 intentionalDisconnect，允许自动重连
+    private void cleanupFailedConnection() {
+        running = false;
+        connected = false;
+
+        closeQuietly(inputStream);
+        closeQuietly(outputStream);
+        closeQuietly(socket);
+
         inputStream = null;
         outputStream = null;
         socket = null;
+    }
+
+    // V2.6.7: 统一触发重连（外部失败路径调用）
+    private void scheduleReconnect() {
+        if (intentionalDisconnect) return;
+        if (reconnecting) return;
+
+        uiHandler.post(new Runnable() {
+            @Override public void run() {
+                fullReset();
+            }
+        });
+    }
+
+    private void closeSocket() {
+        closeQuietly(inputStream);
+        closeQuietly(outputStream);
+        closeQuietly(socket);
+        inputStream = null;
+        outputStream = null;
+        socket = null;
+    }
+
+    // V2.6.7: 统一安全关闭方法
+    private void closeQuietly(InputStream in) {
+        if (in != null) { try { in.close(); } catch (Exception ignored) {} }
+    }
+
+    private void closeQuietly(OutputStream out) {
+        if (out != null) { try { out.close(); } catch (Exception ignored) {} }
+    }
+
+    private void closeQuietly(BluetoothSocket s) {
+        if (s != null) { try { s.close(); } catch (Exception ignored) {} }
     }
 
     // === IO 工具 ===

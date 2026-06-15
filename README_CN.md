@@ -300,9 +300,23 @@ Android 无原生字高缩放。V2.4.3 使用单 TextView 自适应架构:
 
 纯 Android Framework API，无第三方库:
 - 无 `androidx` / 无 Kotlin / 无 `.so` 原生库
-- Release APK: **45 KB**
+- Release APK: **52 KB**
 
 ## 版本历史
+
+### V2.6.7 (2026-06-15) — 启动简化、发动机基准覆盖、蓝牙重连加固
+
+防御性迭代：移除启动自检流程，给极值一个点火时的已知良好基准，短时蓝牙断连下保留数值层，并修复重连线程静默死亡的问题。
+
+#### 变更
+
+1. **移除启动自检** — 启动时的灯条/数值扫掠增加延迟且有污染会话极值的风险；`onCreate` 现在直接进入连接流程
+2. **移除 "Powered by Helijohnny"** — 顶栏水印文字与布局项一并移除
+3. **点火临时极值** — 引擎启动时，每张卡片从首个有效样本获得一次性基准（按卡片类型门控；乙醇需先通过稳定门控），使 MAX/MIN 从真实读数起步，而非第一个噪声字节
+4. **发动机基准覆盖** — `engineBaselineApplied[8]` 跟踪每个引擎周期内每张卡片的基准是否已执行；引擎熄火后清除标志，下次启动重新基准化
+5. **蓝牙重连会话保持** — 短时蓝牙断连（5 分钟内）保留数值/极值层；仅当断连超过 5 分钟且 RPM≤300 时才重置会话
+6. **置信度灰色细化** — 阈值 0.82→0.78，固定颜色 `0xFF888888` + 满 alpha（取消 alpha 渐变）；暖机与动态低置信度检测不再依赖 `closedLoop`
+7. **BluetoothSource 加固** — 握手失败不再设置 `intentionalDisconnect`（此前会阻断自动重连）；轮询循环捕获 `RuntimeException`；RFCOMM 释放等待 1s→2.5s（适配旧版安卓蓝牙栈）；资源释放统一收敛到 `closeAllBluetoothResources`/`cleanupFailedConnection`/`scheduleReconnect`
 
 ### V2.6.6 (2026-06-11) — 自检极值隔离、置信度灰色、乙醇稳定门控
 

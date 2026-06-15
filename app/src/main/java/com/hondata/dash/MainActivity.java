@@ -305,9 +305,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private TextView bottomWgValue;     // W.G (Wastegate)
     private TextView bottomTpValue;     // T.P (Throttle Plate)
 
-    // V2.6.4: Powered by Helijohnny — 仅自检期间显示
-    private TextView poweredByText;
-
     // V2.6.4: 发动机运转极值门控 — RPM≥500 持续 1s 后才记录 L.TRIM/MAP/A.F/IGN/S.TRIM 极值
     private static final float ENGINE_RUNNING_RPM_THRESHOLD = 500f;
     private static final long ENGINE_RUNNING_STABLE_MS = 1000L;
@@ -329,38 +326,21 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private float lastEthanolForGate = Float.NaN;
     private boolean ethanolExtremeReady = false;
 
-    // V2.6.6: A/F / IGN / S.TRIM 低置信度灰色模式
-    private static final float LOW_CONFIDENCE_THRESHOLD = 0.82f;
+    // V2.6.7: A/F / IGN / S.TRIM 低置信度灰色模式 — 固定颜色+固定 alpha
+    private static final float LOW_CONFIDENCE_THRESHOLD = 0.78f;
     private static final int COLOR_LOW_CONFIDENCE = 0xFF888888;
-    private static final float LOW_CONFIDENCE_MIN_ALPHA = 0.70f;
+    private static final float LOW_CONFIDENCE_ALPHA = 1.0f;
+    private static final float WARMUP_ECT_THRESHOLD = 70f;
+    private static final long HOT_START_CONFIDENCE_SUPPRESS_MS = 3000L;
 
-    // V2.6.4: 启动自检 — 2.2s sweep
-    private static final long STARTUP_SELF_TEST_DURATION_MS = 2200L;
-    private static final long STARTUP_SELF_TEST_FRAME_MS = 40L;
-    private final Handler startupSelfTestHandler = new Handler(Looper.getMainLooper());
-    private boolean startupSelfTestActive = false;
-    private long startupSelfTestStartMs = 0L;
+    // V2.6.7: 每个发动机运行周期，每个主卡片只允许一次 engine baseline 覆盖
+    private final boolean[] engineBaselineApplied = new boolean[8];
+    private long engineExtremeSessionStartMs = 0L;
 
-    private static final float[] SELF_TEST_MIN = {
-        0f,    // Ethanol
-        40f,   // ECT
-        20f,   // IAT
-        -25f,  // L.TRIM
-        -1.0f, // MAP
-        9.0f,  // A/F
-        -20f,  // IGN
-        -25f   // S.TRIM
-    };
-    private static final float[] SELF_TEST_MAX = {
-        100f,  // Ethanol
-        120f,  // ECT
-        100f,  // IAT
-        25f,   // L.TRIM
-        2.0f,  // MAP
-        18.0f, // A/F
-        45f,   // IGN
-        25f    // S.TRIM
-    };
+    // V2.6.7: 蓝牙短断 session 保护 — 5分钟内重连不清极值
+    private static final long BT_SESSION_PRESERVE_MS = 5 * 60 * 1000L;
+    private long lastBtDisconnectedAtMs = 0L;
+    private boolean btWasDisconnected = false;
 
     // ===== 卡片配置 =====
     // 第1行 (慢数据): Ethanol, ECT, IAT, L.TRIM
@@ -513,15 +493,21 @@ public class MainActivity extends Activity implements DataSource.Callback {
             dataSource = btSource;
         }
         dataSource.setCallback(this);
-        sourceName.setText("");
+        sourceName.setText(dataSource.getName());
 
-        poweredByText = (TextView) findViewById(R.id.poweredByText);
+        if (statusText != null) {
+            statusText.setText("CONNECTING");
+            statusText.setTextColor(0xFFD29922);
+        }
 
-        // V2.6.4: 先自检再连接蓝牙
-        startStartupSelfTest();
-
-        // V2.2: 启动数据新鲜度独立刷新 (250ms)
         freshnessHandler.post(freshnessRunnable);
+
+        // V2.6.7: 直接连接，无自检
+        if (USE_DEMO) {
+            dataSource.connect(null);
+        } else {
+            connectBluetooth();
+        }
     }
 
     /**
@@ -670,7 +656,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
     protected void onDestroy() {
         super.onDestroy();
         freshnessHandler.removeCallbacks(freshnessRunnable);
-        startupSelfTestHandler.removeCallbacks(startupSelfTestRunnable);
         dataSource.disconnect();
     }
 
@@ -680,9 +665,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
     public void onConnected() {
         runOnUiThread(new Runnable() {
             @Override public void run() {
-                if (poweredByText != null) {
-                    poweredByText.setVisibility(View.GONE);
-                }
                 statusText.setText("已连接");
                 statusText.setTextColor(0xFF3FB950);
                 dataSource.startPolling();
@@ -692,30 +674,17 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
     @Override
     public void onDisconnected() {
-        engineState.reset();
-        for (int i = 0; i < 8; i++) {
-            // V2.6.6: Ethanol/ECT/IAT 可保留；发动机相关极值不跨断线保留
-            if (!isEngineIndependentExtremeCard(i)) {
-                resetExtremeHistoryForCard(i);
-            } else if (!SHOW_SESSION_EXTREME[i]) {
-                resetExtremeHistoryForCard(i);
-            }
-            // 滤波和显示有效标记可重置 (不是 session 历史)
-            hasFiltered[i] = false;
-            hasValidValue[i] = false;
-        }
+        // V2.6.7: 蓝牙断开只表示数据链路中断，不代表发动机 session 结束。
+        // 不清 maxTrack/minTrack/recentMax/recentMin/hasValue。
+        // 不清 engineBaselineApplied。
+        // 不清 engineExtremeSessionActive。
+        // 不清 ethanol settling gate。
+        lastBtDisconnectedAtMs = SystemClock.elapsedRealtime();
+        btWasDisconnected = true;
 
-        // V2.6.6: 重置发动机极值 session 和 ethanol settle gate
-        engineRunningSinceMs = 0L;
-        engineRunningStable = false;
-        engineExtremeSessionActive = false;
-        engineStoppedSinceMs = 0L;
-        resetEthanolSettlingGate();
-
-        dfcoExitTime = 0;
         runOnUiThread(new Runnable() {
             @Override public void run() {
-                statusText.setText("已断开");
+                statusText.setText("BT LOST");
                 statusText.setTextColor(0xFFFF4444);
             }
         });
@@ -765,13 +734,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
     public void onDataReceived(final SensorData data) {
         runOnUiThread(new Runnable() {
             @Override public void run() {
-                // V2.6.4: 自检期间拒绝数据覆盖
-                if (startupSelfTestActive) {
-                    return;
-                }
-
                 // V2.2: 数据新鲜度追踪
                 lastValidFrameTimeMs = SystemClock.elapsedRealtime();
+
+                // V2.6.7: 蓝牙重连后判断是否需要重置 session
+                handleReconnectSessionPolicy(data);
 
                 // 更新大气压力 (用于 Boost 相对压力计算)
                 Double baro = data.get(0x170);
@@ -936,36 +903,33 @@ public class MainActivity extends Activity implements DataSource.Callback {
                             updateEthanolSettlingGate(fVal);
                         }
 
-                        // History Admission System: V2.6.4 双路径 + 发动机运转门控
-                        // Session Extreme: 全程极值, 不衰减; Recent Extreme: 近期动态, 可衰减
+                        // History Admission System: V2.6.7 通电临时极值 + 发动机稳定后一次性 baseline 覆盖
                         float valueForExtreme = (i == 4) ? rawValueForExtreme : fVal;
 
                         boolean canRecordExtreme = canRecordExtremeNow(i);
 
+                        // V2.6.7: 发动机稳定后，每个卡片用当前真实值做一次 engine baseline 覆盖
+                        boolean baselineAppliedNow = false;
+
                         if (canRecordExtreme) {
+                            baselineAppliedNow = applyEngineBaselineIfNeeded(i, valueForExtreme, fVal, now);
+
                             if (!hasValue[i]) {
-                                // V2.2: Session Extreme 初始化用 valueForExtreme (MAP 用原始值)
+                                // V2.2: 通电后临时 MAX/MIN 初始化
                                 float initVal = SHOW_SESSION_EXTREME[i] ? valueForExtreme : fVal;
                                 if (!SHOW_SESSION_EXTREME[i] || isTrustedForSessionExtreme(i, initVal)) {
-                                    maxTrack[i] = initVal;
-                                    minTrack[i] = initVal;
-                                    recentMax[i] = fVal;
-                                    recentMin[i] = fVal;
-                                    lastMaxTime[i] = lastMinTime[i] = now;
-                                    recentMaxTime[i] = recentMinTime[i] = now;
-                                    hasValue[i] = true;
+                                    initializeExtremeForCard(i, initVal, fVal, now);
                                 }
-                            } else if (SHOW_SESSION_EXTREME[i]) {
+                            } else if (!baselineAppliedNow && SHOW_SESSION_EXTREME[i]) {
                                 // Session Extreme 路径: 只做可信值过滤, 无 cooldown/decay
                                 if (isTrustedForSessionExtreme(i, valueForExtreme)) {
                                     if (valueForExtreme > maxTrack[i]) maxTrack[i] = valueForExtreme;
                                     if (valueForExtreme < minTrack[i]) minTrack[i] = valueForExtreme;
                                 }
-                                // recent 数组也保持同步 (ScaleBar 可能引用)
+                                // recent 数组也保持同步
                                 if (fVal > recentMax[i]) { recentMax[i] = fVal; recentMaxTime[i] = now; }
                                 if (fVal < recentMin[i]) { recentMin[i] = fVal; recentMinTime[i] = now; }
-                                // Session Extreme 不做 recent decay
-                            } else if (isEligibleForHistory(i, state)) {
+                            } else if (!baselineAppliedNow && isEligibleForHistory(i, state)) {
                                 // Recent Extreme 路径: 三层准入 + cooldown + breakthrough + decay
                                 boolean maxExpired = (now - lastMaxTime[i] >= getCooldown(i, true, isWot));
                                 boolean minExpired = (now - lastMinTime[i] >= getCooldown(i, false, isWot));
@@ -1110,8 +1074,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                 }
                             }
 
-                            // V2.6.6: A/F / IGN / S.TRIM 低置信度灰色模式
-                            applyConfidenceVisual(i, state);
+                            // V2.6.7: A/F / IGN / S.TRIM 低置信度灰色模式
+                            applyConfidenceVisual(i, state, data);
 
                         }
                     } else {
@@ -1944,16 +1908,14 @@ public class MainActivity extends Activity implements DataSource.Callback {
         return i == 0 || i == 1 || i == 2; // Ethanol, ECT, IAT
     }
 
+    // V2.6.7: 通电后所有主卡片允许临时 MAX/MIN；发动机稳定后一次性 baseline 覆盖
     private boolean canRecordExtremeNow(int i) {
         if (i == 0) {
+            // Ethanol 仍需 settling gate
             return ethanolExtremeReady;
         }
-
-        if (i == 1 || i == 2) {
-            return true;
-        }
-
-        return engineRunningStable && engineExtremeSessionActive;
+        // 通电阶段 1~7 可临时记录；发动机运行阶段也继续记录
+        return true;
     }
 
     // V2.6.6: 极值重置函数
@@ -1975,23 +1937,81 @@ public class MainActivity extends Activity implements DataSource.Callback {
         }
     }
 
-    private void resetEngineDependentExtremeHistory() {
-        for (int i = 0; i < 8; i++) {
-            if (!isEngineIndependentExtremeCard(i)) {
-                resetExtremeHistoryForCard(i);
-            }
-        }
+    // V2.6.7: 统一初始化极值卡片
+    private void initializeExtremeForCard(int i, float sessionValue, float recentValue, long now) {
+        maxTrack[i] = sessionValue;
+        minTrack[i] = sessionValue;
+        recentMax[i] = recentValue;
+        recentMin[i] = recentValue;
+        lastMaxTime[i] = now;
+        lastMinTime[i] = now;
+        recentMaxTime[i] = now;
+        recentMinTime[i] = now;
+        hasValue[i] = true;
     }
 
-    // V2.6.6: 发动机极值 session — 每次运行周期重置
+    // V2.6.7: Ethanol baseline 需等 settling gate
+    private boolean shouldDelayEngineBaseline(int i) {
+        if (i == 0) {
+            return !ethanolExtremeReady;
+        }
+        return false;
+    }
+
+    // V2.6.7: 发动机稳定后一次性 baseline 覆盖
+    private boolean applyEngineBaselineIfNeeded(int i, float valueForExtreme, float fVal, long now) {
+        if (!engineRunningStable || !engineExtremeSessionActive) {
+            return false;
+        }
+
+        if (engineBaselineApplied[i]) {
+            return false;
+        }
+
+        if (shouldDelayEngineBaseline(i)) {
+            return false;
+        }
+
+        float sessionValue = SHOW_SESSION_EXTREME[i] ? valueForExtreme : fVal;
+
+        if (SHOW_SESSION_EXTREME[i] && !isTrustedForSessionExtreme(i, sessionValue)) {
+            return false;
+        }
+
+        initializeExtremeForCard(i, sessionValue, fVal, now);
+        engineBaselineApplied[i] = true;
+        return true;
+    }
+
+    // V2.6.7: 发动机运行周期结束
+    private void endEngineExtremeSession() {
+        engineExtremeSessionActive = false;
+        engineExtremeSessionStartMs = 0L;
+        engineStoppedSinceMs = 0L;
+
+        for (int i = 0; i < 8; i++) {
+            engineBaselineApplied[i] = false;
+        }
+
+        resetEthanolSettlingGate();
+    }
+
+    // V2.6.7: 发动机极值 session — 不清临时极值，只重置 baseline 标记
     private void updateEngineExtremeSession(SensorData data) {
         float rpm = (float) data.getDouble(0x0100);
         long now = SystemClock.elapsedRealtime();
 
         if (engineRunningStable && !engineExtremeSessionActive) {
-            resetEngineDependentExtremeHistory();
             engineExtremeSessionActive = true;
+            engineExtremeSessionStartMs = now;
             engineStoppedSinceMs = 0L;
+
+            for (int i = 0; i < 8; i++) {
+                engineBaselineApplied[i] = false;
+            }
+
+            // 发动机运行周期开始后，Ethanol baseline 需重新等待稳定
+            resetEthanolSettlingGate();
         }
 
         if (rpm <= ENGINE_STOPPED_RPM_THRESHOLD) {
@@ -2000,7 +2020,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
             }
 
             if (now - engineStoppedSinceMs >= ENGINE_STOPPED_STABLE_MS) {
-                engineExtremeSessionActive = false;
+                endEngineExtremeSession();
             }
         } else {
             engineStoppedSinceMs = 0L;
@@ -2051,221 +2071,120 @@ public class MainActivity extends Activity implements DataSource.Callback {
         }
     }
 
-    // V2.6.6: A/F / IGN / S.TRIM 低置信度灰色模式
+    // V2.6.7: A/F / IGN / S.TRIM 低置信度灰色模式 — 固定颜色+固定 alpha
     private boolean isConfidenceSensitiveCard(int i) {
         return i == 5 || i == 6 || i == 7; // A/F, IGN, S.TRIM
     }
 
-    private void applyConfidenceVisual(int i, EngineSemanticState state) {
-        if (!isConfidenceSensitiveCard(i)) return;
-        if (semanticMode[i]) return;
-        if (valueIntViews[i] == null) return;
+    // V2.6.7: 冷启动/暖机判定 — 不用 closedLoop 短暂 open loop 作为依据
+    private boolean isWarmupLowReference(EngineSemanticState state, SensorData data) {
+        float ect = (float) data.getDouble(0x0160);
+        boolean coldEngine = ect < WARMUP_ECT_THRESHOLD;
+        boolean warmupState = state.isWarmup();
+        return coldEngine || (warmupState && ect < 80f);
+    }
 
-        // A/F 红色闪烁时，安全报警优先
-        if (i == 5 && afFlashing) return;
+    // V2.6.7: 动态低 confidence 判定 — WOT/Modifier + 低 confidence
+    private boolean isDynamicLowReference(EngineSemanticState state) {
+        boolean dynamicOrHighLoad = state.hasModifier() || state.isWot();
+        return dynamicOrHighLoad && state.confidence < LOW_CONFIDENCE_THRESHOLD;
+    }
 
-        if (state.confidence < LOW_CONFIDENCE_THRESHOLD) {
-            float alpha = state.textAlpha(true);
-            if (alpha < LOW_CONFIDENCE_MIN_ALPHA) {
-                alpha = LOW_CONFIDENCE_MIN_ALPHA;
-            }
+    // V2.6.7: 灰色显示判定 — 冷启动/暖机灰，热启动水温正常不灰，热车怠速不灰
+    private boolean shouldApplyConfidenceGray(int i, EngineSemanticState state, SensorData data) {
+        if (!isConfidenceSensitiveCard(i)) return false;
+        if (semanticMode[i]) return false;
+        if (valueIntViews[i] == null) return false;
 
-            valueIntViews[i].setTextColor(COLOR_LOW_CONFIDENCE);
-            valueIntViews[i].setAlpha(alpha);
+        // A/F 红色报警优先
+        if (i == 5 && afFlashing) return false;
+
+        // 发动机还没稳定运行前，不做灰显
+        if (!engineRunningStable || !engineExtremeSessionActive) return false;
+
+        long now = SystemClock.elapsedRealtime();
+        long sinceEngineSessionStart = engineExtremeSessionStartMs > 0L
+                ? now - engineExtremeSessionStartMs
+                : 0L;
+
+        boolean warmupLowReference = isWarmupLowReference(state, data);
+
+        // 冷启动/暖机：应灰显
+        if (warmupLowReference) {
+            return true;
+        }
+
+        // 热启动：水温正常、非暖机，给 3 秒恢复窗口
+        if (sinceEngineSessionStart < HOT_START_CONFIDENCE_SUPPRESS_MS) {
+            return false;
+        }
+
+        // 热车稳定怠速不灰显
+        if (state.isIdle()) {
+            return false;
+        }
+
+        // 正常巡航不灰显；动态/高负荷低 confidence 才灰显
+        return isDynamicLowReference(state);
+    }
+
+    private void applyConfidenceVisual(int i, EngineSemanticState state, SensorData data) {
+        if (!shouldApplyConfidenceGray(i, state, data)) {
+            return;
+        }
+
+        // V2.6.7: 固定颜色、固定 alpha，避免不同卡片深浅不一致
+        valueIntViews[i].setTextColor(COLOR_LOW_CONFIDENCE);
+        valueIntViews[i].setAlpha(LOW_CONFIDENCE_ALPHA);
+
+        if (valueDecViews[i] != null) {
+            valueDecViews[i].setTextColor(COLOR_LOW_CONFIDENCE);
+            valueDecViews[i].setAlpha(LOW_CONFIDENCE_ALPHA);
         }
     }
 
-    // === V2.6.4: 启动自检 ===
-
-    private void startStartupSelfTest() {
-        startupSelfTestActive = true;
-        startupSelfTestStartMs = SystemClock.elapsedRealtime();
-
-        if (poweredByText != null) {
-            poweredByText.setVisibility(View.VISIBLE);
+    // V2.6.7: 蓝牙重连后判断是否需要重置 session
+    private void handleReconnectSessionPolicy(SensorData data) {
+        if (!btWasDisconnected) {
+            return;
         }
 
-        if (statusText != null) {
-            statusText.setText("CHECK");
-            statusText.setTextColor(0xFFD29922);
+        long now = SystemClock.elapsedRealtime();
+        long lostMs = now - lastBtDisconnectedAtMs;
+
+        btWasDisconnected = false;
+        lastBtDisconnectedAtMs = 0L;
+
+        // 短断：继续原 session，不重置 MAX/MIN，不重新 baseline
+        if (lostMs <= BT_SESSION_PRESERVE_MS) {
+            return;
         }
 
-        if (sourceName != null) {
-            sourceName.setText("SELF TEST");
-            sourceName.setTextColor(0xFF777777);
-        }
+        // 长时间断开：根据重连后的 RPM 判断旧 session 是否已结束
+        float rpm = (float) data.getDouble(0x0100);
 
-        startupSelfTestHandler.removeCallbacks(startupSelfTestRunnable);
-        startupSelfTestHandler.post(startupSelfTestRunnable);
+        if (rpm <= ENGINE_STOPPED_RPM_THRESHOLD) {
+            // 长断后重连且发动机已停，才结束 session 并重置极值
+            resetAllExtremeHistoryForNewConnectionSession();
+        }
     }
 
-    private final Runnable startupSelfTestRunnable = new Runnable() {
-        @Override public void run() {
-            long now = SystemClock.elapsedRealtime();
-            float t = (now - startupSelfTestStartMs) / (float) STARTUP_SELF_TEST_DURATION_MS;
-
-            if (t >= 1.0f) {
-                renderStartupSelfTestFrame(1.0f);
-                finishStartupSelfTest();
-                return;
-            }
-
-            renderStartupSelfTestFrame(t);
-            startupSelfTestHandler.postDelayed(this, STARTUP_SELF_TEST_FRAME_MS);
-        }
-    };
-
-    private float easeInOut(float t) {
-        if (t < 0f) t = 0f;
-        if (t > 1f) t = 1f;
-
-        return (float) (0.5f - 0.5f * Math.cos(Math.PI * t));
-    }
-
-    private void renderStartupSelfTestFrame(float rawT) {
-        float t = easeInOut(rawT);
-
+    // V2.6.7: 长断重连后发动机已停时，重置全部状态
+    private void resetAllExtremeHistoryForNewConnectionSession() {
         for (int i = 0; i < 8; i++) {
-            float v = SELF_TEST_MIN[i] + (SELF_TEST_MAX[i] - SELF_TEST_MIN[i]) * t;
-
-            String mainText = formatMainText(i, v);
-            renderMainText(i, mainText);
-
-            if (valueIntViews[i] != null) {
-                valueIntViews[i].setTextColor(0xFFFFFFFF);
-                valueIntViews[i].setAlpha(1f);
-            }
-
-            if (maxValueViews[i] != null) {
-                renderExtremeText(maxValueViews[i], formatExtremeText(i, SELF_TEST_MAX[i]));
-                maxValueViews[i].setTextColor(0xFFCCCCCC);
-            }
-
-            if (minValueViews[i] != null) {
-                renderExtremeText(minValueViews[i], formatExtremeText(i, SELF_TEST_MIN[i]));
-                minValueViews[i].setTextColor(0xFFCCCCCC);
-            }
-
-            if (scaleBars[i] != null) {
-                scaleBars[i].setValue(v);
-            }
+            resetExtremeHistoryForCard(i);
+            engineBaselineApplied[i] = false;
+            hasFiltered[i] = false;
+            hasValidValue[i] = false;
         }
 
-        // K.C 0→100
-        if (knockRetValue != null) {
-            int kc = Math.round(100f * t);
-            knockRetValue.setText(String.valueOf(kc));
-            knockRetValue.setTextColor(0xFF3FB950);
-            knockRetValue.setAlpha(1f);
-        }
+        engineRunningSinceMs = 0L;
+        engineRunningStable = false;
+        engineExtremeSessionActive = false;
+        engineExtremeSessionStartMs = 0L;
+        engineStoppedSinceMs = 0L;
 
-        // CYL 0→9
-        for (int i = 0; i < 4; i++) {
-            if (knockValues[i] != null) {
-                int val = Math.round(9f * t);
-                knockValues[i].setText(String.valueOf(val));
-                knockValues[i].setTextColor(0xFF3FB950);
-                knockValues[i].setAlpha(1f);
-            }
-        }
-
-        if (bottomTrimValue != null) {
-            bottomTrimValue.setText(String.format(Locale.US, "%.1f", -5f + 10f * t));
-        }
-
-        if (bottomAfmValue != null) {
-            bottomAfmValue.setText(String.format(Locale.US, "%.1f", 10f * t));
-        }
-
-        if (bottomBatValue != null) {
-            bottomBatValue.setText(String.format(Locale.US, "%.1f", 11.5f + 3.0f * t));
-        }
-
-        if (bottomFpValue != null) {
-            bottomFpValue.setText(String.format(Locale.US, "%.0f", 200f + 18000f * t));
-        }
-
-        if (bottomWgValue != null) {
-            bottomWgValue.setText(String.format(Locale.US, "%.0f", 100f * t));
-        }
-
-        if (bottomTpValue != null) {
-            bottomTpValue.setText(String.format(Locale.US, "%.0f", 100f * t));
-        }
-
-        if (shiftLight != null) {
-            float rpm = 800f + (6500f - 800f) * t;
-            shiftLight.setRpm(rpm);
-        }
-    }
-
-    private void finishStartupSelfTest() {
-        startupSelfTestActive = false;
-        startupSelfTestHandler.removeCallbacks(startupSelfTestRunnable);
-
-        if (poweredByText != null) {
-            poweredByText.setVisibility(View.GONE);
-        }
-
-        // V2.6.6: 自检结束后彻底清除所有极值历史，防止自检数据残留
-        resetAllExtremeHistory();
         resetEthanolSettlingGate();
-
-        clearStartupSelfTestDisplay();
-
-        if (sourceName != null) {
-            sourceName.setText(dataSource.getName());
-            sourceName.setTextColor(0xFF777777);
-        }
-
-        if (statusText != null) {
-            statusText.setText("CONNECTING");
-            statusText.setTextColor(0xFFD29922);
-        }
-
-        if (USE_DEMO) {
-            dataSource.connect(null);
-        } else {
-            connectBluetooth();
-        }
-    }
-
-    private void clearStartupSelfTestDisplay() {
-        for (int i = 0; i < 8; i++) {
-            semanticMode[i] = false;
-            displayedMainScaleX[i] = 0f;
-
-            if (valueIntViews[i] != null) {
-                renderMainText(i, "--");
-                valueIntViews[i].setTextColor(0xFFFFFFFF);
-                valueIntViews[i].setAlpha(1f);
-            }
-
-            if (maxValueViews[i] != null) {
-                renderExtremeText(maxValueViews[i], "");
-            }
-
-            if (minValueViews[i] != null) {
-                renderExtremeText(minValueViews[i], "");
-            }
-
-            if (scaleBars[i] != null) {
-                scaleBars[i].setValue(Float.NaN);
-            }
-        }
-
-        if (knockRetValue != null) knockRetValue.setText("--");
-
-        for (int i = 0; i < 4; i++) {
-            if (knockValues[i] != null) knockValues[i].setText("0");
-        }
-
-        if (bottomTrimValue != null) bottomTrimValue.setText("--");
-        if (bottomAfmValue != null) bottomAfmValue.setText("--");
-        if (bottomBatValue != null) bottomBatValue.setText("--");
-        if (bottomFpValue != null) bottomFpValue.setText("--");
-        if (bottomWgValue != null) bottomWgValue.setText("--");
-        if (bottomTpValue != null) bottomTpValue.setText("--");
     }
 
     /** V2.3: Lambda 语义 A/F 颜色判定 — WOT 用绝对 lambda, 闭环用 lambda error */
