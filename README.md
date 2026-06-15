@@ -1,41 +1,47 @@
-# Hondata Dash — Car Dashboard
+# HondataDash
 
-A custom Android dashboard app that replaces the Hondata official app, designed for 800×480 landscape car head units. Connects to Hondata FlashPro via Bluetooth SPP and displays 42 sensor parameters in real time.
+A lightweight Android dashboard for displaying Hondata FlashPro Bluetooth data on a dedicated 800×480 landscape head unit. It focuses on a small set of tuning-relevant values and is designed for quick in-car readability rather than full ECU calibration.
 
-## Requirements
+## What This App Is
+
+- A compact, low-latency dashboard that reads Hondata FlashPro over Bluetooth SPP.
+- Built around **semantic display logic** so values shown during DFCO, warmup, sync recovery, or transient conditions are less likely to be mistaken for stable tuning data.
+- Zero-dependency: pure Android Framework API, no `androidx`, no Kotlin, no `.so`. Release APK is about 52 KB.
+
+## What This App Is Not
+
+- Not a general OBD reader. It only speaks the Hondata FlashPro Bluetooth protocol.
+- Not a replacement for Hondata FlashPro Manager. It does not flash or edit calibrations.
+- Not an auto-tuning tool. It displays data; tuning decisions stay with the user.
+
+## Target Setup
 
 | Item | Spec |
 |------|------|
 | OS | Android 4.2+ (API 17) |
 | Screen | 800×480 landscape, 160dpi |
-| Data Source | Hondata FlashPro Bluetooth |
+| Data source | Hondata FlashPro Bluetooth |
 | Build | Gradle + JDK 17 |
 
-## Build & Deploy
+The layout is tuned for a single fixed-size head unit, not for arbitrary phone screens.
 
-```bash
-JAVA_HOME="~/.jdks/jbr-17.0.14" ./gradlew assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n com.hondata.dash/.MainActivity
-```
-
-## UI Layout (V1.3)
+## Main Dashboard
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│            ▓▓  ▓▓  ▓▓  ▓▓  ▓▓  ▓▓          6-LED Shift Light      │ ← 42dp (LED+Header overlay)
-│ Powered by Helijohnny                        Demo (Sim)   Connected │
+│            ▓▓  ▓▓  ▓▓  ▓▓  ▓▓  ▓▓          6-LED Shift Light      │ ← 42dp (LED + header overlay)
+│                                              status                │
 ├────────────┬────────────┬────────────┬──────────────────────────────┤
 │ Ethanol(%) │ ECT(°C)    │ IAT(°C)    │ L.TRIM(%)                    │
 │            │            │            │                              │
-│ E85        │ 86         │ 33         │ +2.5                         │ ← Row 1: height×1.5
-│  92    87  │  90    82  │  35    31  │  +1.0  4.5                   │ ← MAX/MIN
-│ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬                    │ ← ScaleBar+Peak
+│ E85        │ 86         │ 33         │ +2.5                         │
+│  92    87  │  90    82  │  35    31  │  +1.0  4.5                   │ ← MAX / MIN
+│ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬                    │ ← ScaleBar + peak
 ├────────────┼────────────┼────────────┼──────────────────────────────┤
 │ MAP(bar)   │ A/F        │ IGN(°)     │ S.TRIM(%)                    │
 │            │            │            │                              │
-│ +0.15      │ 14.6       │ +22.5      │ +1.8                         │ ← Row 2: height×1.65
-│  1.20 0.88 │  15.0 14.2 │  25.0 12.5 │  2.5  5.0                    │ ← MAX/MIN
+│ +0.15      │ 14.6       │ +22.5      │ +1.8                         │
+│  1.20 0.88 │  15.0 14.2 │  25.0 12.5 │  2.5  5.0                    │
 │ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬  │ ▬▬▬▬▬▬▬▬                    │
 ├──────┬─┬─┬─┬─┬────┬────┬─────┬──────┬──────┬───────────────────────┤
 │ K.C  │C1│C2│C3│C4│K.R │K.L │BAT(V)│F.P   │W.G  │T.P               │ ← Bottom 59dp
@@ -45,842 +51,140 @@ adb shell am start -n com.hondata.dash/.MainActivity
 
 ### 6-LED Shift Light
 
-- 6 large LEDs with progressive RPM activation
-- Thresholds: 3000 / 3500 / 4000 / 4500 / 5000 / 5500
-- Colors: Green ×2 → Yellow ×2 → Red ×2
-- ≥6400 RPM: all lit, 10Hz flash
-- Thresholds lowered: 3000/3500/4000/4500/5000/5500 (tuned for 1.5T powerband)
-- Overlaid with Header in FrameLayout to save vertical space
+- 6 LEDs with progressive RPM activation.
+- Thresholds (tuned for the 1.5T powerband): 3000 / 3500 / 4000 / 4500 / 5000 / 5500.
+- Colors: Green ×2 → Yellow ×2 → Red ×2.
+- ≥ 6400 RPM: all lit, 10 Hz flash.
+- Overlaid with the header in a `FrameLayout` to save vertical space.
 
-### 4×2 Main Data Grid
+### 4×2 Main Grid
 
-Each sensor card contains:
-- **Top**: English abbreviation + unit in parentheses
-- **Center-left**: Large value (Row 1 height×1.5, Row 2 height×1.65, width unchanged)
-- **Center-right**: MAX/MIN real-time tracking (± shown by color, not symbol)
-- **Bottom**: ScaleBarView scale progress bar
+Each card has: label + unit (top), large main value (center-left), live MAX/MIN (center-right), and a scale bar (bottom).
 
-#### Row 1 Parameters (Slow Data)
+**Row 1 — slow data**
 
-| Card | PID | Label | Format | Range | Dynamics | Color/Flash |
-|------|-----|-------|--------|-------|----------|-------------|
-| card0 | 0xB03 | Ethanol | %.0f | 0-100% | STATIC | "E" prefix, <E20 white, E20-40 green, E40-60 yellow, >E60 red |
-| card1 | 0x160 | ECT | %.0f | 40-120°C | THERMAL | <80 blue, 80~95 white, 96~100 red, >100 purple flash |
-| card2 | 0x151 | IAT | %.0f | 20-100°C | THERMAL | <35 green, 35~44 white, 45~54 yellow, 55~64 red, ≥65 purple flash |
-| card3 | 0x332 | L.TRIM | %+.1f | -25~+25% | THERMAL | Frozen during DFCO |
+| Card | PID | Label | Format | Range | Color / flash |
+|------|-----|-------|--------|-------|----------------|
+| 0 | 0xB03 | Ethanol | %.0f | 0–100% | <E20 white, E20–40 green, E40–60 yellow, >E60 red |
+| 1 | 0x160 | ECT | %.0f | 40–120°C | <80 blue, 80–95 white, 96–100 red, >100 purple flash |
+| 2 | 0x151 | IAT | %.0f | 20–100°C | <35 green, 35–44 white, 45–54 yellow, 55–64 red, ≥65 purple flash |
+| 3 | 0x332 | L.TRIM | %+.1f | −25…+25% | Frozen during DFCO |
 
-#### Row 2 Parameters (Fast Data)
+**Row 2 — fast data**
 
-| Card | PID | Label | Format | Range | Dynamics | Color/Flash |
-|------|-----|-------|--------|-------|----------|-------------|
-| card4 | 0x110 | MAP | %+.1f | -1.0~2.0 bar | MECHANICAL | Relative pressure (MAP - Baro), kPa÷100→bar |
-| card5 | 0x320 | A/F | %.1f | 9-18 | TRANSIENT | Lambda×14.7, <11 red, 11~14.5 yellow, 14.5~15.5 green, >15.5 red + flash on throttle; shows "DFCO" during decel fuel cut |
-| card6 | 0x140 | IGN | %+.1f | -40~40° | MECHANICAL | Shows "DFCO" during decel fuel cut |
-| card7 | 0x330 | S.TRIM | %+.1f | -25~+25% | TRANSIENT | Shows "DFCO" during decel fuel cut |
+| Card | PID | Label | Format | Range | Color / flash |
+|------|-----|-------|--------|-------|----------------|
+| 4 | 0x110 | MAP | %+.1f | −1.0…2.0 bar | Relative pressure (MAP − Baro), kPa÷100 → bar |
+| 5 | 0x320 | A/F | %.1f | 9–18 | Lambda×14.7; <11 red, 11–14.5 yellow, 14.5–15.5 green, >15.5 red + flash on throttle; shows "DFCO" on decel cut |
+| 6 | 0x140 | IGN | %+.1f | −40…40° | Shows "DFCO" on decel cut |
+| 7 | 0x330 | S.TRIM | %+.1f | −25…+25% | Shows "DFCO" on decel cut |
 
-> **A/F Flash Exclusion**: Only flashes when throttle plate (TP) > 5%, ignoring coasting, lifting, and shifting.
+> **A/F flash exclusion**: the A/F red flash only fires when throttle plate (TP) > 5%, so coasting, lifting, and shifting do not trigger false warnings.
 
 ### Bottom Row (59dp)
 
-| Element | Weight | PID | Format | Color/Note |
-|---------|--------|-----|--------|------------|
-| K.C | weight=2 | 0x412 | %.0f | <55 green, 55~65 yellow, >65 red flash |
-| CYL 1-4 | weight=1×4 | 0x421-424 | %.0f | 0 green, 1 yellow, ≥2 red |
-| K.R | weight=1 | 0x410 | %.1f | Knock Retard |
-| K.L | weight=1 | 0x411 | %.1f | Knock Limit |
-| BAT(V) | weight=1 | 0x180 | %.1f | Battery voltage |
-| F.P(bar) | weight=1 | 0x191 | %.1f | Fuel pressure, kPa÷100→bar |
-| W.G(%) | weight=1 | 0x1A0 | %.0f | Wastegate |
-| T.P(%) | weight=1 | 0x122 | %.0f | Throttle Plate |
+| Element | Weight | PID | Format | Note |
+|---------|--------|-----|--------|------|
+| K.C | 2 | 0x412 | %.0f | Knock control; <55 green, 55–65 yellow, >65 red flash |
+| CYL 1–4 | 1×4 | 0x421–424 | %.0f | Per-cylinder knock count; 0 green, 1 yellow, ≥2 red |
+| K.R | 1 | 0x410 | %.1f | Knock retard |
+| K.L | 1 | 0x411 | %.1f | Knock limit |
+| BAT(V) | 1 | 0x180 | %.1f | Battery voltage |
+| F.P(bar) | 1 | 0x191 | %.1f | Fuel pressure, kPa÷100 → bar |
+| W.G(%) | 1 | 0x1A0 | %.0f | Wastegate |
+| T.P(%) | 1 | 0x122 | %.0f | Throttle plate |
 
-### ScaleBarView — V3 Dynamics Archetype Engine
+## Data Source
 
-4 dynamics archetypes, each using a completely different mathematical model:
+- **Bluetooth (production)**: Hondata FlashPro over SPP, 50 Hz polling. The target device MAC is configured in `BluetoothSource`.
+- **Demo**: `DemoSource` plays back a real LOG at 20 Hz through a 30-second state cycle (IDLE → NORMAL → WOT → TRANSIENT → DFCO → CRUISE), used to exercise the display logic without a car.
 
-| Archetype | Parameters | Math Model | Visual Effect |
-|-----------|-----------|------------|---------------|
-| **STATIC** | Ethanol | Locked state, no energy system | Pure display, no peak hold |
-| **THERMAL** | ECT, IAT, L.TRIM | Newton's Law of Cooling (bidirectional) | Fast decay at high heat, slow at low; Drift Memory Peak |
-| **MECHANICAL** | Boost, IGN | Spring-Damper 2nd-order system (Euler integration) + Peak Hold | Natural overshoot + rebound + physical residual + bidirectional peak tracking |
-| **TRANSIENT** | A/F, S.TRIM | Oscillation Envelope (bidirectional) | Expand-only, breathing envelope |
+## Semantic Display Logic
 
-- Data bar 15dp (was 10dp in V1.2), ScaleBar total height 42dp
-- Color zone backgrounds + zone dividers + anchor fill + current value indicator line
-- **Zone expansion**: A/F green zone (14.5~15.5) 2.5×, Boost 0~1.5bar 2.0×
-- Auto-alignment for edge tick labels
-- **Peak parameters per-card**: independent decay/hold parameters for each card
+`EngineSemanticState` carries four orthogonal dimensions:
 
-### Emotion Rendering
+- **MainState** (mutually exclusive): `DFCO` / `WOT` / `WARMUP` / `IDLE` / `NORMAL`.
+- **SubState** (detail): WOT → SPOOL / PEAK / HOLD; DFCO → ENTER / HOLD; or NONE.
+- **Modifier** (orthogonal overlay): TIP_IN / TIP_OUT / BOOST_SURGE / RPM_DIP / NONE.
+- **Confidence** (0.0–1.0): weighted calculation + low-pass filter (~200 ms inertia).
 
-7 emotion states with gradual follow dynamics ("felt, not distracting"):
+WOT is detected from ECU strategy signals (Open Loop + rich command + boost established + RPM threshold) rather than throttle position — important for the L15B7 torque-model ECU where throttle ≠ load.
 
-| Emotion | Trigger | Visual |
-|---------|---------|--------|
-| NONE | Default | No effect |
-| BUILDING | Boost rising / temp rising / accumulation | Warm orange tint |
-| STABLE | Steady state | No effect |
-| RELEASING | Pressure release / cooling | Cool blue tint |
-| DANGER | Out of bounds (ECT>105, A/F<10.5) | Red tint |
-| WARNING | Approaching danger | Yellow tint |
-| PROTECTION | ECU protection (IGN<-10) | Orange tint |
+**DFCO handling**: A/F, IGN, S.TRIM show "DFCO" in gray during deceleration fuel cut; L.TRIM is frozen at its last valid value. Transition in and out is synchronized.
 
-- **Gradual follow**: `emotionCurrent` smoothly interpolates toward `emotionIntensity`, no sudden jumps
-- Three-layer rendering: fill color blend + indicator line color shift + edge glow
+## MAX/MIN Recording
 
-## Data Processing Pipeline (V2.0)
+- **History admission**: only samples from eligible states enter the extreme records, so DFCO exit, warmup, and transient spikes do not pollute tuning-relevant MAX/MIN.
+- **Session vs. recent**: session-level extremes are separated from recent dynamic extremes.
+- **Engine baseline** (V2.6.7): at engine start, each card takes its first valid sample as a one-shot MAX/MIN baseline, gated per card (ethanol waits for the settling gate). The flag clears when the engine stops.
+- **Confidence gray**: A/F, IGN, S.TRIM show a fixed gray color when confidence is low, so cold-start and warmup readings are visually marked as low-reference.
 
-### Engine State Detection — Three-Dimensional Semantic Model
+## Bluetooth Recovery
 
-`EngineStateTracker` returns `EngineSemanticState` with four orthogonal dimensions:
+On disconnect the data layer restarts while the UI stays alive:
 
-- **MainState** (ECU strategy layer, mutually exclusive): DFCO / WOT / WARMUP / IDLE / NORMAL
-- **SubState** (operating detail): WOT→SPOOL/PEAK/HOLD, DFCO→ENTER/HOLD, or NONE
-- **Modifier** (dynamic overlay, orthogonal to MainState): TIP_IN / TIP_OUT / BOOST_SURGE / RPM_DIP / NONE
-- **Confidence** (state certainty 0.0~1.0): weighted calculation + low-pass filter (α=0.1, ~200ms inertia)
+1. Stop the old poll thread and close socket/streams.
+2. Wait for the Bluetooth stack to release the RFCOMM channel (2.5 s in V2.6.7, raised from 1 s for older Android stacks).
+3. Reconnect from scratch on a fresh thread, with a full handshake.
+4. Exponential backoff (1 s → 2 s → 4 s → 8 s) on repeated failures.
+5. **Session preserve** (V2.6.7): a short dropout (under 5 min) keeps the value and extreme layer; only a long dropout with RPM ≤ 300 resets the session.
 
-#### MainState Detection
+## Installation
 
-| State | Detection Criteria | Hysteresis |
-|-------|--------------------|------------|
-| DFCO | TP<2%, Speed>15, Inj<0.5ms, **RPM>1400** | Enter 100ms, Exit 50ms |
-| WOT | **ClosedLoop OFF + TargetLambda<0.95 + MAP>120kPa + RPM>1500** | Candidate 30ms, Sustain 80ms |
-| WARMUP | ECT<65°C enter, ECT>72°C + ClosedLoop ON 5s exit | Hysteresis 7°C |
-| IDLE | RPM<1000, TP<2%, Speed<3 | 200ms |
-| NORMAL | Default | 50ms |
+No APK is published in GitHub Releases (the production build carries a private device MAC). Build it locally — see below — and install the generated APK.
 
-> **WOT Redefined (V2.0)**: For torque-model ECU (L15B7), throttle position ≠ engine load. WOT is now detected by ECU strategy signals: Open Loop (ClosedLoop OFF) + Rich command (TargetLambda<0.95) + Boost established (MAP>120kPa) + RPM above threshold. This correctly identifies WOT regardless of throttle position.
+## Build
 
-> **WARMUP**: Cold-start detection with ECT hysteresis. Prevents WOT-like signals during warmup from being misinterpreted.
+```bash
+JAVA_HOME="~/.jdks/jbr-17.0.14" ./gradlew assembleRelease
+adb install -r app/build/outputs/apk/release/app-release.apk
+```
 
-> **DFCO Four-way Lock**: Added RPM>1400 to prevent false triggers at idle recovery edge.
+For a demo build (LOG playback, no car needed), set `USE_DEMO = true` in `MainActivity` and rebuild.
 
-#### SubState Detection
+## Limitations
 
-| MainState | SubState | Criteria |
-|-----------|----------|----------|
-| WOT | SPOOL | dMAP/dt > 100 kPa/s (boost building) |
-| WOT | PEAK | WOT duration < 2s |
-| WOT | HOLD | WOT duration ≥ 2s |
-| DFCO | ENTER | DFCO duration < 200ms |
-| DFCO | HOLD | DFCO duration ≥ 200ms |
-
-#### Modifier Detection (priority order)
-
-| Priority | Modifier | Criteria |
-|----------|----------|----------|
-| 1 | RPM_DIP | dRPM/dt < -1200 rpm/s |
-| 2 | BOOST_SURGE | dMAP/dt > 300 kPa/s |
-| 3 | TIP_OUT | dTP/dt < -50%/s |
-| 4 | TIP_IN | dTP/dt > 50%/s |
-
-> Modifiers are orthogonal — they overlay on any MainState, providing transient context without disrupting state machine flow. This replaces the old TRANSIENT main state which would hijack WOT detection.
-
-### Adaptive Filtering
-
-- **EMA filter**: Per-parameter α (Ethanol 0.05, ECT 0.1, IAT 0.05, L.TRIM 1.0, A/F 0.3, IGN 0.4, S.TRIM 0.2)
-- **Boost asymmetric filter**: Fast attack α=0.6, dynamic release driven by state confidence (NORMAL 0.15, Modifier 0.05, DFCO 0.02)
-- **A/F adaptive**: WOT/TRANSIENT α=0.7 at 20Hz, NORMAL α=0.3 at 10Hz
-- **IGN adaptive**: WOT/TRANSIENT 20Hz refresh
-- **Ethanol slow filter**: α=0.05, smoothing Flex Fuel sensor noise
-
-### Rate Limiting
-
-Per-parameter display update interval:
-
-| Parameter | Interval | Hz |
-|-----------|----------|-----|
-| Ethanol | 500ms | 2Hz |
-| ECT | 500ms | 2Hz |
-| IAT | 500ms | 2Hz |
-| L.TRIM | 1000ms | 1Hz |
-| Boost | 50ms | 20Hz |
-| A/F | 100ms (WOT: 50ms) | 10Hz (WOT: 20Hz) |
-| IGN | 100ms (WOT: 50ms) | 10Hz (WOT: 20Hz) |
-| S.TRIM | 200ms | 5Hz |
-
-### Range Validation
-
-Per-parameter physical limits — out-of-range values are discarded:
-
-| Parameter | Valid Range |
-|-----------|-------------|
-| Ethanol | 0~100% |
-| ECT | -20~130°C |
-| IAT | -20~130°C |
-| Boost | -1.5~3.0 bar |
-| A/F | 8~25 |
-| IGN | -25~55° |
-| S.TRIM | -30~30% |
-| L.TRIM | -30~30% |
-
-### Confidence System
-
-Per-state weighted confidence calculation + low-pass filter (α=0.1, ~200ms inertia). Drives:
-
-| Output | Formula | Effect |
-|--------|---------|--------|
-| A/F alpha | `0.3 + confidence × 0.4` | Continuous modulation (0.3~0.7) based on state certainty |
-| Text opacity | `0.45 + 0.55 × confidence` | Sensitive cards (A/F, IGN, S.TRIM) fade when uncertain |
-| Boost release | `0.02 / 0.05 / 0.15` | Three-level automatic switch based on MainState + Modifier |
-
-WOT confidence weights: ClosedLoop 0.35 + TargetLambda 0.25 + MAP 0.25 + RPM 0.15
-
-### NaN Protection
-
-NaN check before EMA filtering prevents sensor anomaly frames from contaminating filter state.
-
-### DFCO Handling
-
-During deceleration fuel cut-off:
-- A/F, IGN, S.TRIM display "DFCO" in gray with synchronized transition (enter/exit together, identical alpha recovery)
-- L.TRIM frozen at last valid value (changes too slowly to matter)
-
-### Last-Valid Cache
-
-When sensor data is temporarily missing (Bluetooth dropout), displays the last valid value at 40% opacity instead of "--".
-
-### Bluetooth Auto-Reconnect (V1.4 fullReset)
-
-On disconnect, the data layer restarts from scratch while the UI stays alive (equivalent to restarting the app without closing the screen):
-1. **Kill old thread** — completely stop pollThread + close Socket/Streams
-2. **Wait for BT stack** — 1s delay for RFCOMM channel release (V1.3 reconnect failed because the Bluetooth stack still held the old connection)
-3. **Create new thread** — fresh connection attempt from scratch (identical to app startup)
-4. **Full handshake** — ignition detection → init → sensor definitions
-5. **Auto-resume** — start polling automatically on success
-6. **Exponential backoff** — 1s→2s→4s→8s on repeated failures
+- Fixed 800×480 layout; not responsive to other screen sizes.
+- Speaks only the Hondata FlashPro Bluetooth protocol.
+- The production device MAC is hardcoded; for your own FlashPro, edit `BluetoothSource.FLASHPRO_MAC`.
+- No configuration UI; tuning-relevant thresholds are constants in code.
 
 ## File Structure
 
 ```
 app/src/main/java/com/hondata/dash/
-├── MainActivity.java          # Main UI, data binding, filtering, flash control, emotion engine
-├── ScaleBarView.java          # V3 Dynamics Archetype Engine (4 archetype + emotion rendering + peak hold)
+├── MainActivity.java          # UI, data binding, filtering, state machine
 ├── ShiftLightView.java        # 6-LED shift light
 └── data/
-    ├── DataSource.java        # Data source interface (Callback)
-    ├── BluetoothSource.java   # Bluetooth SPP (FlashPro, V1.4 fullReset auto-reconnect)
-    ├── EngineSemanticState.java # V2.0 Three-dimensional semantic state (Main+Sub+Modifier+Confidence)
-    ├── EngineStateTracker.java # Engine state detection (V2.0: ECU semantic model)
-    ├── HondataProtocol.java   # Protocol parsing + scaling formulas
-    ├── SensorData.java        # PID→Double Map
-    └── DemoSource.java        # Demo source — Real LOG data playback (V2.1) + EXTREME sweep
-
-app/src/main/res/
-├── layout/
-│   ├── activity_main.xml      # Main layout (LED+Header overlay + 2-row grid + bottom)
-│   ├── item_sensor_card.xml   # Sensor card
-│   └── item_knock_cyl.xml     # Knock cylinder card
-├── drawable/
-│   └── bg_card.xml            # Card background (black + 0.5dp #333 border)
-└── values/
-    ├── styles.xml             # NoTitleBar.Fullscreen
-    └── strings.xml
+    ├── DataSource.java        # Data source interface
+    ├── BluetoothSource.java   # FlashPro SPP + reconnect (V2.6.7 hardened)
+    ├── EngineSemanticState.java
+    ├── EngineStateTracker.java
+    ├── HondataProtocol.java   # Protocol parsing + scaling
+    ├── SensorData.java        # PID → Double map
+    └── DemoSource.java        # Real-LOG playback
 ```
 
-## Technical Details
+## Version History (recent)
 
-### Flash Warning System
+See [CHANGELOG.md](CHANGELOG.md) for the full history from V1.0.
 
-Unified Handler manages a 1Hz flash timer, supporting:
-- **ECT** >100°C purple flash
-- **IAT** ≥65°C purple flash
-- **A/F** red zone + throttle applied (TP>5%) red flash
-- **K.C** >65% red flash
+### V2.6.7 (2026-06-15) — Engine Baseline, BT Reconnect Hardening, Confidence Cleanup
+Removed startup self-test; added one-shot engine baseline at ignition-on; short BT dropouts now preserve the session; fixed silent reconnect death. *Pending in-car verification.*
 
-Text alpha alternates between 255↔40 during flash, restored to 1 when not flashing.
+### V2.6.6 (2026-06-11) — Self-Test Isolation, Confidence Gray, Ethanol Settling
+Isolated self-test from extreme records; restored low-confidence gray for A/F/IGN/S.TRIM; added ethanol settling gate. Note: self-test was later removed in V2.6.7.
 
-### Vertical Font Stretching
+### V2.6.5 (2026-06-08) — Unified Main Value Height + Fixed-Width Signs
+Unified main value height across cards; made +/- signs render at fixed equal width.
 
-Android has no native font height scaling. V2.4.3 uses single-TextView adaptive architecture:
-- **formatMainText()** returns complete formatted strings, **renderMainValueText()** uses single `measureText` for precise fitting
-- **Row 1** (Ethanol, ECT, IAT, L.TRIM): base 95sp
-- **Row 2** (MAP, A/F, IGN, S.TRIM): base 85sp
-- **Safety margin**: dp(12)
-- **MAX/MIN**: 19sp, **Semantic labels**: 82sp
-- **Layout weights**: valueArea 4.0 (80%), extremePanel 1.0 (20%) — maximizes main value space
+### V2.6.4 (2026-06-07) — Fixed Sign, Startup Polish, Engine Gate
+Fixed-width sign rendering; first engine-running gate for extreme recording.
 
-### Fullscreen
+### V2.6.3 (2026-06-06) — Semantic Alpha + Compact Sign Pass
+Corrected DFCO/SYNC semantic alpha; smoothed main value fit; improved compact sign rendering.
 
-Three-layer defense for car head units:
-1. Theme: `Theme.NoTitleBar.Fullscreen`
-2. Code: `FLAG_FULLSCREEN` + `FLAG_KEEP_SCREEN_ON`
-3. Callback: `onWindowFocusChanged()` re-apply
+## Notes
 
-### Data Refresh
-
-- Demo mode (DemoSource): 20Hz, 30-second state cycle (IDLE→NORMAL→WOT→TRANSIENT→DFCO→CRUISE)
-- Bluetooth mode (BluetoothSource): FlashPro SPP real-time, 50Hz polling
-
-## Zero Dependencies
-
-Pure Android Framework API, no third-party libraries:
-- No `androidx` / No Kotlin / No `.so` native libs
-- Release APK: **52 KB**
-
-## Version History
-
-### V2.6.7 (2026-06-15) — Startup Simplification, Engine Baseline Override, BT Reconnect Hardening
-
-Defensive pass: remove startup self-test ceremony, give extremes a known-good baseline at ignition-on, keep the value layer alive across short Bluetooth dropouts, and stop the reconnect loop from silently dying.
-
-#### Changes
-
-1. **Startup self-test removed** — the LED/value sweep on launch added latency and risked contaminating session extremes; `onCreate` now goes straight to connecting
-2. **"Powered by Helijohnny" removed** — watermark text removed from the header and layout
-3. **Ignition temp extremes** — at engine start, cards get a one-shot baseline from the first valid sample (gated per-card; ethanol waits for the settling gate), so MAX/MIN begin from a realistic reading instead of the first noisy byte
-4. **Engine baseline override** — `engineBaselineApplied[8]` tracks one-time coverage per card per engine run; cleared when the engine stops so the next start re-baselines
-5. **BT reconnect session preserve** — a short Bluetooth dropout (under 5 min) keeps the value/extreme layer intact; only a long dropout with RPM≤300 resets the session
-6. **Confidence gray refined** — threshold 0.82→0.78, fixed `0xFF888888` color with full alpha (no alpha-floor gradient); warmup and dynamic low-reference detection no longer key off `closedLoop`
-7. **BluetoothSource hardening** — failed handshake no longer sets `intentionalDisconnect` (was blocking auto-reconnect); `RuntimeException` in the poll loop is now caught; RFCOMM cleanup wait 1s→2.5s for older Android Bluetooth stacks; resource release consolidated into `closeAllBluetoothResources`/`cleanupFailedConnection`/`scheduleReconnect`
-
-### V2.6.6 (2026-06-11) — Self-Test Extreme Isolation, Confidence Gray, Ethanol Settling Gate
-
-Three quality improvements for extreme values and low-confidence display.
-
-#### Changes
-
-1. **Self-test extreme isolation** — `resetAllExtremeHistory()` clears all MAX/MIN after startup self-test sweep, preventing self-test values from contaminating session extremes
-2. **Engine extreme session** — `engineExtremeSessionActive` tracks engine running cycles; engine-dependent extremes (L.TRIM, MAP, A/F, IGN, S.TRIM) reset when engine stops and restarts
-3. **Ethanol settling gate** — 3s minimum observation + 1.5s stability (delta < 0.3%) before recording ethanol extremes, fixes MIN=0 from stale readings
-4. **Low confidence gray mode** — A/F, IGN, S.TRIM cards show gray text when confidence < 0.82 threshold with alpha floor at 0.70
-5. **onDisconnected() refactor** — Engine-dependent extremes reset per card type on Bluetooth disconnect
-
-### V2.6.5 (2026-06-08) — Unified Main Value Height + Fixed-Width Sign
-
-Display consistency pass: all cards use identical main value height, +/- signs render at fixed equal width.
-
-#### Changes
-
-1. **MAIN_VALUE_SP = 112f** — All 8 cards unified to identical main value height (previously 112/104/102/100 varying by card)
-2. **FixedSignSpan refactor** — `targetSignWidthPx` replaces `signScaleX`, uses `-` glyph as baseline width, compresses `+` to match
-3. **getScaleForChar()** — Per-character dynamic scaleX calculation based on original glyph width
-4. **SIGN_TARGET_WIDTH_SCALE = 0.82f** — Replaces old SIGN_SCALE_X constant
-
-### V2.6.4 (2026-06-07) — Fixed Sign Span, Engine Gate, Startup Self-Test
-
-Six detail improvements: sign rendering, engine-run extreme gating, label color unification, K.C layout, startup self-test, Powered by visibility.
-
-#### Changes
-
-1. **FixedSignSpan** — `extends ReplacementSpan` for +/- signs with independent Paint, immune to main value textScaleX changes
-2. **Startup self-test** — 2.2s sweep animation defers Bluetooth connection until after self-test completes
-3. **Engine-run extreme gate** — RPM ≥ 500 for 1s before recording L.TRIM/MAP/A.F/IGN/S.TRIM extremes
-4. **Label color unification** — `dash_label` (#FFCCCCCC) for all card bottom labels
-5. **K.C layout restructure** — `%` moved under K.C label as `(%)` via vertical LinearLayout
-6. **Powered by hidden** — `android:visibility="gone"`
-
-### V2.6.3 (2026-06-06) — Semantic Alpha, Smooth Scale, Compact Sign
-
-Display polish: semantic gating priority, smooth scaleX transitions, sign compression.
-
-#### Changes
-
-1. **Semantic gating priority** — Semantic state evaluation moved before display logic
-2. **smoothMainScaleX()** — Gradual scaleX transitions instead of jumps
-3. **Compact sign** — Micro-compression for +/- signs
-
-### V2.6.2 (2026-06-04) — TextScaleX Measurement Fix (Golden Master)
-
-Root cause fix for display oscillation. First fully stable display version — the Golden Master baseline for all subsequent maintenance.
-
-#### Changes
-
-1. **Independent TextPaint measurement** — `mainMeasurePaint` / `extremeMeasurePaint`, force `setTextScaleX(1.0f)` before measuring
-2. **measureTextUnscaled()** — Core measurement function, replaces all `tv.getPaint().measureText()` calls
-3. **getHardMinScaleXForMain()** — Lowered minimum scaleX floor (0.22–0.34), prioritize no clipping
-4. **Three render entries** — `renderMainText()` / `renderSemanticCard()` / `renderExtremeText()` are the only places that set textSize/textScaleX
-
-### V2.5 (2026-06-04) — FrameLayout Overlay Architecture
-
-Refactored sensor card layout to use FrameLayout overlay (`normalValueLayer` + `semanticValue`) with INVISIBLE/VISIBLE switching, eliminating layout reflow during DFCO/SYNC transitions.
-
-#### Changes
-
-1. **FrameLayout overlay** — Each card stacks `normalValueLayer` and `semanticValue` in a FrameLayout. Normal and semantic modes switch via INVISIBLE/VISIBLE — no GONE, no layout recalculation
-2. **Fixed extremePanel 56dp** — MAX/MIN panel gets a fixed 56dp width with independent `renderExtremeText()` that auto-fits text to available space. No more weight-based layout that shifts when content changes
-3. **renderMainValue() with applyMainScaleStability** — Unified main value render path. Narrow text gets immediate scaleX=1.0; wide text applies 0.08 hysteresis (shrink immediately, expand only when gap > 0.08). Eliminates main value width oscillation on alternating values (e.g., +2.5 → +2.6 → +2.5)
-4. **setSemanticMode() uses INVISIBLE instead of GONE** — No layout reflow during DFCO/SYNC transitions. Both layers always occupy their measured space; only visibility toggles
-5. **Solves** — Main value flicker from scaleX oscillation, MAX/MIN truncation showing "+...", SYNC/DFCO causing visible layout jumps as the card re-measures
-
-### V2.4.3 (2026-06-04) — Single TextView Adaptive Architecture
-
-Abandon the split `valueInt`/`valueDec` approach. A single `formatMainText()` returns the complete formatted string, and `renderMainValueText()` performs one `measureText` call for precise fitting.
-
-#### Changes
-
-1. **Single TextView rendering** — `formatMainText()` returns complete value strings (e.g., "+25.0", "E85"), `renderMainValueText()` uses a single `measureText` instead of split integer/decimal measurement
-2. **Safety margin dp(12)** — Conservative first-attempt margin for single-pass measurement
-3. **MAX/MIN font reduced to 19sp** — Smaller extreme values to allocate more space to main value
-4. **Semantic labels 82sp** — Base font size for DFCO/SYNC labels
-5. **Base font sizes: ROW1 95sp, ROW2 85sp** — Conservative first attempt for the single-TextView architecture
-
-### V2.4.2 (2026-06-04) — Maximize Main Value Font
-
-Previous V2.4.1 fit was too conservative — fonts too small due to worst-case pre-fit + large safety margin (dp(28)) + low maxScaleX. V2.4.2 shifts philosophy from "never truncate" to "maximize font while never truncating."
-
-#### Changes
-
-1. **Restore large base font sizes** — Row 1: 112sp, Row 2: 102sp, Semantic: 92sp (up from 112.5/99/88 but with much tighter scaleX)
-2. **Remove worst-case default measurement** — Measure current text width, not hypothetical worst-case. No more pre-shrinking for values that may never appear.
-3. **Safety margin dp(28) → dp(4)** — Previous margin was 5× larger than needed. TextPaint measureText is accurate; only minimal padding for rounding.
-4. **No maxScaleX cap** — Let scaleX go up to 1.0 when text is narrow (e.g., single-digit values).
-5. **ScaleX hysteresis** — `lastMainScaleX[]` array: narrow immediately when text grows, widen only when gap > 0.06. Prevents width oscillation when values alternate (e.g., +2.5 → +2.6 → +2.5).
-6. **Layout weights 3:1.5 → 4.0:1.0** — Main value area 80%, MAX/MIN panel 20%. More space for large values, less for extremes.
-7. **Remove FitParam class** — Replaced with simpler `getBaseSp(i)` + `MIN_SCALE_X[]` array. Removed `spToPx()` helper (unused).
-8. **Single render path** — `renderMainValueMaxFit()` replaces `fitSplitValueTextWidthOnly()`. Only this function and `renderSemanticCard()` set textSize/textScaleX.
-
-### V2.4.1 (2026-06-03) — Width-Only Main Value Fit
-
-Fix clipping of signed large values (+25.0, +39.6, +24.4) by keeping text height fixed and only adjusting textScaleX.
-
-#### Changes
-
-1. **Width-Only Fit** — Main value textSize stays fixed at `FitParam.baseSp`, only `textScaleX` is dynamically adjusted. No more height fluctuations.
-2. **Worst-Case Pre-Fit** — L.TRIM, IGN, S.TRIM use worst-case text (e.g., "+25.0", "+40.0") for measurement, preventing sudden truncation when values change.
-3. **FitParam Class** — Replaces flat float array with structured `{baseSp, minScaleX, maxScaleX, useWorstCase, worstCaseText}` per card.
-4. **Semantic Width-Only** — DFCO/SYNC labels also use height-fixed width-only fit.
-5. **lastFitWidth Cache** — Skip re-measurement when text and width haven't changed.
-6. **setEllipsize(null)** — Prevents Android from adding "..." truncation.
-
-### V2.4 (2026-06-03) — Display Fit Completion
-
-Final polish pass for display quality. All DFCO/SYNC labels now display fully without truncation. Main numeric values auto-fit to available card width.
-
-#### 1. Semantic Full-Width Mode
-
-When A/F, IGN, S.TRIM display `DFCO` or `SYNC`:
-- Hide decimal part and extreme (MAX/MIN) panel
-- Expand value area to full card width
-- Auto-fit label text using TextPaint measurement (base 88sp, min 58sp)
-
-#### 2. Main Value Auto-Fit
-
-Replace fixed `textSize` + `textScaleX` with TextPaint-based auto-fit for all 8 cards:
-- Measure combined `valueInt + valueDec` width at base size
-- First compress `textScaleX` (down to parameter-specific minimum)
-- Then reduce text size (down to parameter-specific minimum)
-- Per-card fit parameters (e.g., Ethanol: 112sp base, IGN/S.TRIM: 99sp base)
-
-#### 3. XML Layout IDs
-
-Added `@+id/valueArea` and `@+id/extremePanel` to `item_sensor_card.xml` for dynamic visibility control.
-
-#### 4. Cache-Optimized Rendering
-
-`lastMainCombinedText` and `lastSemanticText` caches prevent redundant TextPaint measurements at 20Hz refresh rate.
-
-#### 5. Modified Files
-
-| File | Changes |
-|------|---------|
-| `MainActivity.java` | fitSplitValueText, fitSingleText, setSemanticLayoutMode, FIT_PARAMS array, cache arrays |
-| `item_sensor_card.xml` | Added valueArea/extremePanel IDs, ellipsize=none |
-| `build.gradle` | versionCode 8→9, versionName "2.3"→"2.4" |
-
-### V2.3 (2026-06-03) — Display Truth Pass
-
-Core principle: display real, valid data; gate meaningless data with DFCO/SYNC labels.
-
-#### 1. CombustionInvalid — Multi-Source DFCO Detection
-
-Display-layer gate using multi-source semantics instead of relying solely on `TPlate < 2`. Detects DFCO/overrun fuel cut via: INJ=0 + Lambda/Target ≥ 1.8 + Open Loop + Closed Throttle (pedal/TP/MAP) + Moving. Correctly captures real DFCO frames where TPlate = 2~3.
-
-#### 2. Dynamic SYNC Windows After DFCO Exit
-
-Independent per-parameter release timing instead of a fixed 800ms hard lock:
-
-- **IGN**: Min 250ms, releases when injector restarts (~250~350ms)
-- **A/F**: Min 300ms, releases when lambda leaves extreme-lean state (~300~500ms), max 800ms
-- **S.TRIM**: Min 500ms, releases only when closed loop + stoich target + injector active (~500~800ms)
-
-#### 3. Lambda-Based A/F Alarm
-
-A/F color and flash logic uses measured lambda vs target lambda instead of fixed AFR thresholds:
-
-- **WOT**: Absolute lambda thresholds — danger lean > 0.86 (red flash), warn lean > 0.83 (yellow), warn rich < 0.68 (yellow), safe (green)
-- **Closed Loop**: Lambda error from target — green ≤ 0.03, yellow ≤ 0.06, red > 0.06
-
-#### 4. Confidence No Longer Dims Display
-
-Removed `state.textAlpha()` dimming on A/F, IGN, S.TRIM real-time values. Confidence continues to drive filter strength, WOT detection, boost release rate, and history admission — but never makes valid data appear dim.
-
-#### 5. S.TRIM Closed Loop Gate
-
-S.TRIM only displays real values when Fuel Status = closed loop + stoich target + injector active. During WOT/open loop, S.TRIM shows `SYNC` instead of meaningless open-loop values.
-
-#### 6. MAX/MIN Protected During DFCO/SYNC
-
-A/F, IGN, S.TRIM recent MAX/MIN are not updated while in DFCO or SYNC state. Prevents DFCO-exit transients from polluting extreme tracking.
-
-#### 7. A/F Flash Defense
-
-A/F red flash is suppressed during DFCO/SYNC state. Prevents residual flash state from dimming the DFCO/SYNC label.
-
-#### 8. Modified Files
-
-| File | Changes |
-|------|---------|
-| `MainActivity.java` | combustionInvalid gate, dynamic SYNC windows, lambda-based A/F alarm, S.TRIM closed loop gate, remove confidence dimming, flash defense |
-| `build.gradle` | versionCode 7→8, versionName "2.2"→"2.3" |
-
-### V2.2 (2026-06-03) — Session Extreme & Semantic Alarm
-
-#### 1. Dual-Path MAX/MIN — Session Extreme vs Recent Extreme
-
-Parameters split into two categories:
-
-- **Session Extreme** (Ethanol, ECT, IAT, L.TRIM, MAP): Full-session MAX/MIN that persist for the entire driving session. No decay, no cooldown, no reset on Bluetooth reconnect or DFCO exit. Trusted-value filtering rejects NaN, Infinity, and physically impossible values.
-- **Recent Extreme** (A/F, IGN, S.TRIM): Continues using V2.1's three-layer admission (semantic admission + asymmetric cooldown + breakthrough threshold) with 30s auto-decay.
-
-#### 2. MAP Session MAX/MIN Uses Raw Boost Value
-
-MAP session extremes use the validated raw boost value before asymmetric filtering, near-zero clamping, and rate limiting. This prevents the boost filter from attenuating short transient peaks — the actual maximum boost is captured faithfully.
-
-#### 3. A/F State-Aware Alarm
-
-A/F warning logic now differentiates by engine state instead of using global thresholds:
-
-- **DFCO**: No alarm (injectors off, no combustion)
-- **WOT**: Lean-burn danger priority — A/F > 12.2 triggers red flash (dangerous lean); A/F < 10.2 only yellow warning (rich, not dangerous)
-- **NORMAL/IDLE/WARMUP**: Standard four-zone coloring with conservative flash thresholds (only when TP > 5% and A/F < 12.5 or > 16.5)
-
-#### 4. Data Freshness Indicator
-
-Header status now shows real-time data freshness: `LIVE` (green, <500ms) → `STALE` (yellow, <1500ms) → `DATA LOST` (red, <3000ms) → `BT LOST` (red, ≥3000ms).
-
-#### 5. Bluetooth Reconnect Preserves Session Extremes
-
-Short Bluetooth disconnects/reconnects no longer clear full-session MAX/MIN for Ethanol, ECT, IAT, L.TRIM, and MAP. Only filter state and Recent Extreme parameters (A/F, IGN, S.TRIM) are reset.
-
-#### 6. Modified Files
-
-| File | Changes |
-|------|---------|
-| `MainActivity.java` | Dual-path MAX/MIN, `isTrustedForSessionExtreme()`, A/F state-aware alarm, data freshness, reconnect preservation |
-| `build.gradle` | versionCode 6→7, versionName "2.1"→"2.2" |
-
-### V2.1 (2026-05-27) — History Admission System + Real LOG Demo
-
-#### 1. History Admission System — Three-Layer MAX/MIN Quality Control
-
-V2.0's MAX/MIN tracker was a bare recorder — any operating condition's values were unconditionally admitted. This led to DFCO-exit AFR spikes polluting MIN, cold-start IGN retard polluting MIN, and transient fuel trim jumps polluting MAX. V2.1 replaces the bare tracker with a three-layer admission system:
-
-- **Layer 1 — Semantic Admission**: Per-card rules defining which operating conditions produce analytically meaningful values. E.g., A/F excluded during DFCO/WARMUP/SPOOL/DFCO-exit-recovery(500ms); IGN excluded during DFCO/WARMUP.
-- **Layer 2 — Asymmetric Cooldown**: MAX and MIN have independent per-parameter cooldown durations. E.g., Boost MAX=500ms MIN=1500ms (vacuum is less important than boost peak). WOT mode shortens all cooldowns (State-linked Cooldown).
-- **Layer 3 — Per-Parameter Breakthrough**: Absolute delta thresholds allow major events to bypass cooldown. E.g., A/F Lean Δ>+0.5, IGN MIN Δ>-3°. Breakthrough resets cooldown timer.
-
-#### 2. Recent Peak — 30s Auto-Decay
-
-Displayed MAX/MIN now auto-decay toward current value after 30 seconds without a new extreme. Session-peak tracking continues internally but is no longer shown on the UI. This ensures the driver sees "recent memory" rather than all-time records.
-
-#### 3. Demo Source — Real LOG Data Playback
-
-Replaced synthetic sine-wave DemoSource with real driving data extracted from a 2026-05-27 Hondata FlashPro LOG (E26, 27% ethanol, 24°C). Five segments play sequentially: IDLE(5s) → NORMAL(8s) → WOT(12s) → DFCO(8s) → ACCEL(15s), followed by EXTREME synthetic sweep (9s) for ScaleBar range testing. Demo mode now correctly triggers V2.0 WOT detection (provides `ClosedLoop` + `TargetLambda` PIDs that the old DemoSource didn't).
-
-#### 4. DFCO Exit Transition Sync
-
-V2.0 only applied confidence-driven gradual alpha recovery (textAlpha) to A/F and S.TRIM on DFCO exit. IGN jumped to full brightness instantly, creating a visible desync. V2.1 extends textAlpha to all three DFCO cards (A/F, IGN, S.TRIM) so they transition in unison.
-
-#### 5. Modified Files
-
-| File | Changes |
-|------|---------|
-| `MainActivity.java` | History Admission (3 mechanisms) + Recent Peak + State-linked Cooldown + DFCO exit tracking + DFCO transition sync, ~100 lines |
-| `DemoSource.java` | **REWRITTEN** — Real LOG data playback with 5 segments + linear interpolation |
-| `proguard-rules.pro` | Precise per-class keep rules (exclude DemoSource from release) |
-| `build.gradle` | versionCode 5→6, versionName "2.0"→"2.1" |
-
-### V2.0 (2026-05-24) — ECU Semantic State Engine + Peak Hold
-
-#### 1. Three-Dimensional Semantic State Model
-
-Replaced `enum State` with `EngineSemanticState` struct containing four orthogonal dimensions:
-
-- **MainState** (ECU strategy layer, mutually exclusive): DFCO / WOT / WARMUP / IDLE / NORMAL
-- **SubState** (operating detail): WOT→SPOOL/PEAK/HOLD, DFCO→ENTER/HOLD
-- **Modifier** (dynamic overlay, orthogonal): TIP_IN / TIP_OUT / BOOST_SURGE / RPM_DIP
-- **Confidence** (0.0~1.0): weighted calculation + low-pass filter
-
-#### 2. WOT Redefined — ECU Strategy-Based Detection
-
-For torque-model ECU (L15B7), throttle position ≠ engine load. WOT now detected by ECU strategy signals:
-
-- `ClosedLoop(0x0340) OFF` + `TargetLambda(0x0322) < 0.95` + `MAP > 120kPa` + `RPM > 1500`
-- Triple AND: Open Loop + Rich command + Boost established
-
-#### 3. New: WARMUP State
-
-Cold-start detection with ECT hysteresis — enter <65°C, exit >72°C + ClosedLoop ON sustained 5s.
-
-#### 4. DFCO Four-Way Lock
-
-Added RPM>1400 to existing TP<2% + Speed>15 + Inj<0.5ms, preventing false triggers at idle recovery edge.
-
-#### 5. TRANSIENT → Modifier
-
-Transient is no longer a main state. It became an orthogonal Modifier that can overlay on any MainState, solving the problem where TRANSIENT would hijack WOT detection.
-
-#### 6. Confidence-Driven Continuous Modulation
-
-Per-state weighted confidence with low-pass filter (α=0.1, ~200ms inertia) drives:
-- A/F alpha: `0.3 + confidence × 0.4` (continuous, not binary)
-- Text opacity: `0.45 + 0.55 × confidence` (gradual fade for sensitive cards)
-- Boost release: three-level automatic switch
-
-#### 7. MECHANICAL Peak Hold
-
-Added bidirectional peak tracking to MECHANICAL archetype (Boost + IGN cards):
-- Boost: peakRetention=0.70 (~3s half-life), drawn as semi-transparent fill + thick marker line
-- IGN: peakRetention=0.85 (~4.6s half-life)
-- A/F envelope decay slowed: 0.55 → 0.80 (half-life 1.2s → 3.1s)
-
-#### 8. Modified Files
-
-| File | Changes |
-|------|---------|
-| `EngineSemanticState.java` | **NEW** — Three-dimensional semantic state struct |
-| `EngineStateTracker.java` | **REWRITTEN** — V2 ECU semantic model with confidence |
-| `ScaleBarView.java` | MECHANICAL archetype: bidirectional peak tracking + peakRetention parameter |
-| `MainActivity.java` | Confidence-driven alpha/opacity/release, `hasModifier()` for fast refresh |
-| `build.gradle` | versionCode 4→5, versionName "1.4"→"2.0" |
-
-### V1.4 (2026-05-24) — Response Optimization + Bluetooth fullReset
-
-Real-car testing identified three issues: sluggish state transitions during aggressive driving, delayed data recovery after DFCO exit, and bluetooth auto-reconnect not working at all.
-
-#### 1. Hysteresis Optimization (EngineStateTracker.java)
-
-V1.3 hysteresis timings caused a perceived delay of 600~1000ms during aggressive driving state transitions (e.g., DFCO→WOT when quickly getting back on throttle). The root cause was DFCO EXIT hysteresis at 300ms — when TP goes from 0% to 80%+, there's zero ambiguity, so the long hysteresis was unnecessary.
-
-V1.4 reduces all timings based on real-car data analysis:
-
-| Transition | V1.3 | V1.4 | Reduction | Reasoning |
-|------------|------|------|-----------|-----------|
-| DFCO ENTER | 200ms | **100ms** | -50% | TP<2% + Inj<0.5ms + Speed>15 triple condition is unambiguous |
-| DFCO EXIT | 300ms | **50ms** | -83% | TP recovering >2% is unambiguous, 50ms is just debounce |
-| WOT ENTER | 100ms | **30ms** | -70% | TP>80% is zero-ambiguity |
-| WOT EXIT | 200ms | **80ms** | -60% | Moderately reduced |
-| IDLE ENTER | 300ms | **200ms** | -33% | Slightly reduced |
-| TRANSIENT | 80ms | **40ms** | -50% | Faster transient capture |
-| DEFAULT | 100ms | **50ms** | -50% | Faster general transitions |
-
-**Worst-case DFCO→WOT latency** reduced from ~600-1000ms to ~80-130ms (DFCO EXIT 50ms + WOT ENTER 30ms + Rate Limit bypass).
-
-#### 2. Instant State-Change Response (MainActivity.java)
-
-Two additional optimizations beyond hysteresis reduction:
-
-**a) DFCO exit resets ALL filters + skips Rate Limit:**
-
-V1.3 only reset filters for A/F/IGN/S.TRIM on DFCO exit. V1.4 extends this to Boost (card 4) as well — during DFCO, Boost asymmetric filter uses release=0.02 (extremely slow), so even after exiting DFCO the displayed Boost value was stuck. V1.4 resets the Boost filter state on DFCO exit, allowing immediate display of the actual value.
-
-Additionally, all cards skip Rate Limit on DFCO exit (`lastUpdateTime[i] = 0`), forcing an immediate display refresh rather than waiting for the next Rate Limit interval.
-
-**b) Before V1.4 delay chain (DFCO→WOT):**
-```
-t=0     Throttle applied
-t=300ms DFCO EXIT hysteresis satisfied
-t=400ms WOT ENTER hysteresis satisfied
-t=500ms Rate Limit interval elapsed
-t=600ms First real value displayed (Boost EMA climbing)
-```
-
-**After V1.4:**
-```
-t=0     Throttle applied
-t=50ms  DFCO EXIT hysteresis satisfied, filters reset, Rate Limit bypassed
-t=80ms  WOT ENTER hysteresis satisfied
-t=80ms  First real value displayed immediately (no filter lag)
-```
-
-#### 3. Bluetooth fullReset Reconnect (BluetoothSource.java)
-
-V1.3's autoReconnect failed in practice — only restarting the app restored the connection. Root cause: reconnection was attempted within the same poll thread, and the Android Bluetooth stack didn't fully release the RFCOMM channel before the new connection attempt.
-
-V1.4 replaces the in-loop reconnect with a **fullReset** strategy:
-
-| Step | V1.3 autoReconnect | V1.4 fullReset |
-|------|--------------------|----------------|
-| Thread | Same pollThread | **New thread**, old thread fully destroyed |
-| BT stack | No cleanup wait | **1s wait** for RFCOMM channel release |
-| Protocol | New instance | New instance (same) |
-| Reconnect | Within polling loop | **Separate reset thread**, polling loop exits on disconnect |
-| UI | Stays alive | Stays alive (same) |
-
-Flow on disconnect:
-1. `IOException` in polling loop → set `connected = false`
-2. Notify UI `onDisconnected()`
-3. Exit polling loop (V1.3 continued in same loop)
-4. Trigger `fullReset()` from UI thread
-5. `fullReset()`: kill old thread → close socket → **wait 1s for BT stack** → new Protocol → new connection thread
-6. On success: auto-start polling from fresh state
-
-#### 4. Modified Files
-
-| File | Changes |
-|------|---------|
-| `EngineStateTracker.java` | All 7 hysteresis timings reduced (DFCO EXIT 300→50ms, WOT ENTER 100→30ms, etc.) |
-| `MainActivity.java` | DFCO exit resets Boost filter + skips Rate Limit for all cards |
-| `BluetoothSource.java` | fullReset reconnect (new thread, BT stack cleanup, fresh connection) |
-| `build.gradle` | versionCode 3→4, versionName "1.3"→"1.4" |
-
-### V1.3 (2026-05-22) — Dynamics Archetype Engine + UI Polish
-
-#### 1. V3 Dynamics Archetype Engine (ScaleBarView.java full rewrite)
-
-V1.2's simple peak hold (static PEAK_HOLD_MS + PEAK_DECAY_RATE constants) was completely replaced by 4 dynamics archetype engines, each using a fundamentally different mathematical model:
-
-##### ARCH_STATIC — Locked State (Ethanol)
-- No energy system, pure current-value display
-- No peak hold, no residual
-- Rationale: Ethanol changes extremely slowly (2Hz), physically no "peak memory" exists
-
-##### ARCH_THERMAL — Newton's Law of Cooling (ECT, IAT, L.TRIM)
-- Bidirectional independent tracking: `heatPos` (above anchor) + `heatNeg` (below anchor) each tracked independently
-- **Direct deviation tracking**: expands only when actual deviation exceeds memory (no delta accumulation, fixing L.TRIM's heat never catching up due to extremely slow changes)
-- **Newton's cooling**: `heat -= heat × coolingRate × dt` → high heat decays fast (nonlinear), low heat decays slowly
-- Per-card parameters:
-  - ECT: `setThermal(gain=0.5, cooling=0.3, memory=0.2)` — moderate absorption, slow dissipation
-  - IAT: `setThermal(gain=0.6, cooling=0.4, memory=0.25)` — slightly faster dissipation (heat soak behavior)
-  - L.TRIM: `setThermal(gain=0.2, cooling=0.1, memory=0.08)` — extremely slow (ECU long-term learning value)
-- V1.2→V1.3 fix: L.TRIM negative direction had no peak hold + positive direction stuck at max → bidirectional independent + direct deviation tracking
-
-##### ARCH_MECHANICAL — Spring-Damper 2nd-Order System (Boost/MAP, IGN)
-- **Euler integration** of a 2nd-order spring-damper system, naturally producing overshoot + rebound + physical residual
-- `mechDamping` = damping ratio ζ: 0=undamped oscillation, 1=critical damping (no overshoot)
-- Damping coefficient = `mechDamping × 2√stiffness` (standard 2nd-order system)
-- Bidirectional residual: position > curVal (positive) and position < curVal (negative) drawn separately
-- Residual alpha: `α = min(1, 0.6 + |velocity| × 0.4)` — brighter when velocity is high
-- Per-card parameters:
-  - Boost: `setMechanical(stiffness=5, damping=0.45)` — ζ=0.45 underdamped, large overshoot with slow decay
-  - IGN: `setMechanical(stiffness=2.5, damping=0.40)` — ζ=0.40 more underdamped, longer residual
-- V1.2→V1.3 fix: damping formula `v -= v×d×dt×60` caused velocity reversal (damping=0.65, dt=0.05 multiplies by -0.95) → corrected to proper 2nd-order Euler integration
-
-##### ARCH_TRANSIENT — Oscillation Envelope (A/F, S.TRIM)
-- Bidirectional independent envelope: `envHigh` (above anchor) + `envLow` (below anchor) each tracked and decayed independently
-- **Expand-only**: envelope extends only when deviation exceeds current envelope (fixes A/F data bouncing causing full-bar expansion)
-- Exponential decay: `env × pow(decay, dt)` — frame-rate independent
-- Envelope alpha: `α = min(0.7, env × 0.5)` — brighter at larger deviation
-- Per-card parameters:
-  - A/F: `setTransient(gain=3.0, decay=0.55)` — retains 55%/sec, half-life ~3.3s
-  - S.TRIM: `setTransient(gain=2.5, decay=0.65)` — retains 65%/sec, half-life ~5.3s
-- V1.2→V1.3 fix: decay values from 0.08/0.15 (92%/85% lost per second) adjusted to 0.55/0.65
-
-##### Data Bar Thicker
-- `barH`: 10dp → 15dp (×1.5), ScaleBar XML height 37dp → 42dp (+5dp)
-- Card total value space reduced by 5dp → MAX/MIN naturally shift up, better display ratio
-
-#### 2. Emotion Rendering (ScaleBarView.java + MainActivity.java)
-
-##### 7 Emotion States
-Each card sets different emotions based on parameter type and current operating conditions, with intensity gradually followed by ScaleBar internally:
-
-| Parameter | BUILDING | STABLE | RELEASING | DANGER | WARNING | PROTECTION |
-|-----------|----------|--------|-----------|--------|---------|------------|
-| Ethanol | — | Default | — | — | — | — |
-| ECT | dT>0.1 | <95°C | — | >105°C | 95~105°C | — |
-| IAT | dT>0.1 | <50°C | dT<-0.1 | ≥65°C | 50~65°C | — |
-| L.TRIM | — | \|trim\|<20 | — | — | \|trim\|>20 | — |
-| Boost | val>0.3 & ↑ | 0.1~1.5 | val>0.3 & ↓ | — | — | — |
-| A/F | — | 12~16 | — | <10.5 or >16+throttle | <12+throttle | — |
-| IGN | — | ≥-5 | — | — | -5~-10+throttle | <-10+throttle |
-| S.TRIM | \|trim\|>8+throttle | \|trim\|<8 | — | — | \|trim\|>15+throttle | — |
-
-##### Gradual Follow
-- `emotionCurrent` smoothly interpolates toward `emotionIntensity`, no sudden jumps
-- Interpolation speed: `emotionSpeed = 3.0`
-- Three-layer rendering:
-  1. **Fill color blend**: base color + emotion color × (intensity × ratio)
-  2. **Indicator line color shift**: white → emotion color × (intensity × ratio)
-  3. **Edge glow**: semi-transparent rectangle overlay, extremely subtle (alpha 20~35/255)
-
-#### 3. UI Optimization (MainActivity.java + layouts)
-
-##### Font Scaling Upgrade
-- Row 1: scale 1.2→1.5 → textSize 90sp→112.5sp (height +50%)
-- Row 2: scale 1.4→1.65 → textSize 84sp→99sp (height +65%)
-- Ethanol-specific scaleX=0.50: "E85" prefix needs extra character space, separately narrowed to prevent container overflow
-
-##### Card Position Rearrangement
-- Row 1: Ethanol | ECT | IAT | **L.TRIM** (moved from Row 2, slow data grouped together)
-- Row 2: **MAP** | A/F | IGN | **S.TRIM** (fast data grouped together)
-
-##### DFCO Display Optimization
-- A/F(5), IGN(6), S.TRIM(7): gray "DFCO" + ScaleXSpan(0.75) compression to prevent clipping
-- Reset filters on DFCO exit for immediate correct values when throttle is reapplied
-
-##### Confidence System Simplification
-- Removed L.TRIM low-opacity handling (ECU long-term learning value is inherently stable, no transient unreliability)
-- Only A/F(5) and S.TRIM(7) reduce opacity to 45% during TRANSIENT state
-
-##### Data Update Rate Refinement
-- Per-parameter Rate Limit: Ethanol/ECT/IAT 2Hz, L.TRIM 1Hz, Boost 20Hz, A/F 10~20Hz, IGN 10~20Hz, S.TRIM 5Hz
-- MAX/MIN tracking always updates (not limited by Rate Limit)
-
-#### 4. Bluetooth Auto-Reconnect Rewrite (BluetoothSource.java)
-
-V1.2 reconnect had protocol state residue issues → V1.3 changed to full rebuild strategy:
-
-| Step | Logic |
-|------|-------|
-| 1. Close old connection | Fully close Socket + InputStream + OutputStream |
-| 2. Create new Protocol | `new HondataProtocol()` clears all protocol state |
-| 3. First attempt zero delay | Immediate connection attempt, same as app restart |
-| 4. Exponential backoff | Subsequent failures: 1s → 2s → 4s → 8s |
-| 5. Full handshake | Ignition detect (10 retries) → INIT → sensor definitions |
-| 6. Resume polling | Automatically continues data collection on success |
-
-Connection method: reflection ch1 → insecure SPP → standard SPP (triple fallback)
-
-#### 5. Modified Files
-
-| File | Changes |
-|------|---------|
-| `ScaleBarView.java` | Full rewrite: 4 Archetype engines + 7 Emotion rendering + barH 10→15dp + peak parameters per-instance |
-| `MainActivity.java` | Font 1.5/1.65 + card rearrangement + emotion engine + DFCO optimization + confidence simplification + Rate Limit |
-| `BluetoothSource.java` | Full-rebuild reconnect strategy + triple fallback connection + first-attempt zero delay + exponential backoff |
-| `activity_main.xml` | Bottom row 59dp + card layout adjustments |
-| `item_sensor_card.xml` | ScaleBarView height 37→42dp |
-| `build.gradle` | versionCode 2→3, versionName "2.0"→"1.3" |
-
-### V1.2 (2026-05-21) — UI Fix + Repo Cleanup
-
-- **Boost card font fix**: Changed from row-1 large font (90sp) to row-2 smaller font (84sp) to fix decimal part being clipped
-- **Repo cleanup**: Removed unused code (GaugeView/WheelView/PidRegistry), old layouts, dev screenshots, old APK
-- **Trimmed colors.xml**: Kept only actually-used color resources
-- **MAC sanitization**: Replaced with placeholder for privacy
-
-### V1.1 (2026-05-21) — Data Pipeline Upgrade
-
-- **Engine state detection**: EngineStateTracker 5-state priority machine (DFCO > TRANSIENT > WOT > IDLE > NORMAL) + hysteresis anti-bounce
-- **TRANSIENT triple detection**: dTP/dt>50%/s OR dRPM/dt>1200rpm/s OR dMAP/dt>300kPa/s (essential for MT)
-- **MAP → Boost** (relative pressure, MAP - Barometric), range -1.0~2.0 bar
-- **Ethanol 4-level color**: <E20 white, E20-40 green, E40-60 yellow, >E60 red
-- **DFCO handling**: A/F shows "DFCO", S.TRIM/L.TRIM frozen
-- **EMA signal filtering**: Per-parameter α (Ethanol 0.05, ECT/IAT 0.05, A/F 0.3, IGN 0.3)
-- **Adaptive filtering**: A/F WOT/TRANSIENT α=0.7+20Hz, NORMAL α=0.3+10Hz
-- **Boost asymmetric filter**: Fast attack α=0.6, dynamic release driven by state confidence (NORMAL 0.15, Modifier 0.05, DFCO 0.02)
-- **Range validation**: 8-parameter physical limits + NaN protection
-- **IGN load gating**: Reduced α when TP<3%
-- **Confidence system**: A/F/S.TRIM/L.TRIM opacity 45% during TRANSIENT
-- **MAP near-zero clamp**: Eliminates "-0" display
-- **Bluetooth auto-reconnect**: Exponential backoff (1s→2s→4s→8s) + 3s read timeout
-- **Shift light thresholds lowered**: 3000/3500/4000/4500/5000/5500, ≥5500 flash
-- **DemoSource EXTREME**: Sine sweep across all ScaleBar ranges
-- **Last-valid cache**: Retains last value during Bluetooth dropout
-- **MAX/MIN color-coded ±** (blue positive, red negative)
-
-### V1.0 (2026-05-19) — First Release
-
-- 6-LED shift light (progressive + ≥6400 flash) + Header overlay FrameLayout
-- Temp warnings: ECT 4-level + purple flash, IAT 5-level + purple flash
-- A/F 4-zone color + red zone throttle flash (TP>5% excludes coasting/shifting)
-- K.C 3-level color + >65% red flash
-- ScaleBar zone expansion (A/F green 2.5×)
-- MAP/F.P unit changed to bar
-- Bottom row: K.C + CYL1-4 + K.R + K.L + BAT + F.P + W.G + T.P
-- Production: removed handshake popups, errors only
-
----
-
-[中文说明](README_CN.md)
+- This app is a personal project for a specific car (2020 Civic 1.5T with FlashPro). It is not a productized OBD tool.
+- No telemetry, no network calls, no analytics. The only Bluetooth traffic is the FlashPro SPP session.
