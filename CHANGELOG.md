@@ -14,7 +14,6 @@ Defensive pass after V2.6.6: remove the startup self-test, give MAX/MIN a known-
 
 **Changed**
 - Removed the startup self-test sweep from the production flow; `onCreate` now goes straight to connecting.
-- Removed the "Powered by Helijohnny" watermark from the header and layout.
 - Added a one-shot engine-running baseline override: at engine start, each card takes its first valid sample as the MAX/MIN baseline (`engineBaselineApplied[8]`), gated per card — ethanol waits for the settling gate. The flag clears when the engine stops so the next start re-baselines.
 - Short Bluetooth dropouts (under 5 minutes) now preserve the value and extreme layer; only a long dropout with RPM ≤ 300 resets the session.
 - Confidence gray refined: threshold 0.82 → 0.78, fixed `0xFF888888` color at full alpha (no alpha-floor gradient). Warmup and dynamic low-reference detection no longer key off `closedLoop`.
