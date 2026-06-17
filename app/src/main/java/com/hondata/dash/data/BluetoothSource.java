@@ -5,6 +5,7 @@ import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.util.Log;
 
 import java.io.IOException;
@@ -50,9 +51,25 @@ public class BluetoothSource implements DataSource {
     private volatile boolean connected;
     private volatile boolean intentionalDisconnect;
     private volatile boolean reconnecting; // V1.4: 标记重连中，防止重复触发
+    // V2.6.8: 重连入口/出口用同一把 lock 保护, 防止多线程并发触发重连
+    private final Object reconnectLock = new Object();
 
     public BluetoothSource() {
         protocol = new HondataProtocol();
+    }
+
+    // V2.6.8: 统一的重连入口仲裁
+    private boolean tryEnterReconnecting() {
+        synchronized (reconnectLock) {
+            if (reconnecting || intentionalDisconnect) return false;
+            reconnecting = true;
+            return true;
+        }
+    }
+
+    // V2.6.8: 统一的重连出口释放
+    private void exitReconnecting() {
+        synchronized (reconnectLock) { reconnecting = false; }
     }
 
     @Override public String getName() { return "Bluetooth SPP"; }
@@ -63,13 +80,17 @@ public class BluetoothSource implements DataSource {
     @Override
     public void connect(final String address) {
         intentionalDisconnect = false;
-        reconnecting = false;
-        new Thread(new Runnable() {
+        // V2.6.8: 用 lock 保护
+        synchronized (reconnectLock) { reconnecting = false; }
+        // V2.6.8 (BG11): connect 线程设为 daemon, 与 resetThread/pollThread 一致
+        Thread connectThread = new Thread(new Runnable() {
             @Override
             public void run() {
                 doConnect();
             }
-        }).start();
+        }, "BT-Connect");
+        connectThread.setDaemon(true);
+        connectThread.start();
     }
 
     /**
@@ -83,8 +104,9 @@ public class BluetoothSource implements DataSource {
      * 由 UI Handler 延迟 1s 后调用，期间显示 "重连中..."
      */
     public void fullReset() {
-        if (reconnecting || intentionalDisconnect) return;
-        reconnecting = true;
+        // V2.6.8: 用 lock 仲裁, 防止多线程并发触发
+        if (!tryEnterReconnecting()) return;
+        // 故意不放在 try/finally: 进入失败时不占用 reconnecting 标志
 
         Log.i(TAG, "fullReset: 开始重建数据层...");
 
@@ -102,7 +124,6 @@ public class BluetoothSource implements DataSource {
 
                     if (intentionalDisconnect) {
                         Log.i(TAG, "fullReset: 用户主动断开，取消重连");
-                        reconnecting = false;
                         return;
                     }
 
@@ -122,7 +143,6 @@ public class BluetoothSource implements DataSource {
 
                     if (connected) {
                         Log.i(TAG, "fullReset: 重连成功!");
-                        reconnecting = false;
                         // 自动开始轮询
                         startPolling();
                     } else {
@@ -132,8 +152,8 @@ public class BluetoothSource implements DataSource {
                 } catch (InterruptedException e) {
                     Log.i(TAG, "fullReset: 被中断，取消重连");
                 } finally {
-                    // V2.6.7: 确保 reconnecting 在 finally 中释放
-                    reconnecting = false;
+                    // V2.6.8: 通过 exitReconnecting 统一释放
+                    exitReconnecting();
                 }
             }
         });
@@ -143,11 +163,17 @@ public class BluetoothSource implements DataSource {
 
     /**
      * 指数退避重连 (仅在 fullReset 首次失败后使用)
+     * V2.6.8 (BG2): 循环条件改为 !intentionalDisconnect, 并检查蓝牙可用性
+     *              蓝牙被用户关闭时停止重连, 避免无限重连风暴
      */
     private void reconnectWithBackoff(int delay) {
-        while (running || !intentionalDisconnect) {
-            if (intentionalDisconnect) {
-                reconnecting = false;
+        while (!intentionalDisconnect) {
+            // V2.6.8 (BG2): 蓝牙被关闭/不可用时停止重连
+            BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+            if (adapter == null || !adapter.isEnabled()) {
+                Log.w(TAG, "蓝牙未启用, 停止重连");
+                postError("蓝牙未启用");
+                exitReconnecting();
                 return;
             }
 
@@ -155,12 +181,12 @@ public class BluetoothSource implements DataSource {
                 Log.i(TAG, "重连失败, " + (delay / 1000) + "s 后重试...");
                 Thread.sleep(delay);
             } catch (InterruptedException e) {
-                reconnecting = false;
+                exitReconnecting();
                 return;
             }
 
             if (intentionalDisconnect) {
-                reconnecting = false;
+                exitReconnecting();
                 return;
             }
 
@@ -182,7 +208,7 @@ public class BluetoothSource implements DataSource {
 
                 if (connected) {
                     Log.i(TAG, "重连成功!");
-                    reconnecting = false;
+                    exitReconnecting();
                     startPolling();
                     return;
                 }
@@ -193,7 +219,7 @@ public class BluetoothSource implements DataSource {
             // 指数退避: 1s → 2s → 4s → 8s
             delay = Math.min(delay * 2, RECONNECT_MAX_MS);
         }
-        reconnecting = false;
+        exitReconnecting();
     }
 
     /**
@@ -315,13 +341,27 @@ public class BluetoothSource implements DataSource {
 
     private boolean handshake() throws IOException {
         // 点火检测: 最多重试 10 次, 间隔 2 秒
+        // V2.6.8: 单次读用 2s 超时, 避免蓝牙断开时 readExact 永久阻塞
+        // V2.6.8 (BG4): parseIgnition==null (协议解析失败) 时清空缓冲重试, 而非立即失败
         HondataProtocol.IgnitionResult ign = null;
+        boolean parsedOk = false;
         for (int attempt = 1; attempt <= 10; attempt++) {
             sendCommand(HondataProtocol.CMD_IGNITION);
-            byte[] ignitionResp = readExact(6);
+            byte[] ignitionResp = readExactWithTimeout(6, 2000);
 
-            ign = protocol.parseIgnition(ignitionResp);
-            if (ign == null) return false;
+            HondataProtocol.IgnitionResult result = protocol.parseIgnition(ignitionResp);
+            if (result == null) {
+                // V2.6.8 (BG4): 协议错位 (字节偏移/残留帧), 清空输入缓冲后重试
+                Log.w(TAG, "点火检测 #" + attempt + ": 解析失败, 清缓冲重试");
+                try {
+                    if (inputStream != null && inputStream.available() > 0) {
+                        inputStream.skip(inputStream.available());
+                    }
+                } catch (IOException ignored) {}
+                continue;  // 重试, 不立即 return false
+            }
+            ign = result;
+            parsedOk = true;
             Log.i(TAG, "点火检测 #" + attempt + ": ignition=" + ign.ignitionOn);
 
             if (ign.ignitionOn) break;
@@ -330,14 +370,20 @@ public class BluetoothSource implements DataSource {
             }
         }
 
+        // 10 次重试后仍未解析成功 (协议持续错位)
+        // 注意: 点火关 (ign.ignitionOn=false) 不算失败, 原行为是继续走 INIT
+        if (!parsedOk || ign == null) return false;
+
         sendCommand(HondataProtocol.CMD_INIT);
-        byte[] initResp = readExact(8);
+        // V2.6.8: INIT/SENSOR_DEF 也加 2s 超时
+        byte[] initResp = readExactWithTimeout(8, 2000);
         if (!protocol.parseInit(initResp)) return false;
         Log.i(TAG, "传感器数量: " + protocol.getSensorCount());
 
         sendCommand(HondataProtocol.CMD_SENSOR_DEF);
         int defLen = protocol.getSensorCount() * 3 + 4;
-        byte[] defResp = readExact(defLen);
+        // V2.6.8: 传感器定义读取加 3s 超时
+        byte[] defResp = readExactWithTimeout(defLen, 3000);
         if (!protocol.parseSensorDefinitions(defResp)) return false;
         Log.i(TAG, "传感器定义已获取");
 
@@ -440,7 +486,8 @@ public class BluetoothSource implements DataSource {
     public void disconnect() {
         intentionalDisconnect = true;
         closeAllBluetoothResources();
-        reconnecting = false;
+        // V2.6.8: 用统一出口释放
+        exitReconnecting();
 
         uiHandler.post(new Runnable() {
             @Override public void run() {
@@ -481,6 +528,7 @@ public class BluetoothSource implements DataSource {
     }
 
     // V2.6.7: 统一触发重连（外部失败路径调用）
+    // V2.6.8: volatile 读本身就足够做 best-effort 防重, 最终仲裁由 fullReset 内部 tryEnterReconnecting 完成
     private void scheduleReconnect() {
         if (intentionalDisconnect) return;
         if (reconnecting) return;
@@ -522,6 +570,11 @@ public class BluetoothSource implements DataSource {
         outputStream.flush();
     }
 
+    /**
+     * V2.6.8 (BG8): 已废弃 — 无超时, 蓝牙断开时可能永久阻塞
+     * 全部调用已改为 readExactWithTimeout。保留定义仅作历史参考, 请勿使用。
+     */
+    @Deprecated
     private byte[] readExact(int len) throws IOException {
         if (inputStream == null) throw new IOException("未连接");
         byte[] buf = new byte[len];
@@ -538,9 +591,11 @@ public class BluetoothSource implements DataSource {
         if (inputStream == null) throw new IOException("未连接");
         byte[] buf = new byte[len];
         int total = 0;
-        long deadline = System.currentTimeMillis() + timeoutMs;
+        // V2.6.8 (L2): 用 elapsedRealtime 替代 currentTimeMillis
+        // 避免 NTP 同步导致 deadline 突然过期
+        long deadline = SystemClock.elapsedRealtime() + timeoutMs;
         while (total < len) {
-            if (System.currentTimeMillis() > deadline) {
+            if (SystemClock.elapsedRealtime() > deadline) {
                 throw new IOException("读取超时 (" + timeoutMs + "ms)");
             }
             int available = inputStream.available();
@@ -549,6 +604,9 @@ public class BluetoothSource implements DataSource {
                 if (n < 0) throw new IOException("连接断开");
                 total += n;
             } else {
+                // V2.6.8 (L3): Thread.sleep(1) 是必要的, 不能改为 sleep(0)
+                // 原因: sleep(0) 在 JVM 等价于 yield(), 不保证让出 CPU 切片
+                // 50Hz 轮询下 1ms 睡眠不会显著影响帧率, 但能避免忙循环
                 try { Thread.sleep(1); } catch (InterruptedException e) {
                     throw new IOException("中断");
                 }

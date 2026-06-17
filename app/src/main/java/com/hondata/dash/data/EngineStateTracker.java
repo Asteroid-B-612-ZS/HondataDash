@@ -69,7 +69,10 @@ public class EngineStateTracker {
 
     // === WARMUP ECT 滞回阈值 ===
     private static final float ECT_WARMUP_ENTER = 65f;   // °C — 低于此进入暖机
-    private static final float ECT_WARMUP_EXIT  = 72f;   // °C — 高于此 (且CL=ON) 退出暖机
+    // V2.6.8 (M4): 退出条件不再要求 CL=ON
+    // 理由: L15B7 冷启后立即闭环, CL=ON 永真, 旧条件永远不退出
+    // 新条件: ECT > 72 即退出, 5s 滞回防抖
+    private static final float ECT_WARMUP_EXIT  = 72f;   // °C — 高于此退出暖机
 
     // === 置信度低通滤波系数 ===
     private static final float CONFIDENCE_ALPHA = 0.1f;  // ~200ms 惯性 @50Hz
@@ -199,10 +202,14 @@ public class EngineStateTracker {
      *   退出: ECT > 72 + ClosedLoop ON, 持续 5s
      *   ECT 7°C 间隙 (65~72) 防止温度在阈值附近抖动
      */
+    /**
+     * WARMUP ECT 滞回检测
+     * V2.6.8 (M4): 退出条件改为 ECT>72 即可, 不再要求 CL=ON
+     */
     private boolean detectWarmup(float ect, float closedLoop, float mapVal,
                                   float tp, float rpm, float speed, long now) {
-        // 退出判定: ECT > 72 + ClosedLoop ON
-        boolean exitCondition = (ect > ECT_WARMUP_EXIT && closedLoop > 0.5f);
+        // 退出判定: ECT > 72 (无需 CL=ON)
+        boolean exitCondition = (ect > ECT_WARMUP_EXIT);
 
         if (warmupActive) {
             if (exitCondition) {
@@ -219,7 +226,8 @@ public class EngineStateTracker {
             }
             return true; // WARMUP 持续中
         } else {
-            // 进入判定: 冷车 + 开环 + 无增压 + 未踩油 + 怠速区间 + 车速低
+            // 进入判定: 冷车 + 无增压 + 未踩油 + 怠速区间 + 车速低
+            // (CL 仍作为进入门槛, L15B7 在冷启时通常先开环再闭环)
             if (ect < ECT_WARMUP_ENTER && closedLoop < 0.5f
                     && mapVal < 100 && tp < 5
                     && rpm > 800 && rpm < 1800 && speed < 5) {
@@ -352,6 +360,8 @@ public class EngineStateTracker {
     }
 
     private static float clamp01(float v) {
+        // V2.6.8 (L6): NaN 比较永远 false, 显式返回 0 避免污染 score
+        if (Float.isNaN(v)) return 0f;
         return v < 0 ? 0 : (v > 1 ? 1 : v);
     }
 

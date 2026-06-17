@@ -310,6 +310,9 @@ public class HondataProtocol {
 
         sensorCount = ((resp[5] & 0xFF) << 8) | (resp[4] & 0xFF);
         frameLength = ((resp[7] & 0xFF) << 8) | (resp[6] & 0xFF);
+        // V2.6.8 (L1): 边界检查, 防止异常值导致后续 OOM / 长阻塞
+        if (sensorCount <= 0 || sensorCount > 256) return false;
+        if (frameLength <= 0 || frameLength > 4096) return false;
         return true;
     }
 
@@ -368,6 +371,11 @@ public class HondataProtocol {
 
             double raw = readRaw(resp, offset, def);
             double scaled = scale(def.ctType, raw, def.dataLength);
+            // V2.6.8: 过滤 NaN/Infinity, 防止污染 EMA 与极值初始化
+            if (Double.isNaN(scaled) || Double.isInfinite(scaled)) {
+                offset += def.dataLength;
+                continue;
+            }
             data.put(def.pid, scaled);
 
             offset += def.dataLength;

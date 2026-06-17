@@ -29,6 +29,7 @@ import com.hondata.dash.data.EngineStateTracker;
 import com.hondata.dash.data.SensorData;
 
 import java.text.SimpleDateFormat;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.Locale;
 import android.os.SystemClock;
@@ -148,9 +149,12 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private static final int COLOR_SEMANTIC_SYNC = 0xFFA0A0A0;
     private static final float ALPHA_SEMANTIC_SYNC = 1.0f;
     // Lambda-based A/F thresholds
-    private static final float WOT_LAMBDA_DANGER_LEAN = 0.86f;  // ~12.6 AFR
-    private static final float WOT_LAMBDA_WARN_LEAN   = 0.83f;  // ~12.2 AFR
-    private static final float WOT_LAMBDA_WARN_RICH   = 0.68f;  // ~10.0 AFR
+    // V2.6.8 (M3): WOT A/F 阈值收紧 (原 0.86/0.83 → 0.84/0.81), 更早发现过稀
+    // 逻辑顺序: lambda>DANGER(高)→红, lambda>WARN(低)→黄
+    // 必须 DANGER > WARN, 否则 WARN 永远到不了
+    private static final float WOT_LAMBDA_DANGER_LEAN = 0.84f;  // ~12.3 AFR (危险红)
+    private static final float WOT_LAMBDA_WARN_LEAN   = 0.81f;  // ~11.9 AFR (偏稀黄)
+    private static final float WOT_LAMBDA_WARN_RICH   = 0.68f;  // ~10.0 AFR (过浓黄)
     private static final float CL_LAMBDA_ERR_GREEN = 0.03f;
     private static final float CL_LAMBDA_ERR_WARN  = 0.06f;
 
@@ -206,6 +210,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private boolean kcFlashing = false;
     private boolean fpFlashing = false;
     // CYL 爆震闪烁: 记录每个缸的 knock count, 检测增量
+    // V2.6.8 (BG1): 用 -1 表示首帧基线未建立, 避免首帧 ECU 累积值触发假爆震闪烁
     private final int[] lastKnockCount = new int[4];
     private final long[] cylYellowEnd = new long[4];    // 黄色闪烁截止时间
     private boolean cylRedFlashing = false;
@@ -381,6 +386,9 @@ public class MainActivity extends Activity implements DataSource.Callback {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // V2.6.8 (BG1): 初始化 lastKnockCount 为 -1, 表示首帧基线未建立
+        Arrays.fill(lastKnockCount, -1);
 
         getWindow().setFlags(
             WindowManager.LayoutParams.FLAG_FULLSCREEN,
@@ -641,6 +649,17 @@ public class MainActivity extends Activity implements DataSource.Callback {
     @Override
     protected void onResume() {
         super.onResume();
+        // V2.6.8 (L4): 如果后台停留过久, 模拟长断重连, 触发会话重置
+        // 注意: 不覆盖 lastBtDisconnectedAtMs (避免破坏 onDisconnected 已设置的精确断线时刻)
+        long now = SystemClock.elapsedRealtime();
+        if (lastValidFrameTimeMs > 0L && (now - lastValidFrameTimeMs) > BT_SESSION_PRESERVE_MS
+                && !btWasDisconnected) {
+            // 标记为长断, 下次 onDataReceived 时 handleReconnectSessionPolicy 会处理
+            btWasDisconnected = true;
+            // 用 lastValidFrameTimeMs 作为"断线时刻", 这样 handleReconnectSessionPolicy
+            // 能算出正确的 lostMs (即后台停留时间)
+            lastBtDisconnectedAtMs = lastValidFrameTimeMs;
+        }
         if (dataSource.isConnected()) {
             dataSource.startPolling();
         }
@@ -656,6 +675,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
     protected void onDestroy() {
         super.onDestroy();
         freshnessHandler.removeCallbacks(freshnessRunnable);
+        // V2.6.8 (BG3): 清理 flashHandler, 防止 flashTick 持有 Activity 引用泄漏
+        flashHandler.removeCallbacks(flashTick);
         dataSource.disconnect();
     }
 
@@ -741,8 +762,15 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 handleReconnectSessionPolicy(data);
 
                 // 更新大气压力 (用于 Boost 相对压力计算)
+                // V2.6.8 (方案C 补强): 过滤 NaN/Infinity, 防止 lastBaro 污染 Boost 计算
                 Double baro = data.get(0x170);
-                if (baro != null) lastBaro = baro.floatValue();
+                if (baro != null) {
+                    float baroVal = baro.floatValue();
+                    if (!Float.isNaN(baroVal) && !Float.isInfinite(baroVal)
+                            && baroVal >= 50f && baroVal <= 110f) {
+                        lastBaro = baroVal;
+                    }
+                }
 
                 // 检测引擎状态 (V2 语义模型)
                 EngineSemanticState state = engineState.update(data);
@@ -753,10 +781,14 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 boolean isDfco = state.isDfco();
                 boolean dfcoJustEnded = lastDfcoState && !isDfco;
                 lastDfcoState = isDfco;
-                if (dfcoJustEnded) dfcoExitTime = System.currentTimeMillis();
+                // V2.6.8 (BG7): 改用 elapsedRealtime, 避免 NTP/手动改时间导致 DFCO 窗口失准
+                if (dfcoJustEnded) dfcoExitTime = SystemClock.elapsedRealtime();
 
                 // V2.3: combustionInvalid 显示层门控
-                boolean combustionInvalid = isCombustionInvalid(data);
+                // V2.6.8 (BG6): 与状态机对齐 — state.isDfco() 时强制 combustionInvalid=true
+                // 避免 isCombustionInvalid 阈值 (speed>5||rpm>1400) 与 DFCO 状态机 (speed>15&&rpm>1400)
+                // 不一致导致显示层与状态机层语义割裂
+                boolean combustionInvalid = isCombustionInvalid(data) || state.isDfco();
                 updateCombustionInvalidTransition(combustionInvalid);
                 long sinceDfcoExitMs = combustionInvalidExitTimeMs > 0L
                     ? SystemClock.elapsedRealtime() - combustionInvalidExitTimeMs
@@ -768,7 +800,9 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 lastAfSync = afSync;
                 lastStrimSync = strimSync;
 
-                long now = System.currentTimeMillis();
+                // V2.6.8 (BG7): 改用 elapsedRealtime, 与 dfcoExitTime/recentMaxTime 等时钟源统一
+                // 避免 NTP/手动改时间导致极值计时和 DFCO 窗口失准
+                long now = SystemClock.elapsedRealtime();
 
                 // 更新 8 个主卡片
                 for (int i = 0; i < 8; i++) {
@@ -779,6 +813,10 @@ public class MainActivity extends Activity implements DataSource.Callback {
                     Double raw = data.get(pid);
 
                     if (raw != null) {
+                        // V2.6.8 (M1): 防御性 NaN/Infinity 过滤, 防止污染 EMA 与极值初始化
+                        if (Double.isNaN(raw) || Double.isInfinite(raw)) {
+                            continue;
+                        }
                         double val = raw;
 
                         // A/F 卡片: Lambda → A/F ratio (×14.7)
@@ -792,6 +830,13 @@ public class MainActivity extends Activity implements DataSource.Callback {
                         }
 
                         float fVal = (float) val;
+
+                        // V2.6.8 (方案C 第二层): 计算后再次过滤 NaN/Infinity
+                        // 即使 raw 合法, A/F 的 val*14.7 或 Boost 的 (val-lastBaro)/100 仍可能产生 NaN
+                        // (例如 lastBaro 异常时). 防止污染后续 EMA 与极值初始化
+                        if (Float.isNaN(fVal) || Float.isInfinite(fVal)) {
+                            continue;
+                        }
 
                         // V2.6.3: A/F / IGN / S.TRIM 语义门控必须早于 VALID_RANGE
                         // A/F 在 DFCO 中可能显示为 29.4 AFR, 不能先走 invalid alpha=0.4
@@ -1121,7 +1166,10 @@ public class MainActivity extends Activity implements DataSource.Callback {
                     Double kv = data.get(KNOCK_PIDS[i]);
                     if (kv != null) {
                         int knock = kv.intValue();
-                        int delta = knock - lastKnockCount[i];
+                        // V2.6.8 (BG1): 首帧基线 (-1=未建立) 只记录, 不算 delta
+                        // 避免 App 首次连接时 ECU 累积值触发假爆震闪烁
+                        boolean baselineEstablished = lastKnockCount[i] != -1;
+                        int delta = baselineEstablished ? (knock - lastKnockCount[i]) : 0;
                         if (delta > 0) {
                             totalDelta += delta;
                             cylYellowEnd[i] = now + 3000; // 黄色闪烁3秒
@@ -1299,7 +1347,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
         boolean isWarmup = state.isWarmup();
         boolean isSpool = state.sub == EngineSemanticState.SubState.SPOOL;
         boolean inDfcoRecovery = (dfcoExitTime > 0)
-            && (System.currentTimeMillis() - dfcoExitTime < 500);
+            && (SystemClock.elapsedRealtime() - dfcoExitTime < 500);
 
         switch (i) {
             case 0: // Ethanol — 配置参数, 永远有效
@@ -1321,14 +1369,15 @@ public class MainActivity extends Activity implements DataSource.Callback {
     }
 
     /** V2.2: Session Extreme 可信值过滤 — 排除 NaN/Infinity 和不可能的物理值 */
+    // V2.6.8 (M5): 与 VALID_RANGE 对齐, 避免冷启异常值初始化
     private boolean isTrustedForSessionExtreme(int index, float value) {
         if (Float.isNaN(value) || Float.isInfinite(value)) return false;
         switch (index) {
-            case 0: return value >= 0f && value <= 100f;        // Ethanol %
-            case 1: return value >= -40f && value <= 130f;       // ECT °C
-            case 2: return value >= -40f && value <= 120f;       // IAT °C
-            case 3: return value >= -30f && value <= 30f;        // L.TRIM %
-            case 4: return value >= -1.0f && value <= 2.5f;      // MAP/Boost bar
+            case 0: return value >= 0f && value <= 100f;        // Ethanol % (与 VALID_RANGE 一致)
+            case 1: return value >= -20f && value <= 130f;      // ECT °C (与 VALID_RANGE 一致)
+            case 2: return value >= -20f && value <= 130f;      // IAT °C (与 VALID_RANGE 一致)
+            case 3: return value >= -30f && value <= 30f;       // L.TRIM % (与 VALID_RANGE 一致)
+            case 4: return value >= -1.5f && value <= 3.0f;    // MAP/Boost bar (与 VALID_RANGE 一致)
             default: return false;
         }
     }
@@ -1391,7 +1440,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
         boolean overrunTarget = target >= 1.80f || lambda >= 1.80f;
         boolean openLoopDriving = closedLoop < 0.5f;
         boolean closedThrottleLike = pedal <= 0.5f || tp <= 3.0f || map < 35.0f;
-        boolean movingOrHighRpm = speed > 5.0f || rpm > 1200.0f;
+        // V2.6.8 (M2): 与 DFCO 状态机 RPM_DFCO_MIN=1400 对齐
+        boolean movingOrHighRpm = speed > 5.0f || rpm > 1400.0f;
 
         return fuelCut && overrunTarget && openLoopDriving && closedThrottleLike && movingOrHighRpm;
     }
@@ -1938,7 +1988,10 @@ public class MainActivity extends Activity implements DataSource.Callback {
     }
 
     // V2.6.7: 统一初始化极值卡片
+    // V2.6.8 (方案C): 防御性 NaN/Infinity 过滤, 防止异常值污染 maxTrack/minTrack
     private void initializeExtremeForCard(int i, float sessionValue, float recentValue, long now) {
+        if (Float.isNaN(sessionValue) || Float.isInfinite(sessionValue)) return;
+        if (Float.isNaN(recentValue) || Float.isInfinite(recentValue)) return;
         maxTrack[i] = sessionValue;
         minTrack[i] = sessionValue;
         recentMax[i] = recentValue;
@@ -2166,6 +2219,20 @@ public class MainActivity extends Activity implements DataSource.Callback {
         if (rpm <= ENGINE_STOPPED_RPM_THRESHOLD) {
             // 长断后重连且发动机已停，才结束 session 并重置极值
             resetAllExtremeHistoryForNewConnectionSession();
+        } else {
+            // V2.6.8 (BG5): 长断重连但发动机仍在运转 (服务区不熄火/蓝牙模块故障)
+            // 重置 baseline 标志 + 刷新 engineRunningSinceMs, 让新周期重新 baseline
+            // 但保留 MAX/MIN (session 仍有效, 极值有意义)
+            for (int i = 0; i < 8; i++) {
+                engineBaselineApplied[i] = false;
+            }
+            engineRunningSinceMs = SystemClock.elapsedRealtime();
+            engineRunningStable = false;
+            engineStoppedSinceMs = 0L;
+            // V2.6.8 补充: 也重置 session 标志, 让 updateEngineExtremeSession 完整重新初始化
+            // 否则 engineExtremeSessionStartMs 不刷新, shouldApplyConfidenceGray 的热启动窗口失准
+            engineExtremeSessionActive = false;
+            engineExtremeSessionStartMs = 0L;
         }
     }
 
@@ -2177,6 +2244,13 @@ public class MainActivity extends Activity implements DataSource.Callback {
             hasFiltered[i] = false;
             hasValidValue[i] = false;
         }
+
+        // V2.6.8 (BG1 补充): 重置爆震基线, 避免长断重连后 ECU 计数跳变产生负 delta 噪音
+        Arrays.fill(lastKnockCount, -1);
+        Arrays.fill(cylYellowEnd, 0L);
+        cylRapidAccum = 0;
+        cylRapidStart = 0L;
+        cylRedFlashing = false;
 
         engineRunningSinceMs = 0L;
         engineRunningStable = false;
