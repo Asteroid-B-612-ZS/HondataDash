@@ -349,7 +349,8 @@ public class HondataProtocol {
             sensorDefs.add(new SensorDef(pid, csBits, dataLen, ctType));
             offset += 3;
         }
-        return !sensorDefs.isEmpty();
+        // V2.6.9 (P1-6): 必须精确解析 sensorCount 条; 不完整定义视为协议错误
+        return sensorDefs.size() == sensorCount;
     }
 
     /**
@@ -361,12 +362,20 @@ public class HondataProtocol {
         if ((resp[1] & 0xFF) != RESP_DATA) return null;
         if (sensorDefs == null) return null;
 
+        // V2.6.9 (P1-6): 计算期望 payload 长度, 长度不足视为协议错误, 不返回部分帧
+        int expectedPayload = 0;
+        for (SensorDef def : sensorDefs) {
+            expectedPayload += def.dataLength;
+        }
+        if (resp.length < 4 + expectedPayload) return null;
+
         SensorData data = new SensorData();
         data.timestamp = System.currentTimeMillis();
 
         int offset = 4;
         for (int i = 0; i < sensorDefs.size(); i++) {
             SensorDef def = sensorDefs.get(i);
+            // 长度已在上面校验过, 这里 break 仅作防御
             if (offset + def.dataLength > resp.length) break;
 
             double raw = readRaw(resp, offset, def);

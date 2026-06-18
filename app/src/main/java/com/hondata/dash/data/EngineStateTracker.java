@@ -69,9 +69,9 @@ public class EngineStateTracker {
 
     // === WARMUP ECT 滞回阈值 ===
     private static final float ECT_WARMUP_ENTER = 65f;   // °C — 低于此进入暖机
-    // V2.6.8 (M4): 退出条件不再要求 CL=ON
-    // 理由: L15B7 冷启后立即闭环, CL=ON 永真, 旧条件永远不退出
-    // 新条件: ECT > 72 即退出, 5s 滞回防抖
+    // V2.6.8 (M4) / V2.6.9 (P2-6): 退出条件只看 ECT, 不再要求 CL=ON
+    // 说明: 旧条件要求 "ECT>72 且 CL=ON"。CL=ON 时旧条件更易满足 (并非"永真导致不退出")
+    // 改为只看 ECT 的原因: 让暖机退出只依赖物理温度, 与闭环状态解耦, 语义更清晰
     private static final float ECT_WARMUP_EXIT  = 72f;   // °C — 高于此退出暖机
 
     // === 置信度低通滤波系数 ===
@@ -165,7 +165,19 @@ public class EngineStateTracker {
         // ----------------------------------------------------------
         // 4. Confidence: 加权计算 + 低通滤波
         // ----------------------------------------------------------
-        float instant = computeConfidence(currentMain, data);
+        // V2.6.9 (P1-7): 关键 PID 缺失 (NaN) 时, confidence 强制衰减到 0
+        // 否则空数据会落入 NORMAL 且 computeConfidence(NORMAL)=1.0, 语义错误
+        boolean criticalPidMissing = Double.isNaN(data.getDouble(0x0100))   // RPM
+                || Double.isNaN(data.getDouble(0x0122))                      // TP
+                || Double.isNaN(data.getDouble(0x0110))                      // MAP
+                || Double.isNaN(data.getDouble(0x0101))                      // Speed
+                || Double.isNaN(data.getDouble(0x0130));                     // Inj
+        float instant;
+        if (criticalPidMissing) {
+            instant = 0f;  // 关键数据缺失 → 不可信
+        } else {
+            instant = computeConfidence(currentMain, data);
+        }
         smoothConfidence += CONFIDENCE_ALPHA * (instant - smoothConfidence);
         state.confidence = smoothConfidence;
 
@@ -184,7 +196,15 @@ public class EngineStateTracker {
         initialized = false;
         currentMain = EngineSemanticState.MainState.NORMAL;
         candidateMain = EngineSemanticState.MainState.NORMAL;
+        // V2.6.9 (P1-8): 补全所有计时和历史字段, 真正完成"重置"契约
+        candidateMainSince = 0L;
+        mainStateSince = 0L;
         warmupActive = false;
+        warmupExitCandidateSince = 0L;
+        lastTime = 0L;
+        lastTp = 0f;
+        lastRpm = 0f;
+        lastMap = 0f;
         smoothConfidence = 1.0f;
         state.main = EngineSemanticState.MainState.NORMAL;
         state.sub = EngineSemanticState.SubState.NONE;

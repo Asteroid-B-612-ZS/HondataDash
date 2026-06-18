@@ -347,6 +347,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private long lastBtDisconnectedAtMs = 0L;
     private boolean btWasDisconnected = false;
 
+    // V2.6.9 (P0-3): 长断重连但发动机在跑时的视觉抑制窗口
+    // 此期间灰显逻辑跳过 (给数据一个稳定窗口), 但不动 MAX/MIN/baseline
+    private static final long RECONNECT_VISUAL_SUPPRESS_MS = 3000L;
+    private long reconnectVisualSuppressUntilMs = 0L;
+
     // ===== 卡片配置 =====
     // 第1行 (慢数据): Ethanol, ECT, IAT, L.TRIM
     // 第2行 (快数据): MAP, A/F, IGN, S.TRIM
@@ -662,6 +667,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
         }
         if (dataSource.isConnected()) {
             dataSource.startPolling();
+        } else if (!USE_DEMO) {
+            // V2.6.9 (P0-2 配套): 后台期间蓝牙可能被系统断开, 回前台时若已断开则重新连接
+            // 轻量方案: 不用 BroadcastReceiver, 只在 onResume 兜底一次
+            // BluetoothSource.connect 内部有重连仲裁, 不会重复连接
+            dataSource.connect(null);
         }
     }
 
@@ -677,6 +687,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
         freshnessHandler.removeCallbacks(freshnessRunnable);
         // V2.6.8 (BG3): 清理 flashHandler, 防止 flashTick 持有 Activity 引用泄漏
         flashHandler.removeCallbacks(flashTick);
+        // V2.6.9 (P2-3): 先解绑 callback, 防止 disconnect 异步回调到已销毁的 Activity
+        dataSource.setCallback(null);
         dataSource.disconnect();
     }
 
@@ -2152,6 +2164,12 @@ public class MainActivity extends Activity implements DataSource.Callback {
         // A/F 红色报警优先
         if (i == 5 && afFlashing) return false;
 
+        // V2.6.9 (P0-3): 长断重连视觉抑制窗口内不灰显 (给数据稳定时间)
+        long nowGray = SystemClock.elapsedRealtime();
+        if (reconnectVisualSuppressUntilMs > 0L && nowGray < reconnectVisualSuppressUntilMs) {
+            return false;
+        }
+
         // 发动机还没稳定运行前，不做灰显
         if (!engineRunningStable || !engineExtremeSessionActive) return false;
 
@@ -2205,34 +2223,35 @@ public class MainActivity extends Activity implements DataSource.Callback {
         long now = SystemClock.elapsedRealtime();
         long lostMs = now - lastBtDisconnectedAtMs;
 
-        btWasDisconnected = false;
-        lastBtDisconnectedAtMs = 0L;
-
         // 短断：继续原 session，不重置 MAX/MIN，不重新 baseline
         if (lostMs <= BT_SESSION_PRESERVE_MS) {
+            btWasDisconnected = false;
+            lastBtDisconnectedAtMs = 0L;
             return;
         }
 
         // 长时间断开：根据重连后的 RPM 判断旧 session 是否已结束
-        float rpm = (float) data.getDouble(0x0100);
+        double rpmRaw = data.getDouble(0x0100);
+        // V2.6.9 (P1-1): RPM 缺失 (NaN) 时不清 btWasDisconnected, 等下一帧再判断
+        // 否则 NaN<=300 为 false → 误判为发动机在运行 → 错误保留旧 session
+        if (Double.isNaN(rpmRaw) || Double.isInfinite(rpmRaw)) {
+            return;
+        }
+        float rpm = (float) rpmRaw;
+
+        // RPM 有效, 正式处理重连, 清除断线标记
+        btWasDisconnected = false;
+        lastBtDisconnectedAtMs = 0L;
 
         if (rpm <= ENGINE_STOPPED_RPM_THRESHOLD) {
             // 长断后重连且发动机已停，才结束 session 并重置极值
             resetAllExtremeHistoryForNewConnectionSession();
         } else {
-            // V2.6.8 (BG5): 长断重连但发动机仍在运转 (服务区不熄火/蓝牙模块故障)
-            // 重置 baseline 标志 + 刷新 engineRunningSinceMs, 让新周期重新 baseline
-            // 但保留 MAX/MIN (session 仍有效, 极值有意义)
-            for (int i = 0; i < 8; i++) {
-                engineBaselineApplied[i] = false;
-            }
-            engineRunningSinceMs = SystemClock.elapsedRealtime();
-            engineRunningStable = false;
-            engineStoppedSinceMs = 0L;
-            // V2.6.8 补充: 也重置 session 标志, 让 updateEngineExtremeSession 完整重新初始化
-            // 否则 engineExtremeSessionStartMs 不刷新, shouldApplyConfidenceGray 的热启动窗口失准
-            engineExtremeSessionActive = false;
-            engineExtremeSessionStartMs = 0L;
+            // V2.6.9 (P0-3): 长断重连但发动机仍在运转 (服务区不熄火/蓝牙模块故障)
+            // 方案 A: 视为同一运行周期 — 完全不动 baseline/session, 真正保留 MAX/MIN
+            // 只设独立视觉抑制字段, 给灰显一个重连恢复窗口
+            // (旧 BG5 方案会重置 baseline, 导致 1s 后当前值覆盖原 MAX/MIN, 语义错误)
+            reconnectVisualSuppressUntilMs = SystemClock.elapsedRealtime() + RECONNECT_VISUAL_SUPPRESS_MS;
         }
     }
 
