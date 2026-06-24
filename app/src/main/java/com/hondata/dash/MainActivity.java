@@ -338,6 +338,25 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private static final float WARMUP_ECT_THRESHOLD = 70f;
     private static final long HOT_START_CONFIDENCE_SUPPRESS_MS = 3000L;
 
+    // V2.7.0: 主数据语义颜色 — 复用现有 UI 色号，避免风格割裂
+    private static final int COLOR_TEXT_NORMAL = 0xFFFFFFFF;
+    private static final int COLOR_SAFE        = 0xFF3FB950;
+    private static final int COLOR_WARN        = 0xFFD29922;
+    private static final int COLOR_DANGER      = 0xFFFF4444;
+    private static final int COLOR_INFO_BLUE   = 0xFF00D8FF;
+
+    // V2.7.0: L.TRIM / S.TRIM 语义阈值 (按偏离 0 的绝对值)
+    private static final float TRIM_GREEN_ABS_MAX = 5f;
+    private static final float TRIM_WARN_ABS_MAX  = 15f;
+
+    // V2.7.0: IGN 语义阈值
+    private static final float IGN_GREEN_MIN = 0f;
+    private static final float IGN_WARN_MIN  = -5f;
+
+    // V2.7.0: MAP 主卡片显示为相对增压 bar，不是 absolute kPa
+    private static final float MAP_GREEN_MAX = 1.45f;
+    private static final float MAP_WARN_MAX  = 1.60f;
+
     // V2.6.7: 每个发动机运行周期，每个主卡片只允许一次 engine baseline 覆盖
     private final boolean[] engineBaselineApplied = new boolean[8];
     private long engineExtremeSessionStartMs = 0L;
@@ -578,8 +597,12 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 bar.setTicks(
                     new float[]{-25, -12.5f, 0, 12.5f, 25},
                     new String[]{"-25", "", "0", "", "25"});
-                bar.addZone(-25, 0, 0xFFFF4444);
-                bar.addZone(0, 25, 0xFF0088FF);
+                // V2.7.0: 语义色区 — 按偏离 0 的绝对值
+                bar.addZone(-25, -15, COLOR_DANGER);
+                bar.addZone(-15, -5, COLOR_WARN);
+                bar.addZone(-5, 5, COLOR_SAFE);
+                bar.addZone(5, 15, COLOR_WARN);
+                bar.addZone(15, 25, COLOR_DANGER);
                 bar.setAnchor(0);
                 bar.setThermal(0.2f, 0.1f, 0.08f);  // 极慢吸热, 极慢散热, 极慢漂移
                 break;
@@ -589,10 +612,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 bar.setTicks(
                     new float[]{-1.0f, 0, 0.5f, 1.0f, 1.5f, 2.0f},
                     new String[]{"-1.0", "0", "0.5", "1.0", null, "2.0"});
-                bar.addZone(-1.0f, 0, 0xFF00D8FF);
-                bar.addZone(0, 0.5f, 0xFF0088FF);
-                bar.addZone(0.5f, 1.5f, 0xFF3FB950);
-                bar.addZone(1.5f, 2.0f, 0xFFFF4444);
+                // V2.7.0: 语义色区 — 真空蓝色, 正压按相对增压 bar
+                bar.addZone(-1.0f, 0, COLOR_INFO_BLUE);
+                bar.addZone(0, MAP_GREEN_MAX, COLOR_SAFE);
+                bar.addZone(MAP_GREEN_MAX, MAP_WARN_MAX, COLOR_WARN);
+                bar.addZone(MAP_WARN_MAX, 2.0f, COLOR_DANGER);
                 bar.setAnchor(0);
                 bar.setExpand(0, 1.5f, 2.0f);
                 // stiffness=5 中速建压, damping=0.45 欠阻尼, peakRetention=0.70 半衰期~3s
@@ -630,8 +654,12 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 bar.setTicks(
                     new float[]{-25, 0, 25},
                     new String[]{"-25", "0", "25"});
-                bar.addZone(-25, 0, 0xFFFF4444);
-                bar.addZone(0, 25, 0xFF0088FF);
+                // V2.7.0: 语义色区 — 按偏离 0 的绝对值
+                bar.addZone(-25, -15, COLOR_DANGER);
+                bar.addZone(-15, -5, COLOR_WARN);
+                bar.addZone(-5, 5, COLOR_SAFE);
+                bar.addZone(5, 15, COLOR_WARN);
+                bar.addZone(15, 25, COLOR_DANGER);
                 bar.setAnchor(0);
                 // gain=2.5 高敏感, decay=0.65 慢衰减 (半衰期~5.3s)
                 bar.setTransient(2.5f, 0.65f);
@@ -1019,7 +1047,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
                             String mainText = formatMainText(i, fVal);
                             renderMainText(i, mainText);
                             // 默认白色, 后面各卡片按条件覆盖颜色
-                            valueIntViews[i].setTextColor(0xFFFFFFFF);
+                            valueIntViews[i].setTextColor(COLOR_TEXT_NORMAL);
                             valueIntViews[i].setAlpha(1f);
 
                             if (scaleBars[i] != null) {
@@ -1130,6 +1158,10 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                     valueIntViews[i].setAlpha(1f);
                                 }
                             }
+
+                            // V2.7.0: L.TRIM / MAP / IGN / S.TRIM 主数据语义颜色
+                            // 必须在 DFCO/SYNC 前置门控之后, 且在低置信度灰显之前
+                            applyMainValueSemanticColor(i, fVal);
 
                             // V2.6.7: A/F / IGN / S.TRIM 低置信度灰色模式
                             applyConfidenceVisual(i, state, data);
@@ -2278,6 +2310,58 @@ public class MainActivity extends Activity implements DataSource.Callback {
         engineStoppedSinceMs = 0L;
 
         resetEthanolSettlingGate();
+    }
+
+    /** V2.7.0: L.TRIM / S.TRIM 颜色 — 按偏离 0 的绝对值判断 */
+    private int getTrimSemanticColor(float trim) {
+        float abs = Math.abs(trim);
+        if (abs <= TRIM_GREEN_ABS_MAX) return COLOR_SAFE;
+        if (abs <= TRIM_WARN_ABS_MAX) return COLOR_WARN;
+        return COLOR_DANGER;
+    }
+
+    /** V2.7.0: IGN 颜色 — 只负责数字状态；DFCO/SYNC/低置信度由外层原逻辑处理 */
+    private int getIgnSemanticColor(float ign) {
+        if (ign >= IGN_GREEN_MIN) return COLOR_SAFE;
+        if (ign >= IGN_WARN_MIN) return COLOR_WARN;
+        return COLOR_DANGER;
+    }
+
+    /** V2.7.0: MAP 颜色 — 输入必须是当前主卡片显示的相对增压 bar */
+    private int getMapSemanticColor(float boostBar) {
+        if (boostBar <= MAP_GREEN_MAX) return COLOR_SAFE;
+        if (boostBar <= MAP_WARN_MAX) return COLOR_WARN;
+        return COLOR_DANGER;
+    }
+
+    /**
+     * V2.7.0: 主数据语义颜色入口。
+     * 只处理 L.TRIM / MAP / IGN / S.TRIM。
+     * 不处理 Ethanol / ECT / IAT / A/F，这些卡片已有独立颜色逻辑。
+     * 必须在 DFCO/SYNC 前置门控之后、applyConfidenceVisual 之前调用。
+     */
+    private void applyMainValueSemanticColor(int i, float fVal) {
+        if (valueIntViews[i] == null) return;
+        if (semanticMode[i]) return;
+
+        switch (i) {
+            case 3: // L.TRIM
+                valueIntViews[i].setTextColor(getTrimSemanticColor(fVal));
+                valueIntViews[i].setAlpha(1f);
+                break;
+            case 4: // MAP: fVal 已经是相对增压 bar
+                valueIntViews[i].setTextColor(getMapSemanticColor(fVal));
+                valueIntViews[i].setAlpha(1f);
+                break;
+            case 6: // IGN
+                valueIntViews[i].setTextColor(getIgnSemanticColor(fVal));
+                valueIntViews[i].setAlpha(1f);
+                break;
+            case 7: // S.TRIM
+                valueIntViews[i].setTextColor(getTrimSemanticColor(fVal));
+                valueIntViews[i].setAlpha(1f);
+                break;
+        }
     }
 
     /** V2.3: Lambda 语义 A/F 颜色判定 — WOT 用绝对 lambda, 闭环用 lambda error */

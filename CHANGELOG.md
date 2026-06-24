@@ -6,6 +6,27 @@ The app is a lightweight Android dashboard for displaying Hondata FlashPro Bluet
 
 ---
 
+## V2.7.0 — Main Value Semantic Colors
+*2026-06-24 · versionCode 24*
+
+**Summary**
+Built on the verified V2.6.9 Bluetooth lifecycle and session-integrity baseline, this release adds semantic main-value colors for L.TRIM, MAP, IGN, and S.TRIM so safe, warning, and abnormal ranges are easier to read at a glance.
+
+**Changed**
+- L.TRIM / S.TRIM: absolute trim within ±5% is green, within ±15% is yellow, outside ±15% is red.
+- IGN: 0° or higher is green, -5° to 0° is yellow, below -5° is red.
+- MAP: evaluated using the displayed relative boost value in bar; up to 1.45bar is green, 1.45~1.60bar is yellow, above 1.60bar is red.
+- L.TRIM, S.TRIM, and MAP scale-bar zones are aligned with the new main-value semantics.
+
+**Unchanged**
+- DFCO / SYNC semantic display behavior is unchanged.
+- A/F Lambda semantic coloring and WOT lean flashing are unchanged.
+- A/F / IGN / S.TRIM low-confidence gray behavior is unchanged and still has final visual priority.
+- Bluetooth connection, reconnect, protocol parsing, state tracking, and MAX/MIN history are unchanged.
+
+---
+
+
 ## V2.6.7 — Engine Baseline, Bluetooth Reconnect Hardening, Confidence Display Cleanup
 *2026-06-15 · versionCode 21*
 
