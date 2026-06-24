@@ -575,11 +575,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 bar.setTicks(
                     new float[]{40, 60, 80, 100, 120},
                     new String[]{"40", "60", "80", "100", "120"});
-                // V2.7.0: <80冷车蓝, 80~95正常绿, 96~100过热红, >100红
-                bar.addZone(40, 80, COLOR_INFO_BLUE);
-                bar.addZone(80, 95, COLOR_SAFE);
-                bar.addZone(95, 100, COLOR_WARN);
-                bar.addZone(100, 120, COLOR_DANGER);
+                bar.addZone(40, 100, 0xFF00D8FF);
+                bar.addZone(100, 120, 0xFFFF4444);
                 bar.setAnchor(40);
                 // gain=0.5 吸热, cooling=0.3 散热慢, memory=0.2 峰值漂移慢
                 bar.setThermal(0.5f, 0.3f, 0.2f);
@@ -600,12 +597,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 bar.setTicks(
                     new float[]{-25, -12.5f, 0, 12.5f, 25},
                     new String[]{"-25", "", "0", "", "25"});
-                // V2.7.0: 语义色区 — 按偏离 0 的绝对值
-                bar.addZone(-25, -15, COLOR_DANGER);
-                bar.addZone(-15, -5, COLOR_WARN);
-                bar.addZone(-5, 5, COLOR_SAFE);
-                bar.addZone(5, 15, COLOR_WARN);
-                bar.addZone(15, 25, COLOR_DANGER);
+                bar.addZone(-25, 0, 0xFFFF4444);
+                bar.addZone(0, 25, 0xFF0088FF);
                 bar.setAnchor(0);
                 bar.setThermal(0.2f, 0.1f, 0.08f);  // 极慢吸热, 极慢散热, 极慢漂移
                 break;
@@ -615,11 +608,10 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 bar.setTicks(
                     new float[]{-1.0f, 0, 0.5f, 1.0f, 1.5f, 2.0f},
                     new String[]{"-1.0", "0", "0.5", "1.0", null, "2.0"});
-                // V2.7.0: 语义色区 — 真空蓝色, 正压按相对增压 bar
-                bar.addZone(-1.0f, 0, COLOR_INFO_BLUE);
-                bar.addZone(0, MAP_GREEN_MAX, COLOR_SAFE);
-                bar.addZone(MAP_GREEN_MAX, MAP_WARN_MAX, COLOR_WARN);
-                bar.addZone(MAP_WARN_MAX, 2.0f, COLOR_DANGER);
+                bar.addZone(-1.0f, 0, 0xFF00D8FF);
+                bar.addZone(0, 0.5f, 0xFF0088FF);
+                bar.addZone(0.5f, 1.5f, 0xFF3FB950);
+                bar.addZone(1.5f, 2.0f, 0xFFFF4444);
                 bar.setAnchor(0);
                 bar.setExpand(0, 1.5f, 2.0f);
                 // stiffness=5 中速建压, damping=0.45 欠阻尼, peakRetention=0.70 半衰期~3s
@@ -657,12 +649,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 bar.setTicks(
                     new float[]{-25, 0, 25},
                     new String[]{"-25", "0", "25"});
-                // V2.7.0: 语义色区 — 按偏离 0 的绝对值
-                bar.addZone(-25, -15, COLOR_DANGER);
-                bar.addZone(-15, -5, COLOR_WARN);
-                bar.addZone(-5, 5, COLOR_SAFE);
-                bar.addZone(5, 15, COLOR_WARN);
-                bar.addZone(15, 25, COLOR_DANGER);
+                bar.addZone(-25, 0, 0xFFFF4444);
+                bar.addZone(0, 25, 0xFF0088FF);
                 bar.setAnchor(0);
                 // gain=2.5 高敏感, decay=0.65 慢衰减 (半衰期~5.3s)
                 bar.setTransient(2.5f, 0.65f);

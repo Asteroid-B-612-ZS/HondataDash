@@ -17,7 +17,7 @@ Built on the verified V2.6.9 Bluetooth lifecycle and session-integrity baseline,
 - IGN: 0° or higher is green, -5° to 0° is yellow, below -5° is red.
 - MAP: evaluated using the displayed relative boost value in bar; up to 1.45bar is green, 1.45~1.60bar is yellow, above 1.60bar is red.
 - ECT: normal operating range (80~95°C) changed from white to green; cold blue and overheat red are unchanged.
-- L.TRIM, S.TRIM, MAP, and ECT scale-bar zones are aligned with the new main-value semantics.
+- Scale-bar zones remain unchanged (V2.6.9 direction/emotion mode preserved).
 
 **Unchanged**
 - DFCO / SYNC semantic display behavior is unchanged.
