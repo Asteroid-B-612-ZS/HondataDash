@@ -575,8 +575,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 bar.setTicks(
                     new float[]{40, 60, 80, 100, 120},
                     new String[]{"40", "60", "80", "100", "120"});
-                bar.addZone(40, 100, 0xFF00D8FF);
-                bar.addZone(100, 120, 0xFFFF4444);
+                // V2.7.0: <80冷车蓝, 80~95正常绿, 96~100过热红, >100红
+                bar.addZone(40, 80, COLOR_INFO_BLUE);
+                bar.addZone(80, 95, COLOR_SAFE);
+                bar.addZone(95, 100, COLOR_WARN);
+                bar.addZone(100, 120, COLOR_DANGER);
                 bar.setAnchor(40);
                 // gain=0.5 吸热, cooling=0.3 散热慢, memory=0.2 峰值漂移慢
                 bar.setThermal(0.5f, 0.3f, 0.2f);
@@ -1087,7 +1090,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                 valueIntViews[i].setTextColor(ethColor);
                             }
 
-                            // ECT: 温度变色 <80蓝 80~95白 96~100红 >100紫闪烁
+                            // ECT: 温度变色 <80蓝 80~95绿(安全) 96~100红 >100紫闪烁
                             if (i == 1) {
                                 lastEctVal = fVal;
                                 boolean shouldFlash = fVal > 100;
@@ -1098,11 +1101,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                 if (!ectFlashing) {
                                     int color;
                                     if (fVal < 80) {
-                                        color = 0xFF00D8FF; // 蓝色
+                                        color = 0xFF00D8FF; // 蓝色 (冷车)
                                     } else if (fVal <= 95) {
-                                        color = 0xFFFFFFFF; // 白色
+                                        color = COLOR_SAFE; // 绿色 (正常工作温度)
                                     } else {
-                                        color = 0xFFFF4444; // 红色 (96~100)
+                                        color = 0xFFFF4444; // 红色 (96~100 过热警告)
                                     }
                                     valueIntViews[i].setTextColor(color);
                                     valueIntViews[i].setAlpha(1f);
