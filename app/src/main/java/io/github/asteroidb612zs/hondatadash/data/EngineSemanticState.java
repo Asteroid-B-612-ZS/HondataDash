@@ -1,16 +1,20 @@
 package io.github.asteroidb612zs.hondatadash.data;
 
 /**
- * RC7 engine semantic state.
+ * V2 semantic state.
  *
- * The dimensions are deliberately orthogonal:
+ * Orthogonal dimensions:
  *  - MainState describes the ECU/load strategy.
+ *  - ThermalContext describes engine thermal readiness independently of load strategy.
  *  - Modifier describes driver/load transients.
  *  - ShiftPhase describes clutch/gear shift intent and confirmation.
  *  - CombustionState describes whether combustion-derived PIDs are meaningful.
  *
- * This prevents a normal shift fuel cut from being mislabeled as DFCO and lets
- * the display hold only combustion-sensitive values while MAP/RPM stay live.
+ * Important invariant produced by EngineStateTracker:
+ *   shiftPhase != NONE  <=>  modifier == SHIFT
+ *
+ * ThermalContext is intentionally independent of MainState so a cold engine may be
+ * WOT + COLD/WARMING instead of being forced to choose between WOT and WARMUP.
  */
 public class EngineSemanticState {
 
@@ -20,6 +24,13 @@ public class EngineSemanticState {
         WARMUP,
         IDLE,
         NORMAL
+    }
+
+    public enum ThermalContext {
+        UNKNOWN,
+        COLD,
+        WARMING,
+        READY
     }
 
     public enum SubState {
@@ -37,7 +48,6 @@ public class EngineSemanticState {
         BOOST_SURGE,
         SHIFT,
         COAST,
-        RPM_DIP,
         NONE
     }
 
@@ -58,6 +68,7 @@ public class EngineSemanticState {
     }
 
     public MainState main = MainState.NORMAL;
+    public ThermalContext thermal = ThermalContext.UNKNOWN;
     public SubState sub = SubState.NONE;
     public Modifier modifier = Modifier.NONE;
     public ShiftPhase shiftPhase = ShiftPhase.NONE;
@@ -66,7 +77,10 @@ public class EngineSemanticState {
 
     public boolean isDfco()    { return main == MainState.DFCO; }
     public boolean isWot()     { return main == MainState.WOT; }
-    public boolean isWarmup()  { return main == MainState.WARMUP; }
+    /** Legacy presentation/readiness helper: thermal warmup, not MainState identity. */
+    public boolean isWarmup()  { return thermal != ThermalContext.READY; }
+    public boolean isWarmupMainState() { return main == MainState.WARMUP; }
+    public boolean isThermallyReady() { return thermal == ThermalContext.READY; }
     public boolean isIdle()    { return main == MainState.IDLE; }
     public boolean isNormal()  { return main == MainState.NORMAL; }
     public boolean hasModifier() { return modifier != Modifier.NONE; }
@@ -75,9 +89,7 @@ public class EngineSemanticState {
     public boolean isShiftArmed() { return shiftPhase == ShiftPhase.SHIFT_ARMED; }
     public boolean isShiftConfirmed() { return shiftPhase == ShiftPhase.SHIFT_CONFIRMED; }
     public boolean isShiftActive() { return shiftPhase != ShiftPhase.NONE; }
-    public boolean isShift() {
-        return isShiftActive() || modifier == Modifier.SHIFT || modifier == Modifier.RPM_DIP;
-    }
+    public boolean isShift() { return isShiftActive(); }
 
     public boolean isShiftFuelCut() { return combustion == CombustionState.SHIFT_FUEL_CUT; }
     public boolean isDfcoFuelCut() { return combustion == CombustionState.DFCO_FUEL_CUT; }

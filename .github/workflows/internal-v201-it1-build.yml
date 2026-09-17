@@ -1,0 +1,158 @@
+name: Build V2.0.1-internal.1
+
+on:
+  push:
+    branches:
+      - internal/v2.0.1-it1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_CERT_SHA256: 921789a81d998952834c5603ed0cb82ce5ff7ab5ffcbb1504e3ca3353a67a101
+  RC6_DEBUG_KEYSTORE_B64: ${{ secrets.RC6_DEBUG_KEYSTORE_B64 }}
+
+jobs:
+  qa-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout internal branch
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify internal version identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode 45' app/build.gradle
+          grep -q 'versionName "2.0.1-internal.1"' app/build.gradle
+          grep -q 'applicationId "io.github.asteroidb612zs.hondatadash.internal"' app/build.gradle
+          test "${GITHUB_REF_NAME}" = "internal/v2.0.1-it1"
+
+      - name: Run source and semantic QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/verify_v201_internal_semantics.py
+          python tests/verify_semantics_rc5.py
+          python tests/verify_semantics_rc7.py
+          python tests/verify_color_rc7.py
+          python tests/verify_api17_rc7.py
+          python tests/verify_refinement.py
+          python tests/verify_oem.py
+          python tests/verify_rc8_semantic_presentation.py
+
+      - name: Restore signing identity and Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${RC6_DEBUG_KEYSTORE_B64}"
+          mkdir -p "$HOME/.android"
+          printf '%s' "${RC6_DEBUG_KEYSTORE_B64}" | base64 --decode > "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
+          cert=$(LC_ALL=C keytool -list -v -keystore "$HOME/.android/debug.keystore" -alias androiddebugkey -storepass android 2>/dev/null | sed -n 's/.*SHA256: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')
+          test "$cert" = "$EXPECTED_CERT_SHA256"
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER" || SDKMANAGER="$(command -v sdkmanager)"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" 'platforms;android-33' 'build-tools;33.0.2'
+
+      - name: Restore and verify project fonts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd app/src/main/assets/fonts
+          curl --fail --location --retry 3 --silent --show-error 'https://raw.githubusercontent.com/googlefonts/roboto-2/main/src/hinted/RobotoCondensed-Bold.ttf' -o RobotoCondensed-Bold.ttf
+          curl --fail --location --retry 3 --silent --show-error 'https://raw.githubusercontent.com/googlefonts/roboto-2/main/src/hinted/RobotoCondensed-BoldItalic.ttf' -o RobotoCondensed-BoldItalic.ttf
+          curl --fail --location --retry 3 --silent --show-error 'https://raw.githubusercontent.com/googlefonts/roboto-2/main/src/hinted/RobotoCondensed-Regular.ttf' -o RobotoCondensed-Regular.ttf
+          printf '%s  %s\n' \
+            2d06877e39956ec96dbafb0d152644e8b2245d647e58c7bb7c91bb2b15defa93 RobotoCondensed-Bold.ttf \
+            7920d38543afa4e5cac7b02f84ec1de41a3fd65ab540348bd870b74471b3eceb RobotoCondensed-BoldItalic.ttf \
+            a9603db0f52e244064de480253ab7f48e6c21c22e24528207cab06d39abc7bb7 RobotoCondensed-Regular.ttf | sha256sum -c -
+          cd "$GITHUB_WORKSPACE"
+          python tests/verify_text_fit.py --fonts app/src/main/assets/fonts/RobotoCondensed-Regular.ttf app/src/main/assets/fonts/RobotoCondensed-Bold.ttf
+          python tests/verify_instruments.py --font app/src/main/assets/fonts/RobotoCondensed-Regular.ttf
+
+      - name: Build signed internal APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p internal-build-out
+          chmod +x gradlew
+
+          cat >> app/build.gradle <<'GRADLE'
+
+          android {
+              signingConfigs {
+                  debug {
+                      storeFile file(System.getProperty("user.home") + "/.android/debug.keystore")
+                      storePassword "android"
+                      keyAlias "androiddebugkey"
+                      keyPassword "android"
+                  }
+              }
+          }
+          GRADLE
+
+          ./gradlew :app:signingReport --no-daemon > internal-build-out/SIGNING_REPORT.txt
+          ./gradlew clean :app:assembleRelease --no-daemon --stacktrace
+
+          RAW=internal-build-out/HondataDash_V2.0.1-internal.1_raw.apk
+          ALIGNED=internal-build-out/HondataDash_V2.0.1-internal.1_aligned.apk
+          FINAL=internal-build-out/HondataDash_V2.0.1-internal.1.apk
+          cp app/build/outputs/apk/release/app-release.apk "$RAW"
+          BT="${ANDROID_HOME}/build-tools/33.0.2"
+          "$BT/zipalign" -f 4 "$RAW" "$ALIGNED"
+          "$BT/apksigner" sign \
+            --ks "$HOME/.android/debug.keystore" \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out "$FINAL" "$ALIGNED"
+          rm -f "$RAW" "$ALIGNED"
+
+          "$BT/zipalign" -c -v 4 "$FINAL" | tee internal-build-out/ZIPALIGN.txt
+          "$BT/apksigner" verify --verbose --print-certs "$FINAL" | tee internal-build-out/APKSIGNER.txt
+          "$BT/aapt" dump badging "$FINAL" | tee internal-build-out/AAPT.txt
+          sha256sum "$FINAL" | tee internal-build-out/SHA256SUMS.txt
+
+          python - <<'PY'
+          import os, re
+          from pathlib import Path
+          root=Path('internal-build-out')
+          aapt=(root/'AAPT.txt').read_text(errors='replace')
+          sig=(root/'APKSIGNER.txt').read_text(errors='replace')
+          assert "name='io.github.asteroidb612zs.hondatadash.internal'" in aapt
+          assert "versionCode='45'" in aapt
+          assert "versionName='2.0.1-internal.1'" in aapt
+          assert "sdkVersion:'17'" in aapt
+          assert "targetSdkVersion:'28'" in aapt
+          m=re.search(r'certificate SHA-256 digest:\s*([0-9a-fA-F: ]+)', sig)
+          assert m, sig
+          cert=re.sub(r'[^0-9a-f]','',m.group(1).lower())
+          assert cert == os.environ['EXPECTED_CERT_SHA256'], (cert, os.environ['EXPECTED_CERT_SHA256'])
+          assert 'Verified using v1 scheme (JAR signing): true' in sig
+          assert 'Verified using v2 scheme (APK Signature Scheme v2): true' in sig
+          print('PASS: internal APK identity / alignment / signature')
+          PY
+
+      - name: Upload internal test artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HondataDash_V2.0.1-internal.1
+          path: internal-build-out/
+          if-no-files-found: error
+          retention-days: 30

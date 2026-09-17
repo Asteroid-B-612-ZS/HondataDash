@@ -3,11 +3,12 @@ package io.github.asteroidb612zs.hondatadash.data;
 import android.os.SystemClock;
 
 /**
- * RC7 engine semantic tracker.
+ * V2 engine semantic tracker.
  *
- * Key change from RC5: shift intent/confirmation is evaluated before DFCO and
- * combustion validity is represented independently. A clutch/gear shift fuel
- * cut therefore cannot be promoted to MainState.DFCO.
+ * V2.0.1-internal.1 keeps V2.0 MainState behaviour intact, but adds an orthogonal
+ * ThermalContext. This lets the tracker represent combinations such as WOT + COLD
+ * instead of forcing thermal readiness and load strategy into one mutually exclusive
+ * state dimension.
  */
 public class EngineStateTracker {
 
@@ -18,8 +19,13 @@ public class EngineStateTracker {
     private long candidateMainSince = 0L;
     private long mainStateSince = 0L;
 
+    // Legacy MainState.WARMUP classifier retained for compatibility.
     private boolean warmupActive = false;
     private long warmupExitCandidateSince = 0L;
+
+    // Orthogonal thermal readiness context used by presentation/history admission.
+    private EngineSemanticState.ThermalContext thermalContext = EngineSemanticState.ThermalContext.UNKNOWN;
+    private long thermalReadyCandidateSince = 0L;
 
     private float lastTp = 0f;
     private float lastRpm = 0f;
@@ -29,7 +35,6 @@ public class EngineStateTracker {
     private long lastTime = 0L;
     private boolean initialized = false;
 
-    // RC6 shift phase state.
     private EngineSemanticState.ShiftPhase currentShiftPhase = EngineSemanticState.ShiftPhase.NONE;
     private long shiftArmedSince = 0L;
     private long shiftConfirmedUntil = 0L;
@@ -37,7 +42,6 @@ public class EngineStateTracker {
     private boolean shiftGearChangeObserved = false;
     private boolean suppressRearmUntilClutchRelease = false;
 
-    // RC6 combustion recovery state.
     private EngineSemanticState.CombustionState previousCombustion = EngineSemanticState.CombustionState.FIRING_VALID;
     private long combustionRecoveryUntil = 0L;
     private EngineSemanticState.ShiftPhase previousShiftPhase = EngineSemanticState.ShiftPhase.NONE;
@@ -61,8 +65,6 @@ public class EngineStateTracker {
     private static final float RPM_RATE_THRESHOLD = 1200f;
     private static final float MAP_RATE_THRESHOLD = 300f;
 
-    // RC6 SHIFT_ARMED front gate. 4% is above clutch noise but ~65-75 ms earlier
-    // than RC5's 18% threshold in the supplied log.
     private static final float SHIFT_ARM_CLUTCH_ON = 4f;
     private static final float SHIFT_ARM_CLUTCH_RESET = 2f;
     private static final float SHIFT_CLUTCH_CONFIRM = 18f;
@@ -70,9 +72,6 @@ public class EngineStateTracker {
     private static final long SHIFT_ARM_TIMEOUT_MS = 600L;
     private static final long SHIFT_CONFIRM_BRIDGE_MS = 420L;
     private static final long SHIFT_CLUTCH_EXTEND_MS = 220L;
-    // Historical long logs show 99% of observed gear changes within ~2.13 s and all
-    // within 2.48 s of clutch rise. A 3 s semantic ceiling prevents a held clutch
-    // from masquerading as an endless SHIFT while preserving genuinely slow shifts.
     private static final long SHIFT_MAX_CONFIRMED_MS = 3000L;
     private static final float SHIFT_CONFIRM_RPM_RATE = 1200f;
     private static final float COAST_TP_MAX = 3f;
@@ -84,6 +83,8 @@ public class EngineStateTracker {
 
     private static final float ECT_WARMUP_ENTER = 65f;
     private static final float ECT_WARMUP_EXIT = 72f;
+    /** Cold-start thermal readiness requires five stable seconds above the exit threshold. */
+    private static final long THERMAL_READY_CONFIRM_MS = 5000L;
     private static final float CONFIDENCE_ALPHA = 0.1f;
 
     private static final float FUEL_CUT_INJ_MAX = 0.05f;
@@ -117,7 +118,10 @@ public class EngineStateTracker {
             lastClutch = clutch;
             initialized = true;
             warmupActive = (ect < ECT_WARMUP_ENTER);
+            thermalContext = initialThermalContext(ect);
+            thermalReadyCandidateSince = 0L;
             resetStateOutputs();
+            state.thermal = thermalContext;
             return state;
         }
 
@@ -125,6 +129,10 @@ public class EngineStateTracker {
         float tpRate = dt > 0.001f ? (tp - lastTp) / dt : 0f;
         float rpmRate = dt > 0.001f ? (rpm - lastRpm) / dt : 0f;
         float mapRate = dt > 0.001f ? (mapVal - lastMap) / dt : 0f;
+
+        // Thermal readiness is updated every frame and is independent of WOT/NORMAL/IDLE.
+        thermalContext = updateThermalContext(ect, now);
+        state.thermal = thermalContext;
 
         // 1) Shift phase must be known before fuel-cut classification.
         currentShiftPhase = updateShiftPhase(speed, rpm, tp, inj, gear, clutch, rpmRate, tpRate, now);
@@ -135,7 +143,7 @@ public class EngineStateTracker {
                 speed, rpm, tp, inj, targetLambda, measuredLambda, closedLoop, currentShiftPhase, now);
         state.combustion = combustion;
 
-        // 3) MainState. DFCO is admitted only for DFCO_FUEL_CUT, never SHIFT_FUEL_CUT.
+        // 3) MainState. Keep V2.0 strategy ordering intact for regression comparability.
         EngineSemanticState.MainState desired;
         if (combustion == EngineSemanticState.CombustionState.DFCO_FUEL_CUT) {
             desired = EngineSemanticState.MainState.DFCO;
@@ -143,7 +151,6 @@ public class EngineStateTracker {
                 && currentShiftPhase != EngineSemanticState.ShiftPhase.NONE
                 && (combustion == EngineSemanticState.CombustionState.SHIFT_FUEL_CUT
                     || combustion == EngineSemanticState.CombustionState.RECOVERY)) {
-            // Preserve ECU strategy context across a WOT shift rather than WOT->DFCO->NORMAL.
             desired = EngineSemanticState.MainState.WOT;
         } else if (closedLoop < 0.5f && targetLambda < LAMBDA_WOT_MAX
                 && rpm > RPM_WOT_MIN && mapVal > MAP_WOT_MIN) {
@@ -156,9 +163,6 @@ public class EngineStateTracker {
             desired = EngineSemanticState.MainState.NORMAL;
         }
 
-        // A shift owns fuel-cut semantics immediately. Do not leave a one-frame DFCO
-        // residue behind the ordinary exit hysteresis when the clutch/gear evidence says
-        // this is SHIFT_FUEL_CUT. (The supplied 50 Hz replay exposed exactly this edge.)
         if (currentShiftPhase != EngineSemanticState.ShiftPhase.NONE
                 && combustion != EngineSemanticState.CombustionState.DFCO_FUEL_CUT
                 && currentMain == EngineSemanticState.MainState.DFCO) {
@@ -181,7 +185,7 @@ public class EngineStateTracker {
         state.main = currentMain;
         state.sub = detectSubState(dt, mapVal, now);
 
-        // 4) Modifier. SHIFT wins over rate-derived modifiers, but does not alter MAP/RPM truth.
+        // 4) Modifier. Tracker owns the SHIFT invariant.
         if (currentShiftPhase != EngineSemanticState.ShiftPhase.NONE) {
             state.modifier = EngineSemanticState.Modifier.SHIFT;
         } else if (dt > 0.001f) {
@@ -190,7 +194,7 @@ public class EngineStateTracker {
             state.modifier = EngineSemanticState.Modifier.NONE;
         }
 
-        // 5) Confidence.
+        // 5) Main-state confidence is distinct from S.TRIM interpretability weight.
         boolean criticalPidMissing = Double.isNaN(data.getDouble(HondataProtocol.CID_RPM))
                 || Double.isNaN(data.getDouble(HondataProtocol.CID_ThrottlePlate))
                 || Double.isNaN(data.getDouble(HondataProtocol.CID_MAP))
@@ -213,6 +217,7 @@ public class EngineStateTracker {
 
     private void resetStateOutputs() {
         state.main = EngineSemanticState.MainState.NORMAL;
+        state.thermal = thermalContext;
         state.sub = EngineSemanticState.SubState.NONE;
         state.modifier = EngineSemanticState.Modifier.NONE;
         state.shiftPhase = EngineSemanticState.ShiftPhase.NONE;
@@ -230,6 +235,8 @@ public class EngineStateTracker {
         mainStateSince = 0L;
         warmupActive = false;
         warmupExitCandidateSince = 0L;
+        thermalContext = EngineSemanticState.ThermalContext.UNKNOWN;
+        thermalReadyCandidateSince = 0L;
         lastTime = 0L;
         lastTp = 0f;
         lastRpm = 0f;
@@ -247,6 +254,52 @@ public class EngineStateTracker {
         combustionRecoveryUntil = 0L;
         smoothConfidence = 1.0f;
         resetStateOutputs();
+    }
+
+    /**
+     * Thermal context is independent of MainState. A cold WOT therefore remains
+     * MainState.WOT while thermal=COLD/WARMING, which prevents thermal readiness
+     * consumers from interpreting WOT as proof that warmup has finished.
+     */
+    private EngineSemanticState.ThermalContext initialThermalContext(float ect) {
+        if (Float.isNaN(ect) || Float.isInfinite(ect)) {
+            return EngineSemanticState.ThermalContext.UNKNOWN;
+        }
+        if (ect < ECT_WARMUP_ENTER) return EngineSemanticState.ThermalContext.COLD;
+        if (ect < ECT_WARMUP_EXIT) return EngineSemanticState.ThermalContext.WARMING;
+        return EngineSemanticState.ThermalContext.READY;
+    }
+
+    private EngineSemanticState.ThermalContext updateThermalContext(float ect, long now) {
+        if (Float.isNaN(ect) || Float.isInfinite(ect)) {
+            thermalReadyCandidateSince = 0L;
+            return EngineSemanticState.ThermalContext.UNKNOWN;
+        }
+
+        if (thermalContext == EngineSemanticState.ThermalContext.READY) {
+            if (ect < ECT_WARMUP_ENTER) {
+                thermalReadyCandidateSince = 0L;
+                return EngineSemanticState.ThermalContext.COLD;
+            }
+            // Hysteresis: once genuinely ready, 65-72 C does not demote readiness.
+            return EngineSemanticState.ThermalContext.READY;
+        }
+
+        if (ect < ECT_WARMUP_ENTER) {
+            thermalReadyCandidateSince = 0L;
+            return EngineSemanticState.ThermalContext.COLD;
+        }
+
+        if (ect > ECT_WARMUP_EXIT) {
+            if (thermalReadyCandidateSince == 0L) thermalReadyCandidateSince = now;
+            if (now - thermalReadyCandidateSince >= THERMAL_READY_CONFIRM_MS) {
+                thermalReadyCandidateSince = 0L;
+                return EngineSemanticState.ThermalContext.READY;
+            }
+        } else {
+            thermalReadyCandidateSince = 0L;
+        }
+        return EngineSemanticState.ThermalContext.WARMING;
     }
 
     private EngineSemanticState.ShiftPhase updateShiftPhase(float speed, float rpm, float tp, float inj,
@@ -276,7 +329,6 @@ public class EngineStateTracker {
             shiftGearChangeObserved = false;
         }
 
-        // Confirmation supports both upshifts and rev-matched downshifts: rpmRate sign is not required.
         boolean trajectoryEvidence = strongClutch && Math.abs(rpmRate) >= SHIFT_CONFIRM_RPM_RATE;
         boolean fuelCutEvidence = clutchConfirmed && fuelCut;
         boolean gearEvidence = gearChanged && (clutchAboveArm || currentShiftPhase != EngineSemanticState.ShiftPhase.NONE);
@@ -299,9 +351,6 @@ public class EngineStateTracker {
                 shiftConfirmedUntil = Math.max(shiftConfirmedUntil, now + SHIFT_CONFIRM_BRIDGE_MS);
             }
 
-            // Before the gear transition is observed, a physically engaged clutch may
-            // legitimately need more than the initial bridge. Once Gear has changed,
-            // clutch hold alone no longer means the transmission is still shifting.
             if (!shiftGearChangeObserved && clutchConfirmed
                     && now - shiftConfirmedSince < SHIFT_MAX_CONFIRMED_MS) {
                 shiftConfirmedUntil = Math.max(shiftConfirmedUntil, now + SHIFT_CLUTCH_EXTEND_MS);
@@ -348,15 +397,8 @@ public class EngineStateTracker {
         if (fuelCut && shiftPhase != EngineSemanticState.ShiftPhase.NONE) {
             direct = EngineSemanticState.CombustionState.SHIFT_FUEL_CUT;
         } else if (fuelCut && lowThrottle && dfcoRoadContext) {
-            // Once injection is actually off in a conventional overrun context,
-            // A/F/IGN/trim are combustion-invalid immediately. Do not wait for the
-            // wideband or target lambda to drift toward free air.
             direct = EngineSemanticState.CombustionState.DFCO_FUEL_CUT;
         } else if (fuelCut) {
-            // Neutral coast, limiter/torque intervention and other non-firing
-            // conditions are invalid for combustion-derived displays even when
-            // they are not semantically DFCO. This prevents real free-air lambda
-            // from being misrepresented as a current combustion AFR.
             direct = EngineSemanticState.CombustionState.OTHER_FUEL_CUT;
         } else {
             direct = EngineSemanticState.CombustionState.FIRING_VALID;
@@ -422,8 +464,6 @@ public class EngineStateTracker {
 
     private EngineSemanticState.Modifier detectNonShiftModifier(float tpRate, float rpmRate, float mapRate,
             float tp, float speed, float inj, float rpm) {
-        // Driver intent wins over the MAP derivative. RC6 checked MAP first, which
-        // could mask a real TIP_OUT exactly when the display front guard needed it.
         if (tpRate < -TP_RATE_THRESHOLD) return EngineSemanticState.Modifier.TIP_OUT;
         if (tpRate > TP_RATE_THRESHOLD) return EngineSemanticState.Modifier.TIP_IN;
         if (Math.abs(mapRate) > MAP_RATE_THRESHOLD) return EngineSemanticState.Modifier.BOOST_SURGE;

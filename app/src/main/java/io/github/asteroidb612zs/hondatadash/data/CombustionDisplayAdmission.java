@@ -1,17 +1,12 @@
 package io.github.asteroidb612zs.hondatadash.data;
 
 /**
- * RC7 display-admission gate for combustion-sensitive values.
+ * V2 display-admission gate for combustion-sensitive values.
  *
  * Raw telemetry remains untouched. A/F, IGN and S.TRIM are admitted to the
  * visible/history layer only when the current engine semantics and each PID's
  * own recovery behaviour make the value useful to the driver. MAP/RPM never
  * pass through this gate and remain live.
- *
- * RC7 adds two important protections over RC6:
- *  - a display-only TIP_OUT front guard, so lambda/trim do not flash a transient
- *    warning in the few frames before fuel cut is formally classified;
- *  - A/F recovery is target-relative, not merely "back below free air".
  */
 public final class CombustionDisplayAdmission {
 
@@ -56,10 +51,6 @@ public final class CombustionDisplayAdmission {
     private static final long AF_STABLE_MS = 200L;
     private static final long STRIM_STABLE_MS = 400L;
 
-    // 14.26 h historical replay: physical lambda recovery to |lambda-target|<=.03
-    // stable for 200 ms is ~765 ms median and roughly 1.3-1.45 s near P90.
-    // The cap therefore protects ordinary sensor propagation but guarantees that
-    // a genuinely persistent post-cut lean/rich condition cannot be hidden forever.
     private static final long AF_MAX_RECOVERY_HOLD_MS = 1400L;
     private static final long STRIM_MAX_RECOVERY_HOLD_MS = 1600L;
     private static final float AF_RECOVER_ERR_MAX = 0.06f;
@@ -68,7 +59,6 @@ public final class CombustionDisplayAdmission {
     private static final float TIP_OUT_MIN_SPEED = 5f;
     private static final float TIP_OUT_MIN_RPM = 900f;
 
-    // Reused on every frame; no per-frame allocation on API 17 head units.
     private final Snapshot snapshot = new Snapshot();
     private boolean holdAf = false;
     private boolean holdIgn = false;
@@ -118,8 +108,6 @@ public final class CombustionDisplayAdmission {
             holdAf = true;
             holdIgn = true;
             holdStrim = true;
-            // Post-event recovery clocks begin only after the semantic/front guard
-            // ends. A long clutch hold or long overrun can never consume the cap.
             afRecoveryStarted = 0L;
             strimRecoveryStarted = 0L;
             afReadySince = 0L;
@@ -184,9 +172,6 @@ public final class CombustionDisplayAdmission {
             afReadySince = 0L;
         }
 
-        // Never hide a real condition indefinitely. Once injection and the ECU
-        // target are valid, a persistent target-relative error is exposed after
-        // this bounded recovery allowance and may then trigger the alert layer.
         if (holdAf && afRecoveryStarted > 0L
                 && now - afRecoveryStarted >= AF_MAX_RECOVERY_HOLD_MS
                 && injectorActive && targetValid) {
@@ -199,9 +184,12 @@ public final class CombustionDisplayAdmission {
         float closedLoop = finite(data.getDouble(HondataProtocol.CID_ClosedLoop));
         float target = finite(data.getDouble(HondataProtocol.CID_TargetLambda));
         float inj = finite(data.getDouble(HondataProtocol.CID_Inj));
+
+        // SHIFT is deliberately absent here: any active shift is already consumed by
+        // hardGuard before this method can run. Keeping SHIFT here created a dead path
+        // and duplicated shift semantics across layers.
         boolean dynamic = state != null && (state.modifier == EngineSemanticState.Modifier.TIP_OUT
-                || state.modifier == EngineSemanticState.Modifier.BOOST_SURGE
-                || state.modifier == EngineSemanticState.Modifier.SHIFT);
+                || state.modifier == EngineSemanticState.Modifier.BOOST_SURGE);
         boolean basicReady = !Float.isNaN(closedLoop) && closedLoop > 0.5f
                 && !Float.isNaN(target) && target > 0.90f && target < 1.10f
                 && !Float.isNaN(inj) && inj > 0.30f;
@@ -215,8 +203,6 @@ public final class CombustionDisplayAdmission {
             strimReadySince = 0L;
         }
 
-        // S.TRIM is informative but highly dynamic. A bounded cap avoids an
-        // indefinitely grey card if the driver keeps accelerating after a shift.
         if (holdStrim && strimRecoveryStarted > 0L
                 && now - strimRecoveryStarted >= STRIM_MAX_RECOVERY_HOLD_MS
                 && basicReady) {
