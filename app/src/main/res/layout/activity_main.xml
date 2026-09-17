@@ -1,79 +1,97 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Hondata Dash - 800x480 横屏车载仪表 (硬核科技风格)
-    4x2 网格 + 底部爆震/辅助数据 + 页脚
+    Hondata Dash - 800x480 横屏车载仪表 (Honda OEM+)
+    4x2 网格 + 底部爆震/辅助数据
 
     布局:
-      Header: HONDA RACING + 装饰线
-      第1行: 乙醇含量 | 水温 | 进气温度 | 电压
-      第2行: 涡轮压力 | 点火角度 | 爆震控制值 | 长期燃油调整
-      底部左: 爆震计数 CYL1-4 (3/4宽)
-      底部右: 油门/MAP/AFR/负荷 (1/4宽)
-      Footer: REC | LOG | ECU | Time
+      Header: 转速灯 + 链路状态
+      第1行: 乙醇含量 | 水温 | 进气温度 | 长期燃油调整
+      第2行: 相对增压 | 空燃比 | 点火角 | 短期燃油调整
+      底部: 爆震控制/缸计数 + 点火修正/限制 + 电压/油压/旁通阀/节气门
 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/appRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="#FF000000">
+    android:layoutDirection="ltr"
+    android:background="@color/bg_main">
 
-    <!-- ===== 6-LED 转速灯条 + Header 叠加 ===== -->
-    <FrameLayout
+    <io.github.asteroidb612zs.hondatadash.DashboardGridLayout
+        android:id="@+id/dashboardContent"
         android:layout_width="match_parent"
-        android:layout_height="42dp">
+        android:layout_height="match_parent"
+        android:padding="@dimen/page_margin"
+        android:orientation="vertical">
 
-        <!-- LED 灯条 -->
-        <LinearLayout
+    <!-- ===== 5+5 对称胶囊转速灯 / 连接状态 ===== -->
+    <io.github.asteroidb612zs.hondatadash.HeaderLayout
+        android:id="@+id/header"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/header_height"
+        android:layout_marginBottom="@dimen/section_gap"
+        android:background="@drawable/bg_header">
+
+        <!-- V2.0: no runtime brand mark; the 5+5 rev indicator owns the header.
+             The startup curtain still renders HONDA / PERFORMANCE TELEMETRY /
+             Designed by ZhouQiZhi via its own StartupBrandRenderer. -->
+        <io.github.asteroidb612zs.hondatadash.ShiftLightView
+            android:id="@+id/shiftLight"
             android:layout_width="match_parent"
+            android:layout_height="match_parent"/>
+
+        <!-- DEMO 标识仅用于模拟版本，生产版隐藏 -->
+        <io.github.asteroidb612zs.hondatadash.FittedTextView
+            android:id="@+id/sourceName"
+            style="@style/DashboardUnit"
+            android:layout_width="130dp"
+            android:layout_height="9dp"
+            android:gravity="center_vertical|start"
+            android:layout_gravity="start|bottom"
+            android:layout_marginStart="34dp"
+            android:visibility="gone"
+            android:textColor="@color/dash_unit"
+            android:textSize="7sp"/>
+
+        <!-- HeaderLayout 分配 20% 宽度的完整点击区，容纳最长状态 -->
+        <LinearLayout
+            android:id="@+id/connectionStatus"
+            android:layout_width="108dp"
             android:layout_height="match_parent"
-            android:gravity="center_vertical"
-            android:paddingStart="150dp"
-            android:paddingEnd="150dp">
-
-            <com.hondata.dash.ShiftLightView
-                android:id="@+id/shiftLight"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"/>
-        </LinearLayout>
-
-        <!-- Header 文字贴底, 与 LED 底部齐平 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
+            android:layout_gravity="end|center_vertical"
             android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingStart="8dp"
+            android:gravity="center_vertical|end"
+            android:paddingStart="6dp"
             android:paddingEnd="8dp"
-            android:paddingBottom="1dp">
+            android:contentDescription="蓝牙状态，轻触选择或更换 FlashPro">
 
             <View
-                android:layout_width="0dp"
-                android:layout_height="0dp"
-                android:layout_weight="1"/>
+                android:id="@+id/statusDot"
+                android:visibility="gone"
+                android:layout_width="5dp"
+                android:layout_height="5dp"
+                android:background="@drawable/bg_status_dot"/>
 
-            <TextView
-                android:id="@+id/sourceName"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="#FF777777"
-                android:textSize="8sp"
-                android:layout_marginStart="10dp"/>
-
-            <TextView
+            <io.github.asteroidb612zs.hondatadash.FittedTextView
                 android:id="@+id/statusText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="未连接"
-                android:textColor="#FFFF4444"
-                android:textSize="9sp"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical|end"
+                android:text="WAIT"
+                android:textColor="#FFD29922"
+                android:textSize="12sp"
+                android:textStyle="bold|italic"
+                android:fontFamily="sans-serif-condensed"
+                android:includeFontPadding="false"
                 android:layout_marginStart="6dp"/>
         </LinearLayout>
-    </FrameLayout>
+    </io.github.asteroidb612zs.hondatadash.HeaderLayout>
 
-    <!-- ===== 第一行: ETHANOL | WATER | IAT | VOLTAGE ===== -->
-    <LinearLayout
+    <!-- ===== 第一行: ETHANOL | ECT | IAT | L.TRIM ===== -->
+    <io.github.asteroidb612zs.hondatadash.AlignedRowLayout
+        android:id="@+id/mainRowOne"
         android:layout_width="match_parent"
+        android:layout_marginBottom="@dimen/main_row_gap"
         android:layout_height="0dp"
         android:layout_weight="1"
         android:orientation="horizontal">
@@ -82,18 +100,21 @@
             android:id="@+id/card0"
             android:layout_width="0dp"
             android:layout_height="match_parent"
+            android:layout_marginEnd="@dimen/main_card_gap"
             android:layout_weight="1"/>
 
         <include layout="@layout/item_sensor_card"
             android:id="@+id/card1"
             android:layout_width="0dp"
             android:layout_height="match_parent"
+            android:layout_marginEnd="@dimen/main_card_gap"
             android:layout_weight="1"/>
 
         <include layout="@layout/item_sensor_card"
             android:id="@+id/card2"
             android:layout_width="0dp"
             android:layout_height="match_parent"
+            android:layout_marginEnd="@dimen/main_card_gap"
             android:layout_weight="1"/>
 
         <include layout="@layout/item_sensor_card"
@@ -101,10 +122,11 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"/>
-    </LinearLayout>
+    </io.github.asteroidb612zs.hondatadash.AlignedRowLayout>
 
-    <!-- ===== 第二行: BOOST | IGNITION | KNOCK | LTFT ===== -->
-    <LinearLayout
+    <!-- ===== 第二行: MAP | A/F | IGN | S.TRIM ===== -->
+    <io.github.asteroidb612zs.hondatadash.AlignedRowLayout
+        android:id="@+id/mainRowTwo"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
@@ -114,18 +136,21 @@
             android:id="@+id/card4"
             android:layout_width="0dp"
             android:layout_height="match_parent"
+            android:layout_marginEnd="@dimen/main_card_gap"
             android:layout_weight="1"/>
 
         <include layout="@layout/item_sensor_card"
             android:id="@+id/card5"
             android:layout_width="0dp"
             android:layout_height="match_parent"
+            android:layout_marginEnd="@dimen/main_card_gap"
             android:layout_weight="1"/>
 
         <include layout="@layout/item_sensor_card"
             android:id="@+id/card6"
             android:layout_width="0dp"
             android:layout_height="match_parent"
+            android:layout_marginEnd="@dimen/main_card_gap"
             android:layout_weight="1"/>
 
         <include layout="@layout/item_sensor_card"
@@ -133,60 +158,59 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"/>
-    </LinearLayout>
+    </io.github.asteroidb612zs.hondatadash.AlignedRowLayout>
 
-    <!-- ===== 底部行: 爆震数据 + 防滑 (59dp) ===== -->
-    <LinearLayout
+    <!-- ===== 底部行: 爆震与辅助数据，共用十二单位网格 (66dp) ===== -->
+    <io.github.asteroidb612zs.hondatadash.AlignedRowLayout
+        android:id="@+id/bottomRow"
         android:layout_width="match_parent"
-        android:layout_height="59dp"
+        android:layout_height="@dimen/bottom_height"
+        android:layout_marginTop="@dimen/section_gap"
         android:orientation="horizontal">
 
-        <!-- K.C 爆震控制 (weight=2) -->
+        <!-- K.C: reference layout keeps it only slightly wider than one auxiliary cell. -->
         <LinearLayout
             android:id="@+id/knockRetCard"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="2"
-            android:orientation="horizontal"
-            android:background="@drawable/bg_card"
-            android:layout_margin="1dp"
+            android:layout_weight="1.30"
+            android:orientation="vertical"
+            android:background="@drawable/bg_bottom_cell"
             android:padding="2dp">
 
             <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:gravity="top|start"
-                android:paddingStart="2dp"
-                android:paddingTop="2dp">
+                android:layout_width="match_parent"
+                android:layout_height="17dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical|start">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                <io.github.asteroidb612zs.hondatadash.FittedTextView
+                    style="@style/DashboardCardLabel"
+                    android:layout_width="34dp"
+                    android:layout_height="match_parent"
+                    android:gravity="center_vertical|start"
                     android:text="K.C"
-                    android:textColor="@color/dash_label"
-                    android:textSize="20sp"
-                    android:textStyle="bold"/>
+                    android:textSize="15sp"/>
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="(%)"
-                    android:textColor="@color/dash_label"
-                    android:textSize="10sp"
-                    android:textStyle="bold"
-                    android:includeFontPadding="false"/>
+                <io.github.asteroidb612zs.hondatadash.FittedTextView
+                    style="@style/DashboardUnit"
+                    android:layout_width="22dp"
+                    android:layout_height="match_parent"
+                    android:gravity="center_vertical|start"
+                    android:text="%"
+                    android:textSize="10sp"/>
             </LinearLayout>
 
-            <TextView
+            <io.github.asteroidb612zs.hondatadash.FittedTextView
                 android:id="@+id/knockRetValue"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center_vertical"
-                android:textColor="#FF3FB950"
-                android:textSize="55sp"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:textColor="@color/dash_safe"
+                android:textSize="42sp"
                 android:textStyle="bold|italic"
+                android:fontFamily="sans-serif-condensed"
                 android:includeFontPadding="false"
                 android:text="0"/>
         </LinearLayout>
@@ -196,60 +220,50 @@
             android:id="@+id/knock0"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:layout_margin="1dp"/>
+            android:layout_weight="1"/>
 
         <include layout="@layout/item_knock_cyl"
             android:id="@+id/knock1"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:layout_margin="1dp"/>
+            android:layout_weight="1"/>
 
         <include layout="@layout/item_knock_cyl"
             android:id="@+id/knock2"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:layout_margin="1dp"/>
+            android:layout_weight="1"/>
 
         <include layout="@layout/item_knock_cyl"
             android:id="@+id/knock3"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:layout_margin="1dp"/>
+            android:layout_weight="1"/>
 
-        <!-- L.TRIM 短期燃油调整 (weight=1) -->
+        <!-- K.R 爆震退角 (weight=1) -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:orientation="vertical"
             android:gravity="center"
-            android:background="@drawable/bg_card"
-            android:layout_margin="1dp"
+            android:background="@drawable/bg_bottom_cell"
             android:padding="1dp">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="K.R"
-                android:textColor="@color/dash_label"
-                android:textSize="12sp"
-                android:textStyle="bold"/>
+            <io.github.asteroidb612zs.hondatadash.FittedTextView
+                style="@style/DashboardAuxLabel"
+                android:layout_width="match_parent"
+                android:layout_height="16dp"
+                android:gravity="center"
+                android:text="K.R"/>
 
-            <TextView
+            <io.github.asteroidb612zs.hondatadash.FittedTextView
                 android:id="@+id/bottomTrimValue"
-                android:layout_width="wrap_content"
+                style="@style/DashboardAuxValue"
+                android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:gravity="center"
-                android:textColor="#FFFFFFFF"
-                android:textSize="30sp"
-                android:textStyle="bold"
-                android:includeFontPadding="false"
-                android:singleLine="true"
                 android:text="--"/>
         </LinearLayout>
 
@@ -260,29 +274,23 @@
             android:layout_weight="1"
             android:orientation="vertical"
             android:gravity="center"
-            android:background="@drawable/bg_card"
-            android:layout_margin="1dp"
+            android:background="@drawable/bg_bottom_cell"
             android:padding="1dp">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="K.L"
-                android:textColor="@color/dash_label"
-                android:textSize="12sp"
-                android:textStyle="bold"/>
+            <io.github.asteroidb612zs.hondatadash.FittedTextView
+                style="@style/DashboardAuxLabel"
+                android:layout_width="match_parent"
+                android:layout_height="16dp"
+                android:gravity="center"
+                android:text="K.L"/>
 
-            <TextView
+            <io.github.asteroidb612zs.hondatadash.FittedTextView
                 android:id="@+id/bottomAfmValue"
-                android:layout_width="wrap_content"
+                style="@style/DashboardAuxValue"
+                android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:gravity="center"
-                android:textColor="#FFFFFFFF"
-                android:textSize="30sp"
-                android:textStyle="bold"
-                android:includeFontPadding="false"
-                android:singleLine="true"
                 android:text="--"/>
         </LinearLayout>
 
@@ -293,29 +301,23 @@
             android:layout_weight="1"
             android:orientation="vertical"
             android:gravity="center"
-            android:background="@drawable/bg_card"
-            android:layout_margin="1dp"
+            android:background="@drawable/bg_bottom_cell"
             android:padding="1dp">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="BAT(V)"
-                android:textColor="@color/dash_label"
-                android:textSize="12sp"
-                android:textStyle="bold"/>
+            <io.github.asteroidb612zs.hondatadash.FittedTextView
+                style="@style/DashboardAuxLabel"
+                android:layout_width="match_parent"
+                android:layout_height="16dp"
+                android:gravity="center"
+                android:text="BAT V"/>
 
-            <TextView
+            <io.github.asteroidb612zs.hondatadash.FittedTextView
                 android:id="@+id/bottomBatValue"
-                android:layout_width="wrap_content"
+                style="@style/DashboardAuxValue"
+                android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:gravity="center"
-                android:textColor="#FFFFFFFF"
-                android:textSize="30sp"
-                android:textStyle="bold"
-                android:includeFontPadding="false"
-                android:singleLine="true"
                 android:text="--"/>
         </LinearLayout>
 
@@ -326,29 +328,36 @@
             android:layout_weight="1"
             android:orientation="vertical"
             android:gravity="center"
-            android:background="@drawable/bg_card"
-            android:layout_margin="1dp"
+            android:background="@drawable/bg_bottom_cell"
             android:padding="1dp">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="F.P(bar)"
-                android:textColor="@color/dash_label"
-                android:textSize="12sp"
-                android:textStyle="bold"/>
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="16dp"
+                android:orientation="horizontal"
+                android:gravity="center">
 
-            <TextView
+                <io.github.asteroidb612zs.hondatadash.MiniIconView
+                    android:layout_width="10dp"
+                    android:layout_height="10dp"
+                    android:tag="fuel"/>
+
+                <io.github.asteroidb612zs.hondatadash.FittedTextView
+                    style="@style/DashboardAuxLabel"
+                    android:layout_width="39dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginStart="2dp"
+                    android:gravity="center_vertical|start"
+                    android:text="F.P bar"/>
+            </LinearLayout>
+
+            <io.github.asteroidb612zs.hondatadash.FittedTextView
                 android:id="@+id/bottomFpValue"
-                android:layout_width="wrap_content"
+                style="@style/DashboardAuxValue"
+                android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:gravity="center"
-                android:textColor="#FFFFFFFF"
-                android:textSize="30sp"
-                android:textStyle="bold"
-                android:includeFontPadding="false"
-                android:singleLine="true"
                 android:text="--"/>
         </LinearLayout>
 
@@ -359,29 +368,36 @@
             android:layout_weight="1"
             android:orientation="vertical"
             android:gravity="center"
-            android:background="@drawable/bg_card"
-            android:layout_margin="1dp"
+            android:background="@drawable/bg_bottom_cell"
             android:padding="1dp">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="W.G(%)"
-                android:textColor="@color/dash_label"
-                android:textSize="12sp"
-                android:textStyle="bold"/>
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="16dp"
+                android:orientation="horizontal"
+                android:gravity="center">
 
-            <TextView
+                <io.github.asteroidb612zs.hondatadash.MiniIconView
+                    android:layout_width="10dp"
+                    android:layout_height="10dp"
+                    android:tag="turbo"/>
+
+                <io.github.asteroidb612zs.hondatadash.FittedTextView
+                    style="@style/DashboardAuxLabel"
+                    android:layout_width="34dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginStart="2dp"
+                    android:gravity="center_vertical|start"
+                    android:text="W.G %"/>
+            </LinearLayout>
+
+            <io.github.asteroidb612zs.hondatadash.FittedTextView
                 android:id="@+id/bottomWgValue"
-                android:layout_width="wrap_content"
+                style="@style/DashboardAuxValue"
+                android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:gravity="center"
-                android:textColor="#FFFFFFFF"
-                android:textSize="30sp"
-                android:textStyle="bold"
-                android:includeFontPadding="false"
-                android:singleLine="true"
                 android:text="--"/>
         </LinearLayout>
 
@@ -392,31 +408,46 @@
             android:layout_weight="1"
             android:orientation="vertical"
             android:gravity="center"
-            android:background="@drawable/bg_card"
-            android:layout_margin="1dp"
+            android:background="@drawable/bg_bottom_cell"
             android:padding="1dp">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="T.P(%)"
-                android:textColor="@color/dash_label"
-                android:textSize="12sp"
-                android:textStyle="bold"/>
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="16dp"
+                android:orientation="horizontal"
+                android:gravity="center">
 
-            <TextView
+                <io.github.asteroidb612zs.hondatadash.MiniIconView
+                    android:layout_width="10dp"
+                    android:layout_height="10dp"
+                    android:tag="throttle"/>
+
+                <io.github.asteroidb612zs.hondatadash.FittedTextView
+                    style="@style/DashboardAuxLabel"
+                    android:layout_width="31dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginStart="2dp"
+                    android:gravity="center_vertical|start"
+                    android:text="T.P %"/>
+            </LinearLayout>
+
+            <io.github.asteroidb612zs.hondatadash.FittedTextView
                 android:id="@+id/bottomTpValue"
-                android:layout_width="wrap_content"
+                style="@style/DashboardAuxValue"
+                android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:gravity="center"
-                android:textColor="#FFFFFFFF"
-                android:textSize="30sp"
-                android:textStyle="bold"
-                android:includeFontPadding="false"
-                android:singleLine="true"
                 android:text="--"/>
         </LinearLayout>
-    </LinearLayout>
+    </io.github.asteroidb612zs.hondatadash.AlignedRowLayout>
 
-</LinearLayout>
+    </io.github.asteroidb612zs.hondatadash.DashboardGridLayout>
+
+    <io.github.asteroidb612zs.hondatadash.StartupOverlayView
+        android:id="@+id/startupOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone"
+        android:contentDescription="Honda Telemetry 正在启动，轻触跳过动画"/>
+</FrameLayout>

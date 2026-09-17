@@ -5,4 +5,71 @@
         <item name="android:windowContentOverlay">@null</item>
         <item name="android:windowNoTitle">true</item>
     </style>
+
+    <!-- V2.9.4: 17sp -> 19sp after real-car daylight validation. -->
+    <style name="DashboardCardLabel">
+        <item name="android:fontFamily">sans-serif-condensed</item>
+        <item name="android:textColor">@color/dash_label</item>
+        <item name="android:textSize">19sp</item>
+        <item name="android:textStyle">bold|italic</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:singleLine">true</item>
+    </style>
+
+    <!-- V2.9.4: units need to survive glare at driving distance without competing
+         with the parameter title. 12sp -> 14sp. -->
+    <style name="DashboardUnit">
+        <item name="android:fontFamily">sans-serif-condensed</item>
+        <item name="android:textColor">@color/dash_unit</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:singleLine">true</item>
+    </style>
+
+    <style name="DashboardMainValue">
+        <item name="android:fontFamily">sans-serif-condensed</item>
+        <item name="android:textColor">@color/dash_value</item>
+        <item name="android:textSize">106sp</item>
+        <item name="android:textStyle">bold|italic</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:singleLine">true</item>
+    </style>
+
+    <!-- Keep V2.9.3 real-car-proven extreme typography sizes. -->
+    <style name="DashboardExtremeLabel">
+        <item name="android:fontFamily">sans-serif-condensed</item>
+        <item name="android:textColor">@color/dash_extreme_label</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:singleLine">true</item>
+    </style>
+
+    <style name="DashboardExtremeValue">
+        <item name="android:fontFamily">sans-serif-condensed</item>
+        <item name="android:textColor">@color/dash_extreme_value</item>
+        <item name="android:textSize">22sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:singleLine">true</item>
+    </style>
+
+    <style name="DashboardAuxLabel">
+        <item name="android:fontFamily">sans-serif-condensed</item>
+        <item name="android:textColor">@color/dash_unit</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:singleLine">true</item>
+    </style>
+
+    <style name="DashboardAuxValue">
+        <item name="android:fontFamily">sans-serif-condensed</item>
+        <item name="android:textColor">@color/dash_value</item>
+        <item name="android:textSize">31sp</item>
+        <item name="android:textStyle">bold|italic</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:singleLine">true</item>
+    </style>
 </resources>

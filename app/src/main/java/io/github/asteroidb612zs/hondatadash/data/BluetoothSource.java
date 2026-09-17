@@ -1,4 +1,4 @@
-package com.hondata.dash.data;
+package io.github.asteroidb612zs.hondatadash.data;
 
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -16,7 +16,7 @@ import java.util.UUID;
 
 /**
  * 蓝牙 SPP 数据源 — V1.4 fullReset 重连策略。
- * 连接 Hondata FlashPro (MAC 硬编码)，断线后自动重连。
+ * 连接由上层选定的 Hondata FlashPro，断线后始终沿用同一设备地址自动重连。
  *
  * 重连策略: fullReset (等同重启 App 数据层，UI 不退出)
  * - 完全停止旧 pollThread + 关闭 Socket
@@ -35,20 +35,19 @@ public class BluetoothSource implements DataSource {
     private static final int RECONNECT_MAX_MS = 8000;
     private static final int BT_STACK_CLEANUP_MS = 2500; // V2.6.7: 1s→2.5s，老 Android SPP 释放更稳
 
-    // FlashPro MAC 地址 (硬编码)
-    public static final String FLASHPRO_MAC = "XX:XX:XX:XX:XX:XX";
-
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private HondataProtocol protocol;
 
-    private Callback callback;
-    private android.content.Context exportContext;
+    private volatile Callback callback;
     private BluetoothSocket socket;
+    private volatile BluetoothSocket connectingSocket;
+    private volatile boolean connecting;
     private InputStream inputStream;
     private OutputStream outputStream;
     private Thread pollThread;
     private volatile boolean running;
     private volatile boolean connected;
+    private volatile String targetAddress;
     private volatile boolean intentionalDisconnect;
     private volatile boolean reconnecting; // V1.4: 标记重连中，防止重复触发
     // V2.6.9 (P0-2): 区分"生命周期暂停"与"蓝牙真实断线"
@@ -64,7 +63,7 @@ public class BluetoothSource implements DataSource {
     // V2.6.8: 统一的重连入口仲裁
     private boolean tryEnterReconnecting() {
         synchronized (reconnectLock) {
-            if (reconnecting || intentionalDisconnect) return false;
+            if (connecting || reconnecting || intentionalDisconnect) return false;
             reconnecting = true;
             return true;
         }
@@ -77,22 +76,35 @@ public class BluetoothSource implements DataSource {
 
     @Override public String getName() { return "Bluetooth SPP"; }
     @Override public void setCallback(Callback cb) { this.callback = cb; }
-    public void setExportContext(android.content.Context ctx) { this.exportContext = ctx; }
     @Override public boolean isConnected() { return connected; }
 
     @Override
     public void connect(final String address) {
-        intentionalDisconnect = false;
-        // V2.6.9 (P0-2): 新连接清除生命周期暂停标志
-        pollingPausedByLifecycle = false;
-        // V2.6.8: 用 lock 保护
-        synchronized (reconnectLock) { reconnecting = false; }
+        final String normalizedAddress = normalizeAddress(address);
+        if (normalizedAddress == null) {
+            postError("未选择已配对的蓝牙设备");
+            return;
+        }
+        synchronized (reconnectLock) {
+            if (connected || connecting || reconnecting) return;
+            pollingPausedByLifecycle = false;
+            if (pollThread != null && pollThread.isAlive()) return;
+            intentionalDisconnect = false;
+            targetAddress = normalizedAddress;
+            connecting = true;
+        }
         // V2.6.8 (BG11): connect 线程设为 daemon, 与 resetThread/pollThread 一致
         Thread connectThread = new Thread(new Runnable() {
             @Override
             public void run() {
                 // V2.6.9 (P0-1): 首次连接失败必走重连, 不再卡死
-                if (!tryConnectOnce()) {
+                boolean success;
+                try {
+                    success = tryConnectOnce();
+                } finally {
+                    synchronized (reconnectLock) { connecting = false; }
+                }
+                if (!success) {
                     scheduleReconnect();
                 }
             }
@@ -112,6 +124,10 @@ public class BluetoothSource implements DataSource {
      * 由 UI Handler 延迟 1s 后调用，期间显示 "重连中..."
      */
     public void fullReset() {
+        if (!hasTargetAddress()) {
+            postError("未选择已配对的蓝牙设备");
+            return;
+        }
         // V2.6.8: 用 lock 仲裁, 防止多线程并发触发
         if (!tryEnterReconnecting()) return;
         // 故意不放在 try/finally: 进入失败时不占用 reconnecting 标志
@@ -142,7 +158,8 @@ public class BluetoothSource implements DataSource {
                     // 通知 UI
                     uiHandler.post(new Runnable() {
                         @Override public void run() {
-                            if (callback != null) callback.onError("重连中...");
+                            Callback cb = callback;
+                            if (cb != null) cb.onError("重连中...");
                         }
                     });
 
@@ -150,8 +167,7 @@ public class BluetoothSource implements DataSource {
                     // V2.6.9 (P0-1): 用 tryConnectOnce 返回值判断, 不再依赖 connected 副作用
                     if (tryConnectOnce()) {
                         Log.i(TAG, "fullReset: 重连成功!");
-                        // 自动开始轮询
-                        startPolling();
+                        // onConnected starts polling only when the Activity is foreground.
                     } else {
                         Log.w(TAG, "fullReset: 首次重连失败，开始指数退避...");
                         reconnectWithBackoff(RECONNECT_BASE_MS);
@@ -175,6 +191,11 @@ public class BluetoothSource implements DataSource {
      */
     private void reconnectWithBackoff(int delay) {
         while (!intentionalDisconnect) {
+            if (!hasTargetAddress()) {
+                postError("已保存的蓝牙设备无效");
+                exitReconnecting();
+                return;
+            }
             // V2.6.8 (BG2): 蓝牙被关闭/不可用时停止重连
             BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
             if (adapter == null || !adapter.isEnabled()) {
@@ -205,7 +226,8 @@ public class BluetoothSource implements DataSource {
             // 通知 UI
             uiHandler.post(new Runnable() {
                 @Override public void run() {
-                    if (callback != null) callback.onError("重连中...");
+                    Callback cb = callback;
+                            if (cb != null) cb.onError("重连中...");
                 }
             });
 
@@ -215,7 +237,7 @@ public class BluetoothSource implements DataSource {
                 if (tryConnectOnce()) {
                     Log.i(TAG, "重连成功!");
                     exitReconnecting();
-                    startPolling();
+                    // Polling ownership belongs to the lifecycle callback.
                     return;
                 }
             } catch (Exception e) {
@@ -237,6 +259,12 @@ public class BluetoothSource implements DataSource {
      */
     private boolean tryConnectOnce() {
         try {
+            if (intentionalDisconnect) return false;
+            final String address = targetAddress;
+            if (address == null || !BluetoothAdapter.checkBluetoothAddress(address)) {
+                postError("已保存的蓝牙设备无效");
+                return false;
+            }
             BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
             if (adapter == null || !adapter.isEnabled()) {
                 postError("蓝牙未启用");
@@ -244,8 +272,8 @@ public class BluetoothSource implements DataSource {
             }
 
             adapter.cancelDiscovery();
-            BluetoothDevice device = adapter.getRemoteDevice(FLASHPRO_MAC);
-            Log.i(TAG, "目标设备: " + device.getName() + " [" + FLASHPRO_MAC + "]");
+            BluetoothDevice device = adapter.getRemoteDevice(address);
+            Log.i(TAG, "目标设备: " + device.getName() + " [" + address + "]");
 
             BluetoothSocket connectedSocket = null;
 
@@ -253,12 +281,12 @@ public class BluetoothSource implements DataSource {
             connectedSocket = tryReflectChannel(device, 1);
 
             // 方式2: 不安全 SPP
-            if (connectedSocket == null) {
+            if (connectedSocket == null && !intentionalDisconnect) {
                 connectedSocket = tryInsecureSPP(device);
             }
 
             // 方式3: 标准 SPP
-            if (connectedSocket == null) {
+            if (connectedSocket == null && !intentionalDisconnect) {
                 connectedSocket = tryStandardSPP(device);
             }
 
@@ -266,7 +294,13 @@ public class BluetoothSource implements DataSource {
                 postError("连接失败");
                 return false;
             }
-            socket = connectedSocket;
+            synchronized (reconnectLock) {
+                if (intentionalDisconnect) {
+                    closeQuietly(connectedSocket);
+                    return false;
+                }
+                socket = connectedSocket;
+            }
 
             Log.i(TAG, "蓝牙Socket连接成功");
             Thread.sleep(500);
@@ -282,13 +316,20 @@ public class BluetoothSource implements DataSource {
                 return false;
             }
             // V2.6.9 (P1-5): 握手成功才算真正连接
-            connected = true;
+            synchronized (reconnectLock) {
+                if (intentionalDisconnect) {
+                    cleanupFailedConnection();
+                    return false;
+                }
+                connected = true;
+            }
             Log.i(TAG, "握手成功! 传感器:" + protocol.getSensorCount()
                 + " 帧长:" + protocol.getExpectedLength(0x35));
 
             uiHandler.post(new Runnable() {
                 @Override public void run() {
-                    if (callback != null) callback.onConnected();
+                    Callback cb = callback;
+                    if (cb != null && connected && !intentionalDisconnect) cb.onConnected();
                 }
             });
             return true;
@@ -310,7 +351,7 @@ public class BluetoothSource implements DataSource {
             Log.i(TAG, "尝试反射 ch" + channel + "...");
             Method m = device.getClass().getMethod("createRfcommSocket", int.class);
             sock = (BluetoothSocket) m.invoke(device, channel);
-            sock.connect();
+            connectSocket(sock);
             Log.i(TAG, "反射 ch" + channel + " 成功!");
             return sock;
         } catch (Exception e) {
@@ -325,7 +366,7 @@ public class BluetoothSource implements DataSource {
         try {
             Log.i(TAG, "尝试不安全SPP...");
             sock = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID);
-            sock.connect();
+            connectSocket(sock);
             Log.i(TAG, "不安全SPP成功!");
             return sock;
         } catch (Exception e) {
@@ -340,13 +381,28 @@ public class BluetoothSource implements DataSource {
         try {
             Log.i(TAG, "尝试标准SPP...");
             sock = device.createRfcommSocketToServiceRecord(SPP_UUID);
-            sock.connect();
+            connectSocket(sock);
             Log.i(TAG, "标准SPP成功!");
             return sock;
         } catch (Exception e) {
             Log.w(TAG, "标准SPP失败: " + e.getMessage());
             closeQuietly(sock);
             return null;
+        }
+    }
+
+    /** Keep a cancellable reference even while BluetoothSocket.connect is blocked. */
+    private void connectSocket(BluetoothSocket sock) throws IOException {
+        synchronized (reconnectLock) {
+            if (intentionalDisconnect) throw new IOException("连接已取消");
+            connectingSocket = sock;
+        }
+        try {
+            sock.connect();
+        } finally {
+            synchronized (reconnectLock) {
+                if (connectingSocket == sock) connectingSocket = null;
+            }
         }
     }
 
@@ -404,135 +460,155 @@ public class BluetoothSource implements DataSource {
 
     @Override
     public void startPolling() {
-        // V2.6.9 (P0-2): 无论是否启动新线程, 恢复轮询都清除生命周期暂停标志
-        pollingPausedByLifecycle = false;
-        if (pollThread != null && pollThread.isAlive()) return;
-        running = true;
+        synchronized (reconnectLock) {
+            if (intentionalDisconnect || !connected) return;
+            // V2.6.9 (P0-2): 无论是否启动新线程, 恢复轮询都清除生命周期暂停标志
+            pollingPausedByLifecycle = false;
+            if (pollThread != null && pollThread.isAlive()) return;
+            running = true;
 
-        pollThread = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                int dataLen = protocol.getExpectedLength(0x35);
-                if (dataLen <= 0) {
-                    // V2.6.9 (P1-2): 帧长无效 = 协议初始化异常, 走完整失败路径, 不死锁
-                    Log.e(TAG, "数据帧长度无效, 走完整失败路径");
-                    connected = false;
-                    cleanupFailedConnection();
-                    uiHandler.post(new Runnable() {
-                        @Override public void run() {
-                            if (callback != null) callback.onDisconnected();
-                        }
-                    });
-                    scheduleReconnect();
-                    return;
-                }
-
-                while (running && !intentionalDisconnect) {
+            pollThread = new Thread(new Runnable() {
+                @Override
+                public void run() {
                     try {
-                        sendCommand(HondataProtocol.CMD_SENSOR_DATA);
-                        byte[] resp = readExactWithTimeout(dataLen, READ_TIMEOUT_MS);
-                        final SensorData data = protocol.parseSensorData(resp);
-
-                        if (data != null) {
+                        int dataLen = protocol.getExpectedLength(0x35);
+                        if (dataLen <= 0) {
+                            // V2.6.9 (P1-2): 帧长无效 = 协议初始化异常, 走完整失败路径, 不死锁
+                            Log.e(TAG, "数据帧长度无效, 走完整失败路径");
+                            connected = false;
+                            cleanupFailedConnection();
                             uiHandler.post(new Runnable() {
                                 @Override public void run() {
-                                    if (callback != null) callback.onDataReceived(data);
+                                    Callback cb = callback;
+                                    if (cb != null) cb.onDisconnected();
                                 }
                             });
+                            scheduleReconnect();
+                            return;
                         }
 
-                        if (POLL_INTERVAL_MS > 0) {
-                            Thread.sleep(POLL_INTERVAL_MS);
-                        }
+                        int invalidFrames = 0;
+                        while (running && !intentionalDisconnect) {
+                            try {
+                                sendCommand(HondataProtocol.CMD_SENSOR_DATA);
+                                byte[] resp = readExactWithTimeout(dataLen, READ_TIMEOUT_MS);
+                                final SensorData data = protocol.parseSensorData(resp);
 
-                    } catch (IOException e) {
-                        Log.w(TAG, "数据读取异常: " + e.getMessage());
-                        connected = false;
+                                if (data != null) {
+                                    invalidFrames = 0;
+                                    data.receivedAtElapsedMs = SystemClock.elapsedRealtime();
+                                    uiHandler.post(new Runnable() {
+                                        @Override public void run() {
+                                            Callback cb = callback;
+                                            if (cb != null && !intentionalDisconnect && !pollingPausedByLifecycle) cb.onDataReceived(data);
+                                        }
+                                    });
+                                } else if (++invalidFrames >= 3) {
+                                    throw new IOException("连续无效数据帧");
+                                }
 
-                        // V2.6.9 (P0-2): 生命周期暂停 (onPause) 导致的退出不算断线
-                        if (intentionalDisconnect || pollingPausedByLifecycle) {
-                            break;
-                        }
+                                if (POLL_INTERVAL_MS > 0) {
+                                    Thread.sleep(POLL_INTERVAL_MS);
+                                }
 
-                        // 通知 UI 断线 (真实 I/O 异常)
-                        uiHandler.post(new Runnable() {
-                            @Override public void run() {
-                                if (callback != null) callback.onDisconnected();
+                            } catch (IOException e) {
+                                Log.w(TAG, "数据读取异常: " + e.getMessage());
+                                connected = false;
+
+                                // V2.6.9 (P0-2): 生命周期暂停 (onPause) 导致的退出不算断线
+                                if (intentionalDisconnect || pollingPausedByLifecycle) {
+                                    break;
+                                }
+
+                                // 通知 UI 断线 (真实 I/O 异常)
+                                uiHandler.post(new Runnable() {
+                                    @Override public void run() {
+                                        Callback cb = callback;
+                                    if (cb != null) cb.onDisconnected();
+                                    }
+                                });
+
+                                // V1.4: 退出轮询循环，由 fullReset 接管
+                                Log.i(TAG, "断线检测，退出轮询，触发 fullReset");
+                                break;
+
+                            } catch (InterruptedException e) {
+                                // V2.6.9 (P0-2): 中断可能是 stopPolling (生命周期暂停), 不算断线
+                                break;
+                            } catch (RuntimeException e) {
+                                // V2.6.7: 捕获协议解析等 RuntimeException，防止线程静默死亡
+                                Log.e(TAG, "数据处理异常: " + e.getMessage(), e);
+                                connected = false;
+
+                                if (intentionalDisconnect || pollingPausedByLifecycle) {
+                                    break;
+                                }
+
+                                uiHandler.post(new Runnable() {
+                                    @Override public void run() {
+                                        Callback cb = callback;
+                                    if (cb != null) cb.onDisconnected();
+                                    }
+                                });
+
+                                break;
                             }
-                        });
-
-                        // V1.4: 退出轮询循环，由 fullReset 接管
-                        Log.i(TAG, "断线检测，退出轮询，触发 fullReset");
-                        break;
-
-                    } catch (InterruptedException e) {
-                        // V2.6.9 (P0-2): 中断可能是 stopPolling (生命周期暂停), 不算断线
-                        break;
-                    } catch (RuntimeException e) {
-                        // V2.6.7: 捕获协议解析等 RuntimeException，防止线程静默死亡
-                        Log.e(TAG, "数据处理异常: " + e.getMessage(), e);
-                        connected = false;
-
-                        if (intentionalDisconnect || pollingPausedByLifecycle) {
-                            break;
                         }
 
-                        uiHandler.post(new Runnable() {
-                            @Override public void run() {
-                                if (callback != null) callback.onDisconnected();
+                    } finally {
+                        synchronized (reconnectLock) {
+                            // An old worker must never clear or restart a newer worker.
+                            if (pollThread == Thread.currentThread()) {
+                                pollThread = null;
+                                if (!intentionalDisconnect && !pollingPausedByLifecycle) {
+                                    if (connected) startPolling();
+                                    else scheduleReconnect();
+                                }
                             }
-                        });
-
-                        break;
+                        }
                     }
                 }
-
-                // V2.6.9 (P0-2): 轮询退出后, 只在"真实断线"(非主动断开 + 非生命周期暂停)时触发 fullReset
-                if (!intentionalDisconnect && !pollingPausedByLifecycle && !reconnecting) {
-                    uiHandler.post(new Runnable() {
-                        @Override public void run() {
-                            fullReset();
-                        }
-                    });
-                }
-            }
-        });
-        pollThread.setDaemon(true);
-        pollThread.start();
+            });
+            pollThread.setDaemon(true);
+            pollThread.start();
+        }
     }
 
     @Override
     public void stopPolling() {
         // V2.6.9 (P0-2): 标记为生命周期暂停, pollThread 退出时不触发 fullReset/onDisconnected
-        pollingPausedByLifecycle = true;
-        running = false;
-        if (pollThread != null) {
-            pollThread.interrupt();
-            pollThread = null;
+        synchronized (reconnectLock) {
+            pollingPausedByLifecycle = true;
+            running = false;
+            // Finish the current bounded read to preserve the packet boundary.
+            // Keep ownership until finally; a fast resume cannot start a second reader.
         }
     }
 
     @Override
     public void disconnect() {
-        intentionalDisconnect = true;
+        synchronized (reconnectLock) { intentionalDisconnect = true; }
         closeAllBluetoothResources();
         // V2.6.8: 用统一出口释放
         exitReconnecting();
 
         uiHandler.post(new Runnable() {
             @Override public void run() {
-                if (callback != null) callback.onDisconnected();
+                Callback cb = callback;
+                            if (cb != null) cb.onDisconnected();
             }
         });
     }
 
     // V2.6.7: 统一资源释放 — 中断 pollThread + 关闭所有流/socket
     private synchronized void closeAllBluetoothResources() {
-        running = false;
-        connected = false;
-
-        Thread t = pollThread;
-        pollThread = null;
+        Thread t;
+        synchronized (reconnectLock) {
+            running = false;
+            connected = false;
+            t = pollThread;
+            pollThread = null;
+        }
 
         if (t != null && t != Thread.currentThread()) {
             try {
@@ -561,6 +637,7 @@ public class BluetoothSource implements DataSource {
     // V2.6.8: volatile 读本身就足够做 best-effort 防重, 最终仲裁由 fullReset 内部 tryEnterReconnecting 完成
     private void scheduleReconnect() {
         if (intentionalDisconnect) return;
+        if (!hasTargetAddress()) return;
         if (reconnecting) return;
 
         uiHandler.post(new Runnable() {
@@ -571,6 +648,8 @@ public class BluetoothSource implements DataSource {
     }
 
     private void closeSocket() {
+        closeQuietly(connectingSocket);
+        connectingSocket = null;
         closeQuietly(inputStream);
         closeQuietly(outputStream);
         closeQuietly(socket);
@@ -665,24 +744,26 @@ public class BluetoothSource implements DataSource {
         Log.e(TAG, "错误: " + msg);
         uiHandler.post(new Runnable() {
             @Override public void run() {
-                if (callback != null) callback.onError(msg);
+                Callback cb = callback;
+                            if (cb != null) cb.onError(msg);
             }
         });
     }
 
-    public static String findFlashPro(BluetoothAdapter adapter) {
-        if (adapter == null) return null;
-        for (BluetoothDevice device : adapter.getBondedDevices()) {
-            String name = device.getName();
-            if (name != null && (name.toLowerCase().contains("flashpro")
-                    || name.toLowerCase().contains("hondata"))) {
-                return device.getAddress();
-            }
-        }
-        return null;
+    private boolean hasTargetAddress() {
+        String address = targetAddress;
+        return address != null && BluetoothAdapter.checkBluetoothAddress(address);
     }
 
-    public static String findFlashPro() {
-        return findFlashPro(BluetoothAdapter.getDefaultAdapter());
+    private static String normalizeAddress(String address) {
+        if (address == null) return null;
+        String normalized = address.trim().toUpperCase(java.util.Locale.US);
+        return BluetoothAdapter.checkBluetoothAddress(normalized) ? normalized : null;
     }
+
+    /** Visible for diagnostics and regression checks; no address is compiled into the APK. */
+    public String getTargetAddress() {
+        return targetAddress;
+    }
+
 }

@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg_main">#000000</color>
-    <color name="dash_label">#FFCCCCCC</color>
+    <!-- V2.9.1 reference-lock palette: tuned to the supplied cockpit mockup. -->
+    <color name="bg_main">#FF03070A</color>
+    <color name="bg_card">#FF071014</color>
+    <color name="bg_card_top">#FF0A151A</color>
+    <color name="dash_divider">#FF58727E</color>
+    <color name="dash_inner_divider">#FF425A66</color>
+    <color name="dash_label">#FFF0F4F5</color>
+    <color name="dash_unit">#FFC7D2D7</color>
+    <color name="dash_extreme_label">#FFC5D1D6</color>
+    <color name="dash_extreme_value">#FFF1F4F4</color>
+    <color name="dash_value">#FFF3F5F4</color>
+    <color name="dash_safe">#FF6FE642</color>
 </resources>

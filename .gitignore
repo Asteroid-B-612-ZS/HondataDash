@@ -1,4 +1,4 @@
-*.iml
+﻿*.iml
 .gradle
 /local.properties
 /.idea
@@ -10,11 +10,11 @@
 .cxx
 local.properties
 
-# 调试/临时文件
+# 璋冭瘯/涓存椂鏂囦欢
 *.png
 *.cfa
 *.apk
 analyze_apk.py
 hondatamobile.apk
 ui_simulator.html
-tools/
+__pycache__/

@@ -3,15 +3,15 @@ plugins {
 }
 
 android {
-    namespace 'com.hondata.dash'
+    namespace 'io.github.asteroidb612zs.hondatadash'
     compileSdk 33
 
     defaultConfig {
-        applicationId "com.hondata.dash"
+        applicationId "io.github.asteroidb612zs.hondatadash"
         minSdk 17
         targetSdk 28
-        versionCode 24
-        versionName "1.0"
+        versionCode 44
+        versionName "2.0"
     }
 
     lintOptions {

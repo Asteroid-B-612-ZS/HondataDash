@@ -1,109 +1,137 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    传感器卡片 V8 - Display Architecture Reset
-    顶部: 英文缩写(左) + 单位(右上角右对齐)
-    中央: mainValue(weight 3.6) + MAX/MIN(weight 1.2)
-      - valueInt: match_parent, 单 TextView 完整字符串
-      - extremePanel: INVISIBLE/VISIBLE 切换, 不用 GONE
-    底部: 刻度进度条
+    V2.9.4 real-car refinement.
+
+    Geometry is based on the V2.9.3 merged layout that the user already tested:
+      - 56dp optical extreme panel
+      - 37dp reserved main-value slot
+      - 15sp MAX/MIN/HI/LO labels
+      - 22sp extreme values
+
+    The important V2.9.4 change is optical separation: all extreme labels/values
+    are right-aligned with a small right inset. That moves short values away from
+    the main figure while preserving long values such as +10.3 at full size.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@drawable/bg_card"
-    android:padding="4dp">
+    android:padding="@dimen/card_padding">
 
-    <!-- 顶部: 标题(单位) -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <TextView
-            android:id="@+id/labelEn"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textColor="@color/dash_label"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            android:singleLine="true"/>
-
-        <TextView
-            android:id="@+id/unit"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textColor="@color/dash_label"
-            android:textSize="18sp"
-            android:includeFontPadding="false"
-            android:singleLine="true"
-            android:gravity="center_vertical"/>
-    </LinearLayout>
-
-    <!-- 中央: 主值 + MAX/MIN -->
-    <LinearLayout
+    <!-- Main visual field. Extreme panel is optically overlaid at the right, as in V2.9.3. -->
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:layout_weight="1">
 
-        <!-- 主值区: weight 3.6 -->
-        <FrameLayout
-            android:id="@+id/valueArea"
-            android:layout_width="0dp"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_weight="3.6"
-            android:paddingStart="2dp"
-            android:paddingEnd="2dp"
-            android:clipChildren="true"
-            android:clipToPadding="true">
+            android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/valueInt"
+            <!-- Main title + unit. MainActivity tightens both to actual ink width. -->
+            <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:gravity="center_vertical|start"
-                android:textColor="#FFFFFFFF"
-                android:textSize="112sp"
-                android:textStyle="bold|italic"
-                android:includeFontPadding="false"
-                android:singleLine="true"
-                android:ellipsize="none"
-                android:text="--"/>
+                android:layout_height="@dimen/card_title_height"
+                android:orientation="horizontal"
+                android:gravity="center_vertical|start">
 
-            <!-- 兼容旧 id，不再用于显示 -->
-            <TextView
-                android:id="@+id/valueDec"
-                android:layout_width="0dp"
+                <io.github.asteroidb612zs.hondatadash.FittedTextView
+                    android:id="@+id/labelEn"
+                    style="@style/DashboardCardLabel"
+                    android:layout_width="80dp"
+                    android:layout_height="match_parent"
+                    android:gravity="center_vertical|start"/>
+
+                <io.github.asteroidb612zs.hondatadash.FittedTextView
+                    android:id="@+id/unit"
+                    style="@style/DashboardUnit"
+                    android:layout_width="28dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginStart="6dp"
+                    android:gravity="center_vertical|start"/>
+            </LinearLayout>
+
+            <!-- Main value field. The spacer preserves V2.9.3 main-value geometry. -->
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="0dp"
-                android:visibility="gone"
-                android:text=""/>
-        </FrameLayout>
+                android:layout_weight="1"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
 
-        <!-- MAX/MIN: weight 1.2 -->
+                <FrameLayout
+                    android:id="@+id/valueArea"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:paddingStart="1dp"
+                    android:paddingEnd="3dp"
+                    android:clipChildren="true"
+                    android:clipToPadding="true">
+
+                    <io.github.asteroidb612zs.hondatadash.FittedTextView
+                        android:id="@+id/valueInt"
+                        style="@style/DashboardMainValue"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:gravity="center_vertical|end"
+                        android:ellipsize="none"
+                        android:text="--"/>
+
+                    <io.github.asteroidb612zs.hondatadash.FittedTextView
+                        android:id="@+id/valueDec"
+                        android:layout_width="0dp"
+                        android:layout_height="0dp"
+                        android:visibility="gone"
+                        android:text=""/>
+                </FrameLayout>
+
+                <!-- Soft center-only separator instead of a hard full-height rule. -->
+                <View
+                    android:layout_width="1dp"
+                    android:layout_height="40dp"
+                    android:layout_gravity="center_vertical"
+                    android:background="@drawable/bg_extreme_divider"/>
+
+                <View
+                    android:layout_width="@dimen/extreme_value_reserve"
+                    android:layout_height="match_parent"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!--
+            Right-side extreme column.
+            V2.9.4: title AND value use END gravity. Short strings therefore gain
+            natural air on their left instead of visually crowding the main value.
+        -->
         <LinearLayout
             android:id="@+id/extremePanel"
-            android:layout_width="0dp"
+            android:layout_width="@dimen/extreme_width"
             android:layout_height="match_parent"
-            android:layout_weight="1.2"
+            android:layout_gravity="end"
             android:orientation="vertical"
-            android:gravity="end"
-            android:paddingEnd="2dp"
+            android:gravity="center_vertical|end"
+            android:paddingStart="2dp"
+            android:paddingEnd="3dp"
             android:clipChildren="true"
             android:clipToPadding="true">
 
-            <TextView
-                android:id="@+id/maxValue"
+            <io.github.asteroidb612zs.hondatadash.FittedTextView
+                android:id="@+id/highLabel"
+                style="@style/DashboardExtremeLabel"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="end"
-                android:textColor="#FFBBBBBB"
-                android:textSize="20sp"
-                android:textStyle="bold"
-                android:includeFontPadding="false"
-                android:singleLine="true"
+                android:layout_height="15dp"
+                android:gravity="center_vertical|end"
+                android:text="MAX"/>
+
+            <io.github.asteroidb612zs.hondatadash.FittedTextView
+                android:id="@+id/maxValue"
+                style="@style/DashboardExtremeValue"
+                android:layout_width="match_parent"
+                android:layout_height="24dp"
+                android:gravity="center_vertical|end"
                 android:ellipsize="none"
                 android:text=""/>
 
@@ -112,27 +140,34 @@
                 android:layout_height="0dp"
                 android:layout_weight="1"/>
 
-            <TextView
-                android:id="@+id/minValue"
+            <io.github.asteroidb612zs.hondatadash.FittedTextView
+                android:id="@+id/lowLabel"
+                style="@style/DashboardExtremeLabel"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="end"
-                android:textColor="#FFAAAAAA"
-                android:textSize="20sp"
-                android:textStyle="bold"
-                android:includeFontPadding="false"
-                android:singleLine="true"
+                android:layout_height="15dp"
+                android:gravity="center_vertical|end"
+                android:text="MIN"/>
+
+            <io.github.asteroidb612zs.hondatadash.FittedTextView
+                android:id="@+id/minValue"
+                style="@style/DashboardExtremeValue"
+                android:layout_width="match_parent"
+                android:layout_height="24dp"
+                android:gravity="center_vertical|end"
                 android:ellipsize="none"
                 android:text=""/>
-        </LinearLayout>
-    </LinearLayout>
 
-    <!-- 底部: 刻度进度条 -->
-    <com.hondata.dash.ScaleBarView
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="6dp"/>
+        </LinearLayout>
+    </FrameLayout>
+
+    <io.github.asteroidb612zs.hondatadash.ScaleBarView
         android:id="@+id/scaleBar"
         android:layout_width="match_parent"
-        android:layout_height="42dp"
-        android:paddingLeft="2dp"
-        android:paddingRight="2dp"/>
+        android:layout_height="@dimen/range_height"
+        android:paddingLeft="3dp"
+        android:paddingRight="3dp"/>
 
 </LinearLayout>

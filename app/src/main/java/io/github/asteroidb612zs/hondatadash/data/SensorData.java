@@ -1,4 +1,4 @@
-package com.hondata.dash.data;
+package io.github.asteroidb612zs.hondatadash.data;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -11,6 +11,8 @@ import java.util.Map;
 public class SensorData {
 
     public long timestamp;
+    /** Monotonic receive time; distinct from the wall-clock time used in logs. */
+    public long receivedAtElapsedMs;
     private final Map<Integer, Double> values = new LinkedHashMap<>();
 
     public void put(int pid, double value) {

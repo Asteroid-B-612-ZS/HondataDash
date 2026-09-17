@@ -1,4 +1,4 @@
-package com.hondata.dash.data;
+package io.github.asteroidb612zs.hondatadash.data;
 
 /**
  * 数据源抽象接口。
@@ -15,6 +15,7 @@ public interface DataSource {
     }
 
     void setCallback(Callback callback);
+    /** Connect to a selected Bluetooth address; non-Bluetooth implementations may ignore it. */
     void connect(String address);
     void disconnect();
     void startPolling();

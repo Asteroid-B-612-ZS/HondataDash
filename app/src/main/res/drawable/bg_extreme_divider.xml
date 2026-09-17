@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- V2.9.3 soft divider retained: strongest at center, fades at both ends. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="90"
+        android:startColor="#0023353F"
+        android:centerColor="#FF23353F"
+        android:endColor="#0023353F" />
+</shape>

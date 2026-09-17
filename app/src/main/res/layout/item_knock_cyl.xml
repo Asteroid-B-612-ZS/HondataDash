@@ -8,29 +8,40 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:gravity="center_horizontal"
-    android:background="@drawable/bg_card"
+    android:background="@drawable/bg_bottom_cell"
     android:padding="2dp">
 
-    <TextView
-        android:id="@+id/knockLabel"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:textColor="@color/dash_label"
-        android:textSize="10sp"
-        android:textStyle="bold"/>
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="16dp"
+        android:orientation="horizontal"
+        android:gravity="center">
 
-    <TextView
+        <io.github.asteroidb612zs.hondatadash.MiniIconView
+            android:layout_width="9dp"
+            android:layout_height="10dp"
+            android:tag="cyl"/>
+
+        <io.github.asteroidb612zs.hondatadash.FittedTextView
+            android:id="@+id/knockLabel"
+            style="@style/DashboardAuxLabel"
+            android:layout_width="35dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="2dp"
+            android:gravity="center_vertical|start"/>
+    </LinearLayout>
+
+    <io.github.asteroidb612zs.hondatadash.FittedTextView
         android:id="@+id/knockValue"
-        android:layout_width="wrap_content"
+        style="@style/DashboardAuxValue"
+        android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
         android:layout_gravity="center_horizontal"
         android:gravity="center"
-        android:textColor="#FF3FB950"
-        android:textSize="33sp"
+        android:textColor="@color/dash_safe"
+        android:textSize="30sp"
         android:textStyle="bold|italic"
-        android:includeFontPadding="false"
-        android:singleLine="true"
         android:text="0"/>
 
 </LinearLayout>

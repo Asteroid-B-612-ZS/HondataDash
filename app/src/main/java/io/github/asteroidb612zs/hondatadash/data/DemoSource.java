@@ -1,7 +1,8 @@
-package com.hondata.dash.data;
+package io.github.asteroidb612zs.hondatadash.data;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 
 /**
  * Demo 数据源 — V2.1 真实 LOG 回放。
@@ -342,6 +343,7 @@ public class DemoSource implements DataSource {
 
     @Override
     public void startPolling() {
+        if (running) return;
         running = true;
         uiHandler.post(tick);
     }
@@ -388,6 +390,7 @@ public class DemoSource implements DataSource {
     private SensorData generate() {
         SensorData d = new SensorData();
         d.timestamp = System.currentTimeMillis();
+        d.receivedAtElapsedMs = SystemClock.elapsedRealtime();
 
         long elapsed = (System.currentTimeMillis() - startTime) % CYCLE;
 

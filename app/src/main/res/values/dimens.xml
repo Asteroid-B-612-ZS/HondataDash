@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="page_margin">4dp</dimen>
+    <dimen name="section_gap">4dp</dimen>
+    <dimen name="main_card_gap">4dp</dimen>
+    <dimen name="main_row_gap">4dp</dimen>
+    <dimen name="header_height">42dp</dimen>
+    <dimen name="bottom_height">66dp</dimen>
+    <dimen name="card_padding">4dp</dimen>
+
+    <!-- V2.9.3 merged geometry retained: the optical extreme panel is wider than
+         the reserved value slot, so long extreme values can stay at 22sp without
+         stealing more main-value width. V2.9.4 moves the text itself to the right
+         edge instead of changing this proven geometry. -->
+    <dimen name="extreme_width">56dp</dimen>
+    <dimen name="extreme_value_reserve">37dp</dimen>
+
+    <dimen name="card_title_height">21dp</dimen>
+    <dimen name="range_height">42dp</dimen>
+    <dimen name="card_border">1dp</dimen>
+    <dimen name="card_radius">7dp</dimen>
+</resources>

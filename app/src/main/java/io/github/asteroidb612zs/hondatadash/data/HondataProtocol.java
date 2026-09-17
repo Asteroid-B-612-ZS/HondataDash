@@ -1,4 +1,4 @@
-package com.hondata.dash.data;
+package io.github.asteroidb612zs.hondatadash.data;
 
 import java.util.ArrayList;
 import java.util.HashMap;
