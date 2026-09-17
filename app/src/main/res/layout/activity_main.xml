@@ -1,0 +1,422 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Hondata Dash - 800x480 横屏车载仪表 (硬核科技风格)
+    4x2 网格 + 底部爆震/辅助数据 + 页脚
+
+    布局:
+      Header: HONDA RACING + 装饰线
+      第1行: 乙醇含量 | 水温 | 进气温度 | 电压
+      第2行: 涡轮压力 | 点火角度 | 爆震控制值 | 长期燃油调整
+      底部左: 爆震计数 CYL1-4 (3/4宽)
+      底部右: 油门/MAP/AFR/负荷 (1/4宽)
+      Footer: REC | LOG | ECU | Time
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#FF000000">
+
+    <!-- ===== 6-LED 转速灯条 + Header 叠加 ===== -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="42dp">
+
+        <!-- LED 灯条 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:paddingStart="150dp"
+            android:paddingEnd="150dp">
+
+            <com.hondata.dash.ShiftLightView
+                android:id="@+id/shiftLight"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"/>
+        </LinearLayout>
+
+        <!-- Header 文字贴底, 与 LED 底部齐平 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="1dp">
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1"/>
+
+            <TextView
+                android:id="@+id/sourceName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#FF777777"
+                android:textSize="8sp"
+                android:layout_marginStart="10dp"/>
+
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="未连接"
+                android:textColor="#FFFF4444"
+                android:textSize="9sp"
+                android:layout_marginStart="6dp"/>
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- ===== 第一行: ETHANOL | WATER | IAT | VOLTAGE ===== -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal">
+
+        <include layout="@layout/item_sensor_card"
+            android:id="@+id/card0"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"/>
+
+        <include layout="@layout/item_sensor_card"
+            android:id="@+id/card1"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"/>
+
+        <include layout="@layout/item_sensor_card"
+            android:id="@+id/card2"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"/>
+
+        <include layout="@layout/item_sensor_card"
+            android:id="@+id/card3"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"/>
+    </LinearLayout>
+
+    <!-- ===== 第二行: BOOST | IGNITION | KNOCK | LTFT ===== -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal">
+
+        <include layout="@layout/item_sensor_card"
+            android:id="@+id/card4"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"/>
+
+        <include layout="@layout/item_sensor_card"
+            android:id="@+id/card5"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"/>
+
+        <include layout="@layout/item_sensor_card"
+            android:id="@+id/card6"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"/>
+
+        <include layout="@layout/item_sensor_card"
+            android:id="@+id/card7"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"/>
+    </LinearLayout>
+
+    <!-- ===== 底部行: 爆震数据 + 防滑 (59dp) ===== -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="59dp"
+        android:orientation="horizontal">
+
+        <!-- K.C 爆震控制 (weight=2) -->
+        <LinearLayout
+            android:id="@+id/knockRetCard"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="2"
+            android:orientation="horizontal"
+            android:background="@drawable/bg_card"
+            android:layout_margin="1dp"
+            android:padding="2dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="top|start"
+                android:paddingStart="2dp"
+                android:paddingTop="2dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="K.C"
+                    android:textColor="@color/dash_label"
+                    android:textSize="20sp"
+                    android:textStyle="bold"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="(%)"
+                    android:textColor="@color/dash_label"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:includeFontPadding="false"/>
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/knockRetValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_vertical"
+                android:textColor="#FF3FB950"
+                android:textSize="55sp"
+                android:textStyle="bold|italic"
+                android:includeFontPadding="false"
+                android:text="0"/>
+        </LinearLayout>
+
+        <!-- CYL 1-4 (each weight=1) -->
+        <include layout="@layout/item_knock_cyl"
+            android:id="@+id/knock0"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"/>
+
+        <include layout="@layout/item_knock_cyl"
+            android:id="@+id/knock1"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"/>
+
+        <include layout="@layout/item_knock_cyl"
+            android:id="@+id/knock2"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"/>
+
+        <include layout="@layout/item_knock_cyl"
+            android:id="@+id/knock3"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"/>
+
+        <!-- L.TRIM 短期燃油调整 (weight=1) -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/bg_card"
+            android:layout_margin="1dp"
+            android:padding="1dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="K.R"
+                android:textColor="@color/dash_label"
+                android:textSize="12sp"
+                android:textStyle="bold"/>
+
+            <TextView
+                android:id="@+id/bottomTrimValue"
+                android:layout_width="wrap_content"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:textColor="#FFFFFFFF"
+                android:textSize="30sp"
+                android:textStyle="bold"
+                android:includeFontPadding="false"
+                android:singleLine="true"
+                android:text="--"/>
+        </LinearLayout>
+
+        <!-- Knock Limit (weight=1) -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/bg_card"
+            android:layout_margin="1dp"
+            android:padding="1dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="K.L"
+                android:textColor="@color/dash_label"
+                android:textSize="12sp"
+                android:textStyle="bold"/>
+
+            <TextView
+                android:id="@+id/bottomAfmValue"
+                android:layout_width="wrap_content"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:textColor="#FFFFFFFF"
+                android:textSize="30sp"
+                android:textStyle="bold"
+                android:includeFontPadding="false"
+                android:singleLine="true"
+                android:text="--"/>
+        </LinearLayout>
+
+        <!-- BAT (weight=1) -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/bg_card"
+            android:layout_margin="1dp"
+            android:padding="1dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="BAT(V)"
+                android:textColor="@color/dash_label"
+                android:textSize="12sp"
+                android:textStyle="bold"/>
+
+            <TextView
+                android:id="@+id/bottomBatValue"
+                android:layout_width="wrap_content"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:textColor="#FFFFFFFF"
+                android:textSize="30sp"
+                android:textStyle="bold"
+                android:includeFontPadding="false"
+                android:singleLine="true"
+                android:text="--"/>
+        </LinearLayout>
+
+        <!-- F.P Fuel Pressure (weight=1) -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/bg_card"
+            android:layout_margin="1dp"
+            android:padding="1dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="F.P(bar)"
+                android:textColor="@color/dash_label"
+                android:textSize="12sp"
+                android:textStyle="bold"/>
+
+            <TextView
+                android:id="@+id/bottomFpValue"
+                android:layout_width="wrap_content"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:textColor="#FFFFFFFF"
+                android:textSize="30sp"
+                android:textStyle="bold"
+                android:includeFontPadding="false"
+                android:singleLine="true"
+                android:text="--"/>
+        </LinearLayout>
+
+        <!-- W Wastegate (weight=1) -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/bg_card"
+            android:layout_margin="1dp"
+            android:padding="1dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="W.G(%)"
+                android:textColor="@color/dash_label"
+                android:textSize="12sp"
+                android:textStyle="bold"/>
+
+            <TextView
+                android:id="@+id/bottomWgValue"
+                android:layout_width="wrap_content"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:textColor="#FFFFFFFF"
+                android:textSize="30sp"
+                android:textStyle="bold"
+                android:includeFontPadding="false"
+                android:singleLine="true"
+                android:text="--"/>
+        </LinearLayout>
+
+        <!-- T.P Throttle Plate (weight=1) -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/bg_card"
+            android:layout_margin="1dp"
+            android:padding="1dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="T.P(%)"
+                android:textColor="@color/dash_label"
+                android:textSize="12sp"
+                android:textStyle="bold"/>
+
+            <TextView
+                android:id="@+id/bottomTpValue"
+                android:layout_width="wrap_content"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:textColor="#FFFFFFFF"
+                android:textSize="30sp"
+                android:textStyle="bold"
+                android:includeFontPadding="false"
+                android:singleLine="true"
+                android:text="--"/>
+        </LinearLayout>
+    </LinearLayout>
+
+</LinearLayout>
