@@ -1,0 +1,27 @@
+name: Export IT1 Source Snapshot
+
+on:
+  push:
+    branches:
+      - internal/v2.0.1-it1
+
+permissions:
+  contents: read
+
+jobs:
+  export-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload exact source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: it1-source-snapshot
+          path: |
+            app/src/main/java/io/github/asteroidb612zs/hondatadash/MainActivity.java
+            app/src/main/java/io/github/asteroidb612zs/hondatadash/data/EngineSemanticState.java
+            app/src/main/java/io/github/asteroidb612zs/hondatadash/data/EngineStateTracker.java
+            app/src/main/java/io/github/asteroidb612zs/hondatadash/data/CombustionDisplayAdmission.java
+            app/src/main/java/io/github/asteroidb612zs/hondatadash/data/FuelPressureAlertTracker.java
+            tests/verify_v201_internal_semantics.py
+          retention-days: 1
