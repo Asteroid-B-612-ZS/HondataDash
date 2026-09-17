@@ -65,6 +65,8 @@ public class EngineStateTracker {
     private static final float RPM_RATE_THRESHOLD = 1200f;
     private static final float MAP_RATE_THRESHOLD = 300f;
 
+    // RC6 SHIFT_ARMED front gate. 4% is above clutch noise but ~65-75 ms earlier
+    // than the former 18% confirmation threshold in the supplied primary log.
     private static final float SHIFT_ARM_CLUTCH_ON = 4f;
     private static final float SHIFT_ARM_CLUTCH_RESET = 2f;
     private static final float SHIFT_CLUTCH_CONFIRM = 18f;
@@ -72,6 +74,9 @@ public class EngineStateTracker {
     private static final long SHIFT_ARM_TIMEOUT_MS = 600L;
     private static final long SHIFT_CONFIRM_BRIDGE_MS = 420L;
     private static final long SHIFT_CLUTCH_EXTEND_MS = 220L;
+    // Historical long logs show 99% of observed gear changes within ~2.13 s and all
+    // within 2.48 s of clutch rise. A 3 s semantic ceiling prevents a held clutch
+    // from masquerading as an endless SHIFT while preserving genuinely slow shifts.
     private static final long SHIFT_MAX_CONFIRMED_MS = 3000L;
     private static final float SHIFT_CONFIRM_RPM_RATE = 1200f;
     private static final float COAST_TP_MAX = 3f;
@@ -262,6 +267,9 @@ public class EngineStateTracker {
      * consumers from interpreting WOT as proof that warmup has finished.
      */
     private EngineSemanticState.ThermalContext initialThermalContext(float ect) {
+        // A hot connect/reconnect is trusted immediately. This is direct observation
+        // of an already-hot engine, not a COLD/WARMING -> READY threshold crossing.
+        // The 5 s confirmation window below applies only to an in-session transition.
         if (Float.isNaN(ect) || Float.isInfinite(ect)) {
             return EngineSemanticState.ThermalContext.UNKNOWN;
         }
@@ -397,8 +405,14 @@ public class EngineStateTracker {
         if (fuelCut && shiftPhase != EngineSemanticState.ShiftPhase.NONE) {
             direct = EngineSemanticState.CombustionState.SHIFT_FUEL_CUT;
         } else if (fuelCut && lowThrottle && dfcoRoadContext) {
+            // Once injection is actually off in a conventional overrun context,
+            // combustion-derived displays are invalid immediately; do not wait for
+            // lambda/target to drift toward free air.
             direct = EngineSemanticState.CombustionState.DFCO_FUEL_CUT;
         } else if (fuelCut) {
+            // Neutral coast, limiter/torque intervention and other non-firing
+            // conditions are invalid for combustion-derived displays even when
+            // they are not semantically DFCO.
             direct = EngineSemanticState.CombustionState.OTHER_FUEL_CUT;
         } else {
             direct = EngineSemanticState.CombustionState.FIRING_VALID;
@@ -464,6 +478,8 @@ public class EngineStateTracker {
 
     private EngineSemanticState.Modifier detectNonShiftModifier(float tpRate, float rpmRate, float mapRate,
             float tp, float speed, float inj, float rpm) {
+        // Driver intent wins over MAP derivative so a real TIP_OUT remains visible
+        // to the display front guard instead of being masked as BOOST_SURGE.
         if (tpRate < -TP_RATE_THRESHOLD) return EngineSemanticState.Modifier.TIP_OUT;
         if (tpRate > TP_RATE_THRESHOLD) return EngineSemanticState.Modifier.TIP_IN;
         if (Math.abs(mapRate) > MAP_RATE_THRESHOLD) return EngineSemanticState.Modifier.BOOST_SURGE;

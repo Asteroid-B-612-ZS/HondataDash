@@ -51,6 +51,10 @@ public final class CombustionDisplayAdmission {
     private static final long AF_STABLE_MS = 200L;
     private static final long STRIM_STABLE_MS = 400L;
 
+    // 14.26 h historical replay: physical lambda recovery to |lambda-target|<=.03
+    // stable for 200 ms is ~765 ms median and roughly 1.3-1.45 s near P90.
+    // The cap therefore protects ordinary sensor propagation but guarantees that
+    // a genuinely persistent post-cut lean/rich condition cannot be hidden forever.
     private static final long AF_MAX_RECOVERY_HOLD_MS = 1400L;
     private static final long STRIM_MAX_RECOVERY_HOLD_MS = 1600L;
     private static final float AF_RECOVER_ERR_MAX = 0.06f;
@@ -59,6 +63,7 @@ public final class CombustionDisplayAdmission {
     private static final float TIP_OUT_MIN_SPEED = 5f;
     private static final float TIP_OUT_MIN_RPM = 900f;
 
+    // Reused on every frame; no per-frame allocation on API 17 head units.
     private final Snapshot snapshot = new Snapshot();
     private boolean holdAf = false;
     private boolean holdIgn = false;
@@ -108,6 +113,8 @@ public final class CombustionDisplayAdmission {
             holdAf = true;
             holdIgn = true;
             holdStrim = true;
+            // Post-event recovery clocks begin only after the semantic/front guard
+            // ends. A long clutch hold or long overrun can never consume the cap.
             afRecoveryStarted = 0L;
             strimRecoveryStarted = 0L;
             afReadySince = 0L;
@@ -172,6 +179,9 @@ public final class CombustionDisplayAdmission {
             afReadySince = 0L;
         }
 
+        // Never hide a real condition indefinitely. Once injection and ECU target
+        // are valid, persistent target-relative error is exposed after this bounded
+        // allowance and may then trigger the alert layer.
         if (holdAf && afRecoveryStarted > 0L
                 && now - afRecoveryStarted >= AF_MAX_RECOVERY_HOLD_MS
                 && injectorActive && targetValid) {
@@ -203,6 +213,8 @@ public final class CombustionDisplayAdmission {
             strimReadySince = 0L;
         }
 
+        // S.TRIM is informative but highly dynamic. A bounded cap avoids an
+        // indefinitely grey card if the driver keeps accelerating after a shift.
         if (holdStrim && strimRecoveryStarted > 0L
                 && now - strimRecoveryStarted >= STRIM_MAX_RECOVERY_HOLD_MS
                 && basicReady) {

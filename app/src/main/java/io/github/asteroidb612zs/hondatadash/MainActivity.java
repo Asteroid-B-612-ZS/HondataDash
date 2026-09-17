@@ -1716,7 +1716,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private boolean isEligibleForExtreme(int i, boolean isMax,
                                          EngineSemanticState state, SensorData data) {
         if (state == null || data == null) return false;
-        boolean isWarmup = state.isWarmup();
+        boolean thermalWarmup = state.isThermalWarmup();
         boolean isSpool = state.sub == EngineSemanticState.SubState.SPOOL;
         boolean combustionTransient = state.isShiftActive() || state.isFuelCut()
                 || state.isCombustionRecovery();
@@ -1729,7 +1729,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 return true;
             case 1: // ECT — ignore cold-start minimum; start the range after warm-up.
             case 2: // IAT — same operating-window principle as ECT.
-                return !isWarmup && engineRunningStable;
+                return state.isThermallyReady() && engineRunningStable;
             case 3: // L.TRIM — learned range only in stable closed-loop context.
             case 7: // S.TRIM — trend extrema only in stable closed-loop context.
                 return isStableTrimColorContext(state, data);
@@ -1737,11 +1737,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 if (Float.isNaN(rpm) || Float.isNaN(tp) || Float.isNaN(map)
                         || state.isShiftActive()) return false;
                 if (isMax) {
-                    return !isWarmup && rpm > 1500f && tp > 35f && map > lastBaro + 20f;
+                    return !thermalWarmup && rpm > 1500f && tp > 35f && map > lastBaro + 20f;
                 }
                 return engineRunningStable && rpm > 900f && map < lastBaro - 10f;
             case 5: // A/F — both HI/LO only when combustion itself is interpretable.
-                if (isWarmup || isSpool || combustionTransient
+                if (thermalWarmup || isSpool || combustionTransient
                         || state.hasModifier()
                         || state.combustion != EngineSemanticState.CombustionState.FIRING_VALID)
                     return false;
@@ -1751,7 +1751,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
                         && lambda > 0.50f && lambda < 1.60f
                         && target > 0.55f && target < 1.30f;
             case 6: // IGN — HI may describe normal advance; LO requires meaningful load.
-                if (isWarmup || combustionTransient
+                if (thermalWarmup || combustionTransient
                         || state.combustion != EngineSemanticState.CombustionState.FIRING_VALID
                         || Float.isNaN(rpm) || rpm <= 1000f) return false;
                 if (isMax) return true;
@@ -2180,8 +2180,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private boolean isWarmupLowReference(EngineSemanticState state, SensorData data) {
         float ect = (float) data.getDouble(0x0160);
         boolean coldEngine = ect < WARMUP_ECT_THRESHOLD;
-        boolean warmupState = state.isWarmup();
-        return coldEngine || (warmupState && ect < 80f);
+        boolean thermalWarmup = state.isThermalWarmup();
+        return coldEngine || (thermalWarmup && ect < 80f);
     }
 
     // V2.6.7: 动态低 confidence 判定 — WOT/Modifier + 低 confidence
@@ -2472,7 +2472,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
     }
 
     private boolean isStableTrimColorContext(EngineSemanticState state, SensorData data) {
-        if (state == null || data == null || state.isWarmup() || state.isShiftActive()
+        if (state == null || data == null || !state.isThermallyReady() || state.isShiftActive()
                 || state.combustion != EngineSemanticState.CombustionState.FIRING_VALID
                 || state.modifier != EngineSemanticState.Modifier.NONE) return false;
         float cl = (float) data.getDouble(HondataProtocol.CID_ClosedLoop);

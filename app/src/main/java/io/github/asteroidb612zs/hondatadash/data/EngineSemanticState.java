@@ -77,10 +77,9 @@ public class EngineSemanticState {
 
     public boolean isDfco()    { return main == MainState.DFCO; }
     public boolean isWot()     { return main == MainState.WOT; }
-    /** Legacy presentation/readiness helper: thermal warmup, not MainState identity. */
-    public boolean isWarmup()  { return thermal != ThermalContext.READY; }
-    public boolean isWarmupMainState() { return main == MainState.WARMUP; }
+    /** Thermal readiness is orthogonal to MainState; query that dimension explicitly. */
     public boolean isThermallyReady() { return thermal == ThermalContext.READY; }
+    public boolean isThermalWarmup() { return thermal != ThermalContext.READY; }
     public boolean isIdle()    { return main == MainState.IDLE; }
     public boolean isNormal()  { return main == MainState.NORMAL; }
     public boolean hasModifier() { return modifier != Modifier.NONE; }
