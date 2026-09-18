@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - internal/v2.0.1-it2
+  pull_request:
+    branches:
+      - internal/v2.0.1-it1
   workflow_dispatch:
 
 permissions:
