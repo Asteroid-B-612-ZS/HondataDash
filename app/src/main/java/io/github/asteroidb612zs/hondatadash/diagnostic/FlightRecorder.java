@@ -172,10 +172,9 @@ public final class FlightRecorder implements DiagnosticObserver {
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
         if (!enabled) {
-            // Disabled diagnostics must never leave queued evidence keeping the
-            // writer alive during Activity shutdown. Dropping recorder data is
-            // always preferable to perturbing the production lifecycle.
-            clearQueues();
+            // Do not clear queues from the caller thread: the writer may currently
+            // own a queue-head slot outside the short queue lock. Wake the single
+            // writer and let it discard/close in one place without racing counters.
             synchronized (wakeLock) { wakeLock.notifyAll(); }
         } else {
             ioFailed = false;
@@ -491,8 +490,12 @@ public final class FlightRecorder implements DiagnosticObserver {
                     closeSession(false);
                     clearQueues();
                 }
-            } else if (sessionDir != null && !enabled) {
-                closeSession(true);
+            } else if (!enabled) {
+                // Single-writer ownership makes disable/shutdown queue disposal
+                // race-free. Recorder evidence may be discarded; production work
+                // is never delayed to preserve it.
+                clearQueues();
+                if (sessionDir != null) closeSession(true);
             }
 
             if (!didWork) {
