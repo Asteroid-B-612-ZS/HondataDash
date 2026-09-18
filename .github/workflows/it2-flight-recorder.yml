@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   build:
@@ -53,13 +54,18 @@ jobs:
           test -s app/src/main/assets/fonts/RobotoCondensed-BoldItalic.ttf
 
       - name: IT2 observer-boundary QA
-        run: python3 tests/verify_flight_recorder_it2.py
+        run: |
+          set -o pipefail
+          python3 tests/verify_flight_recorder_it2.py 2>&1 | tee -a ci.log
 
       - name: Existing semantic and API17 QA
         run: |
-          python3 tests/verify_api17_rc7.py
-          if [ -f tests/verify_semantics_rc7.py ]; then python3 tests/verify_semantics_rc7.py; fi
-          python3 tests/verify_refinement.py --android-jar "$ANDROID_HOME/platforms/android-33/android.jar"
+          set -o pipefail
+          {
+            python3 tests/verify_api17_rc7.py
+            if [ -f tests/verify_semantics_rc7.py ]; then python3 tests/verify_semantics_rc7.py; fi
+            python3 tests/verify_refinement.py --android-jar "$ANDROID_HOME/platforms/android-33/android.jar"
+          } 2>&1 | tee -a ci.log
 
       - name: Existing visual and instrument QA
         run: |
@@ -73,8 +79,9 @@ jobs:
 
       - name: Gradle release build
         run: |
+          set -o pipefail
           chmod +x gradlew
-          ./gradlew --no-daemon clean assembleRelease
+          ./gradlew --no-daemon clean assembleRelease 2>&1 | tee -a ci.log
 
       - name: Verify APK identity and signature
         run: |
@@ -100,3 +107,17 @@ jobs:
             apk_signature.txt
             apk_sha256.txt
           if-no-files-found: error
+
+
+      - name: Report IT2 CI result to draft PR
+        if: always() && github.ref == 'refs/heads/internal/v2.0.1-it2'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          sha_line="APK SHA: not produced"
+          if [ -f apk_sha256.txt ]; then sha_line="$(cat apk_sha256.txt)"; fi
+          tail_text="No ci.log output."
+          if [ -f ci.log ]; then tail_text="$(tail -n 35 ci.log)"; fi
+          printf -v body 'IT2 CI push `%s`: **%s**\n\n%s\n\nLast log lines:\n```text\n%s\n```' "$GITHUB_SHA" "$JOB_STATUS" "$sha_line" "$tail_text"
+          gh pr comment 1 --repo "$GITHUB_REPOSITORY" --body "$body"
