@@ -274,7 +274,9 @@ def validate_bluetooth_selection_contract():
         "only bonded devices are listed": "getBondedDevices()" in main and "startDiscovery(" not in main,
         "pairing UI is system owned": "Settings.ACTION_BLUETOOTH_SETTINGS" in main,
         "device can be changed from header": "statusText.setOnClickListener" in main and "showBluetoothDeviceChooser(false)" in main,
-        "unused location/storage permissions are absent": "ACCESS_FINE_LOCATION" not in manifest and "WRITE_EXTERNAL_STORAGE" not in manifest,
+        "Bluetooth pairing still needs no location permission": "ACCESS_FINE_LOCATION" not in manifest,
+        "IT2 diagnostic storage permission is explicit": "WRITE_EXTERNAL_STORAGE" in manifest
+            and "HondataDash/Diagnostics" in main,
     }
     failed = [name for name, passed in checks.items() if not passed]
     if failed:
@@ -426,7 +428,8 @@ def main():
         sources += [str(temp / "DisplayProbe.java"), str(temp / "FormatProbe.java"),
                     str(color_probe), str(temp / "ConnectionProbe.java"), str(recent_probe), str(JAVA / "ColorRecovery.java")]
         sources += [str(JAVA / "data" / (name + ".java")) for name in
-                    ["SensorData", "EngineSemanticState", "EngineStateTracker", "DataSource", "HondataProtocol", "BluetoothSource"]]
+                    ["SensorData", "EngineSemanticState", "EngineStateTracker", "DataSource",
+                     "HondataProtocol", "DiagnosticObserver", "BluetoothSource"]]
         run(javac + ["-d", str(temp / "classes")] + sources)
         run(["java", "-cp", str(temp / "classes"), "DisplayProbe"])
         run(["java", "-cp", str(temp / "classes"), "FormatProbe"])

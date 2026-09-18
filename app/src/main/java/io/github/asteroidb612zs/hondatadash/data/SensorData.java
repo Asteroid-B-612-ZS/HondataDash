@@ -11,6 +11,8 @@ import java.util.Map;
 public class SensorData {
 
     public long timestamp;
+    /** Diagnostic-only frame identity assigned after successful 0x35 decode. */
+    public long frameSequence;
     /** Monotonic receive time; distinct from the wall-clock time used in logs. */
     public long receivedAtElapsedMs;
     private final Map<Integer, Double> values = new LinkedHashMap<>();

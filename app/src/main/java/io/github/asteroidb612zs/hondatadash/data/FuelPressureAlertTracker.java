@@ -75,6 +75,11 @@ public final class FuelPressureAlertTracker {
         return lowObservedMs >= persistMs;
     }
 
+    /** Observer-only diagnostic accessors; they do not affect alert decisions. */
+    public long getLowObservedMs() { return lowObservedMs; }
+    public long getEvidencePausedSinceMs() { return evidencePausedSinceMs; }
+    public boolean isLowEvidenceActive() { return lowEvidenceActive; }
+
     public void reset() {
         lowObservedMs = 0L;
         lastObservableLowMs = 0L;

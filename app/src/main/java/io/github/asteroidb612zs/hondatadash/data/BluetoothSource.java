@@ -38,6 +38,10 @@ public class BluetoothSource implements DataSource {
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private HondataProtocol protocol;
 
+    // IT2: observer-only tap. It never owns polling, commands, reconnect or parsing.
+    private volatile DiagnosticObserver diagnosticObserver;
+    private long diagnosticFrameSequence;
+
     private volatile Callback callback;
     private BluetoothSocket socket;
     private volatile BluetoothSocket connectingSocket;
@@ -76,6 +80,7 @@ public class BluetoothSource implements DataSource {
 
     @Override public String getName() { return "Bluetooth SPP"; }
     @Override public void setCallback(Callback cb) { this.callback = cb; }
+    public void setDiagnosticObserver(DiagnosticObserver observer) { this.diagnosticObserver = observer; }
     @Override public boolean isConnected() { return connected; }
 
     @Override
@@ -453,6 +458,18 @@ public class BluetoothSource implements DataSource {
         if (!protocol.parseSensorDefinitions(defResp)) return false;
         Log.i(TAG, "传感器定义已获取");
 
+        DiagnosticObserver observer = diagnosticObserver;
+        if (observer != null) {
+            try {
+                observer.onProtocolReady(protocol.getSensorCount(),
+                        protocol.getExpectedLength(0x35), protocol.getSensorDefs());
+            } catch (RuntimeException e) {
+                // Diagnostics are strictly non-authoritative. A recorder bug may not
+                // fail protocol handshake or alter production Bluetooth behavior.
+                Log.w(TAG, "诊断观察器初始化失败: " + e.getMessage());
+            }
+        }
+
         return true;
     }
 
@@ -496,7 +513,21 @@ public class BluetoothSource implements DataSource {
 
                                 if (data != null) {
                                     invalidFrames = 0;
-                                    data.receivedAtElapsedMs = SystemClock.elapsedRealtime();
+                                    final long receivedAt = SystemClock.elapsedRealtime();
+                                    final long frameSequence = ++diagnosticFrameSequence;
+                                    data.receivedAtElapsedMs = receivedAt;
+                                    data.frameSequence = frameSequence;
+
+                                    DiagnosticObserver observer = diagnosticObserver;
+                                    if (observer != null) {
+                                        try {
+                                            observer.onRawFrame(frameSequence, receivedAt, resp);
+                                        } catch (RuntimeException e) {
+                                            // Never let observer failure perturb polling cadence.
+                                            Log.w(TAG, "诊断观察器帧处理失败: " + e.getMessage());
+                                        }
+                                    }
+
                                     uiHandler.post(new Runnable() {
                                         @Override public void run() {
                                             Callback cb = callback;
