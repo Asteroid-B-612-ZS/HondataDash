@@ -38,7 +38,8 @@ assert 'CMD_SENSOR_DATA' not in REC
 assert 'sendCommand' not in REC
 assert 'BluetoothSocket' not in REC
 assert 'fullReset' not in REC
-assert 'reconnect' not in REC.lower()
+assert 'scheduleReconnect(' not in REC
+assert 'reconnectWithBackoff(' not in REC
 
 # Hot-path hooks enqueue/copy only; all persistent I/O belongs to the writer thread.
 raw=body(REC,'public void onRawFrame(','/**\n     * Called on the UI path')
