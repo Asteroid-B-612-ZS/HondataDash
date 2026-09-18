@@ -428,7 +428,8 @@ def main():
         sources += [str(temp / "DisplayProbe.java"), str(temp / "FormatProbe.java"),
                     str(color_probe), str(temp / "ConnectionProbe.java"), str(recent_probe), str(JAVA / "ColorRecovery.java")]
         sources += [str(JAVA / "data" / (name + ".java")) for name in
-                    ["SensorData", "EngineSemanticState", "EngineStateTracker", "DataSource", "HondataProtocol", "BluetoothSource"]]
+                    ["SensorData", "EngineSemanticState", "EngineStateTracker", "DataSource",
+                     "HondataProtocol", "DiagnosticObserver", "BluetoothSource"]]
         run(javac + ["-d", str(temp / "classes")] + sources)
         run(["java", "-cp", str(temp / "classes"), "DisplayProbe"])
         run(["java", "-cp", str(temp / "classes"), "FormatProbe"])
