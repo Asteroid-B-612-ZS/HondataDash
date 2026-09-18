@@ -41,6 +41,12 @@ jobs:
           grep -q 'applicationId "io.github.asteroidb612zs.hondatadash.internal"' app/build.gradle
           grep -q 'Hondata Dash IT2' app/src/main/res/values/strings.xml
 
+      - name: Install Android SDK 33
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-33" "build-tools;33.0.2"
+          test -f "$ANDROID_HOME/platforms/android-33/android.jar"
+
       - name: Restore pinned Roboto Condensed fonts
         run: |
           set -euxo pipefail
