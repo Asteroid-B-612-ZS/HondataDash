@@ -172,6 +172,10 @@ public final class FlightRecorder implements DiagnosticObserver {
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
         if (!enabled) {
+            // Disabled diagnostics must never leave queued evidence keeping the
+            // writer alive during Activity shutdown. Dropping recorder data is
+            // always preferable to perturbing the production lifecycle.
+            clearQueues();
             synchronized (wakeLock) { wakeLock.notifyAll(); }
         } else {
             ioFailed = false;
@@ -469,10 +473,12 @@ public final class FlightRecorder implements DiagnosticObserver {
             boolean didWork = false;
             if (enabled && !ioFailed) {
                 try {
-                    didWork |= drainRaw(64);
+                    // Drain derived evidence first so state/display rows keep the
+                    // session that produced them if a reconnect changes manifest.
                     didWork |= drainTrace(32);
                     didWork |= drainEvents(64);
                     didWork |= drainExtrema(64);
+                    didWork |= drainRaw(64);
                     long now = SystemClock.elapsedRealtime();
                     if (sessionDir != null && now - lastFlushElapsedMs >= FLUSH_INTERVAL_MS) flushAll(now);
                     if (sessionDir != null && lastFrameElapsedMs > 0L
