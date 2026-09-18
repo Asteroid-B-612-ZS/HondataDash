@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static/API17 and hot-path resource checks for V2.0.1-internal.1."""
+"""Static/API17 and hot-path resource checks for V2.0.1-internal.2."""
 from pathlib import Path
 import re
 ROOT=Path(__file__).resolve().parents[1]
@@ -41,4 +41,4 @@ assert 'new ' not in body(trusted,'public boolean captureHold(','public boolean 
 assert 'new Animation' not in MAIN and 'ObjectAnimator' not in MAIN and 'ValueAnimator' not in MAIN
 assert not re.search(r'setText\s*\(\s*["\']SHIFT["\']\s*\)',MAIN)
 assert 'private float boostFilter' in MAIN and 'public void onError(final String msg)' in MAIN
-print('PASS: V2.0.1-internal.1 API17/static hot-path, bounded-memory and no-persistence contracts')
+print('PASS: V2.0.1-internal.2 API17/static semantic hot-path and bounded-memory contracts')
