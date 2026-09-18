@@ -125,5 +125,5 @@ jobs:
           if [ -f apk_sha256.txt ]; then sha_line="$(cat apk_sha256.txt)"; fi
           tail_text="No ci.log output."
           if [ -f ci.log ]; then tail_text="$(tail -n 35 ci.log)"; fi
-          printf -v body 'IT2 CI push `%s`: **%s**\n\n%s\n\nLast log lines:\n```text\n%s\n```' "$GITHUB_SHA" "$JOB_STATUS" "$sha_line" "$tail_text"
+          printf -v body 'IT2 CI push `%s`: **%s**\n\nRun ID: `%s`\n\n%s\n\nLast log lines:\n```text\n%s\n```' "$GITHUB_SHA" "$JOB_STATUS" "$GITHUB_RUN_ID" "$sha_line" "$tail_text"
           gh pr comment 1 --repo "$GITHUB_REPOSITORY" --body "$body"
