@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - internal/v2.0.1-it1
+      - internal/v2.0.1-it2
   workflow_dispatch:
 
 permissions:
