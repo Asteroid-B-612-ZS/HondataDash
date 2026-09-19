@@ -12,8 +12,8 @@ FILES=[DATA/n for n in (
 TEXT='\n'.join(p.read_text() for p in FILES)
 assert re.search(r'\bminSdk\s+17\b',BUILD)
 assert re.search(r'\btargetSdk\s+28\b',BUILD)
-assert re.search(r'\\bversionCode\\s+47\\b',BUILD)
-assert re.search(r'versionName\\s+["\\\']2\\.0\\.1-internal\\.3["\\\']',BUILD)
+assert re.search(r'\bversionCode\s+47\b',BUILD)
+assert re.search(r'versionName\s+["\']2\.0\.1-internal\.3["\']',BUILD)
 for forbidden in ('java.time.','java.util.stream','java.util.function','.stream()','computeIfAbsent(',
                   'List.of(','Map.of(','Set.of(','Optional<','androidx.','kotlin.','CompletableFuture'):
     assert forbidden not in TEXT, forbidden
