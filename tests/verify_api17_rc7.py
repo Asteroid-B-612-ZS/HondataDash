@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static/API17 and hot-path resource checks for V2.0.1-internal.2."""
+"""Static/API17 and hot-path resource checks for V2.0.1-internal.3."""
 from pathlib import Path
 import re
 ROOT=Path(__file__).resolve().parents[1]
