@@ -392,12 +392,12 @@ public class EngineStateTracker {
             currentShiftPhase = EngineSemanticState.ShiftPhase.SHIFT_CONFIRMED;
             shiftConfirmedSince = now;
             shiftConfirmedUntil = now + SHIFT_CONFIRM_BRIDGE_MS;
-            shiftGearChangeObserved = rawGearChanged || stableGearChanged;
+            shiftGearChangeObserved = rawGearChanged || (bt42Profile && stableGearChanged);
             shiftArmedSince = 0L;
         }
 
         if (currentShiftPhase == EngineSemanticState.ShiftPhase.SHIFT_CONFIRMED) {
-            if (rawGearChanged || stableGearChanged) {
+            if (rawGearChanged || (bt42Profile && stableGearChanged)) {
                 shiftGearChangeObserved = true;
                 shiftConfirmedUntil = Math.max(shiftConfirmedUntil, now + SHIFT_CONFIRM_BRIDGE_MS);
             }
