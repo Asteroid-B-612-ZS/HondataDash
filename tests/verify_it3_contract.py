@@ -30,6 +30,7 @@ assert 'i != 4 && (EXTREME_POLICY[i] & EXTREME_MAX)' in MAIN
 assert 'i != 4 && (EXTREME_POLICY[i] & EXTREME_MAX) != 0' in MAIN
 assert '(i == 4 && !hasLastBoostEventPeak)' in MAIN
 assert 'resetLastBoostEventPeak();' in MAIN
+assert 'flightRecorder.onExtremaReset(4, now);' in MAIN
 
 # Placeholder transport frame cannot initialize semantic state.
 gate=MAIN.index('if (!isSemanticFramePlausible(data))')
@@ -51,6 +52,8 @@ for token in (
     assert token in TRACK, token
 assert 'roadShiftContext && !gearAvailable && !clutchAvailable' in TRACK
 assert 'fuelCut && shiftFuelCutAuthoritative' in TRACK
+assert 'boolean clutchGearEvidence = clutchAvailable && rawGearChanged' in TRACK
+assert 'rawGearChanged || (bt42Profile && stableGearChanged)' in TRACK
 
 # Recorder is engine-run gated, not App-open gated.
 for token in (
