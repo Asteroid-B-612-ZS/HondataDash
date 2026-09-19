@@ -538,7 +538,10 @@ public final class FlightRecorder implements DiagnosticObserver {
             boolean didWork = false;
             if (enabled && !ioFailed) {
                 try {
-                    if (protocolReady && !startupMaintenanceDone) {
+                    if (!startupMaintenanceDone) {
+                        // Copy-only ignition must be able to recover the previous
+                        // drive even if FlashPro has not finished handshaking yet.
+                        // This runs on the recorder writer, never the UI thread.
                         markInterruptedSessions();
                         enforceRetention();
                         startupMaintenanceDone = true;
