@@ -69,6 +69,8 @@ for token in (
     assert token in REC, token
 assert 'SESSION_IDLE_CLOSE_MS' not in REC
 assert 'if (!driveQualified || !protocolReady || hash != manifestHash) return;' in REC
+assert 'if (!startupMaintenanceDone)' in REC
+assert 'if (protocolReady && !startupMaintenanceDone)' not in REC
 assert 'if (!isEnabled() || !driveQualified || data == null' in REC
 assert 'rawCount >= PRE_DRIVE_RAW_FRAMES' in REC
 assert 'stamp + "_IT3"' in REC
