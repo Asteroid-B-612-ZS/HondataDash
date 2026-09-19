@@ -377,7 +377,7 @@ public class EngineStateTracker {
 
         boolean trajectoryEvidence = strongClutch && Math.abs(rpmRate) >= SHIFT_CONFIRM_RPM_RATE;
         boolean fuelCutEvidence = clutchConfirmed && fuelCut;
-        boolean clutchGearEvidence = rawGearChanged
+        boolean clutchGearEvidence = clutchAvailable && rawGearChanged
                 && (clutchAboveArm || currentShiftPhase != EngineSemanticState.ShiftPhase.NONE);
         boolean bt42GearEvidence = bt42Profile && stableGearChanged;
         // Legacy direct confirmation remains only for a transport that exposes
