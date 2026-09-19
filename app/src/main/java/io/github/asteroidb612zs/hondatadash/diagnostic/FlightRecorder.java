@@ -24,7 +24,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * V2.0.T2 observer-only flight recorder.
+ * V2.0.T3 observer-only flight recorder.
  *
  * Invariants:
  *  - never sends Bluetooth commands;
@@ -34,20 +34,21 @@ import java.util.Locale;
  *  - raw frames are retained so future decoders can reinterpret historical sessions.
  */
 public final class FlightRecorder implements DiagnosticObserver {
-    public static final String APP_VERSION = "2.0.1-internal.2";
-    public static final int VERSION_CODE = 46;
+    public static final String APP_VERSION = "2.0.1-internal.3";
+    public static final int VERSION_CODE = 47;
     public static final String SEMANTIC_BASELINE =
             "d0703f068517ae43e9a18492a65d4e4f4655f837";
-    public static final int RECORDER_VERSION = 1;
+    public static final int RECORDER_VERSION = 2;
 
     private static final int RAW_QUEUE_CAPACITY = 1024;
+    private static final int PRE_DRIVE_RAW_FRAMES = 64;
     private static final int TRACE_QUEUE_CAPACITY = 256;
     private static final int EVENT_QUEUE_CAPACITY = 256;
     private static final int EXTREMA_QUEUE_CAPACITY = 256;
     private static final int MAX_CHANNELS = 256;
     private static final long TRACE_INTERVAL_MS = 50L;       // 20 Hz
-    private static final long SESSION_IDLE_CLOSE_MS = 60000L;
     private static final long FLUSH_INTERVAL_MS = 2000L;
+    private static final long STATS_CHECKPOINT_MS = 10000L;
     private static final long MIN_FREE_BYTES = 200L * 1024L * 1024L;
     private static final long MAX_TOTAL_BYTES = 1024L * 1024L * 1024L;
     private static final int MAX_COMPLETE_SESSIONS = 30;
@@ -74,6 +75,11 @@ public final class FlightRecorder implements DiagnosticObserver {
     private volatile boolean stopping;
     private volatile boolean ioFailed;
     private volatile boolean protocolReady;
+    // IT3 drive-session lifecycle: ignition-only/copy-only power-up never creates
+    // a session. A session is committed only after a plausible RPM-running sample.
+    private volatile boolean driveQualified;
+    private volatile boolean engineSessionEndRequested;
+    private volatile boolean appForeground = true;
     private volatile int manifestHash;
     private volatile int sensorCount;
     private volatile int dataFrameLength;
@@ -120,6 +126,7 @@ public final class FlightRecorder implements DiagnosticObserver {
     private long extremaWritten;
     private long extremaDropped;
     private long writeErrors;
+    private long rejectedSemanticFrames;
     private int maxRawQueueDepth;
     private int maxTraceQueueDepth;
     private int maxEventQueueDepth;
@@ -151,6 +158,7 @@ public final class FlightRecorder implements DiagnosticObserver {
     private BufferedWriter eventOut;
     private BufferedWriter extremaOut;
     private long lastFlushElapsedMs;
+    private long lastStatsCheckpointMs;
     private boolean startupMaintenanceDone;
 
     private final Thread writerThread;
@@ -245,9 +253,13 @@ public final class FlightRecorder implements DiagnosticObserver {
         byte[][] frames = rawFrames;
         if (frames == null || frame.length > frames[0].length) return;
 
-        rawReceived++;
         synchronized (rawLock) {
-            if (rawCount >= RAW_QUEUE_CAPACITY) {
+            if (!driveQualified && rawCount >= PRE_DRIVE_RAW_FRAMES) {
+                // Ignition-only / file-copy mode: retain only a short pre-roll and
+                // never create disk evidence until the engine actually runs.
+                rawHead = (rawHead + 1) % RAW_QUEUE_CAPACITY;
+                rawCount--;
+            } else if (driveQualified && rawCount >= RAW_QUEUE_CAPACITY) {
                 rawDropped++;
                 return;
             }
@@ -259,6 +271,7 @@ public final class FlightRecorder implements DiagnosticObserver {
             rawManifestHash[rawTail] = manifestHash;
             rawTail = (rawTail + 1) % RAW_QUEUE_CAPACITY;
             rawCount++;
+            if (driveQualified) rawReceived++;
             if (rawCount > maxRawQueueDepth) maxRawQueueDepth = rawCount;
         }
         lastFrameElapsedMs = receivedAtElapsedMs;
@@ -273,8 +286,10 @@ public final class FlightRecorder implements DiagnosticObserver {
             CombustionDisplayAdmission.Snapshot admission,
             float afEffective, float ignEffective, float strimEffective, float strimWeight,
             boolean fpObservable, long fpLowObservedMs, long fpPauseAgeMs,
-            boolean fpEvidenceActive, boolean fpAlert) {
-        if (!isEnabled() || data == null || state == null || admission == null || !protocolReady) return;
+            boolean fpEvidenceActive, boolean fpAlert,
+            boolean boostEventActive, boolean hasLastBoostEventPeak, float lastBoostEventPeak) {
+        if (!isEnabled() || !driveQualified || data == null || state == null
+                || admission == null || !protocolReady) return;
         final long now = data.receivedAtElapsedMs > 0L
                 ? data.receivedAtElapsedMs : SystemClock.elapsedRealtime();
 
@@ -320,6 +335,9 @@ public final class FlightRecorder implements DiagnosticObserver {
             slot.fpPauseAgeMs = fpPauseAgeMs;
             slot.fpEvidenceActive = fpEvidenceActive;
             slot.fpAlert = fpAlert;
+            slot.boostEventActive = boostEventActive;
+            slot.hasLastBoostEventPeak = hasLastBoostEventPeak;
+            slot.lastBoostEventPeak = lastBoostEventPeak;
             traceTail = (traceTail + 1) % TRACE_QUEUE_CAPACITY;
             traceCount++;
             if (traceCount > maxTraceQueueDepth) maxTraceQueueDepth = traceCount;
@@ -330,7 +348,8 @@ public final class FlightRecorder implements DiagnosticObserver {
     /** Records accepted extrema changes only; rejected candidates are reconstructed from trace context. */
     public void recordExtrema(long now, EngineSemanticState state,
             float[] maxTrack, float[] minTrack, boolean[] hasValue) {
-        if (!isEnabled() || state == null || maxTrack == null || minTrack == null || hasValue == null) return;
+        if (!isEnabled() || !driveQualified || state == null
+                || maxTrack == null || minTrack == null || hasValue == null) return;
         for (int i = 0; i < 8; i++) {
             if (!hasValue[i]) continue;
             float max = maxTrack[i];
@@ -355,8 +374,54 @@ public final class FlightRecorder implements DiagnosticObserver {
     }
 
     public void recordTransportEvent(String type, long now) {
-        if (!isEnabled() || type == null) return;
+        if (!isEnabled() || !driveQualified || type == null) return;
         enqueueEvent(now, type, "", "", manifestHash);
+    }
+
+    public void recordRejectedSemanticFrame(long now) {
+        if (driveQualified) rejectedSemanticFrames++;
+    }
+
+    public void recordBoostEvent(String type, float peak, long now) {
+        if (!isEnabled() || !driveQualified || type == null) return;
+        enqueueEvent(now, type, "", floatText(peak), manifestHash);
+    }
+
+    public void onExtremaReset(int card, long now) {
+        if (card < 0 || card >= lastExtremeValid.length) return;
+        lastExtremeValid[card] = false;
+        lastExtremeMax[card] = Float.NaN;
+        lastExtremeMin[card] = Float.NaN;
+        if (driveQualified) enqueueEvent(now, "EXTREMA_RESET", CARD_NAMES[card], "", manifestHash);
+    }
+
+    public void onAppForegroundChanged(boolean foreground) {
+        appForeground = foreground;
+        if (driveQualified) {
+            enqueueEvent(SystemClock.elapsedRealtime(),
+                    foreground ? "UI_FOREGROUND" : "UI_BACKGROUND", "", "", manifestHash);
+        }
+        signalWriter();
+    }
+
+    public void onEngineRunningSample(boolean running, long now) {
+        if (!isEnabled() || !protocolReady || !running || driveQualified) return;
+        driveQualified = true;
+        engineSessionEndRequested = false;
+        synchronized (rawLock) {
+            // Count the retained pre-roll as part of this new session.
+            rawReceived = rawCount;
+        }
+        resetSessionCountersExceptRawReceived();
+        enqueueEvent(now, "DRIVE_SESSION_QUALIFIED", "", "", manifestHash);
+        signalWriter();
+    }
+
+    public void onEngineSessionEnded(long now) {
+        if (!driveQualified) return;
+        enqueueEvent(now, "ENGINE_SESSION_END", "", "", manifestHash);
+        engineSessionEndRequested = true;
+        signalWriter();
     }
 
     public void shutdown() {
@@ -398,7 +463,8 @@ public final class FlightRecorder implements DiagnosticObserver {
         if (main != lastMain) enqueueEvent(now, "MAIN_STATE", mainName(lastMain), mainName(main), manifestHash);
         if (thermal != lastThermal) enqueueEvent(now, "THERMAL", thermalName(lastThermal), thermalName(thermal), manifestHash);
         if (sub != lastSub) enqueueEvent(now, "SUB_STATE", subName(lastSub), subName(sub), manifestHash);
-        if (modifier != lastModifier) enqueueEvent(now, "MODIFIER", modifierName(lastModifier), modifierName(modifier), manifestHash);
+        // IT3: per-frame Modifier remains in semantic_trace. Do not mirror every
+        // 40-100 ms TIP/BOOST_SURGE oscillation into events.csv.
         if (shift != lastShift) enqueueEvent(now, "SHIFT_PHASE", shiftName(lastShift), shiftName(shift), manifestHash);
         if (combustion != lastCombustion) enqueueEvent(now, "COMBUSTION", combustionName(lastCombustion), combustionName(combustion), manifestHash);
         if (admission.holdAf != lastHoldAf) enqueueEvent(now, "AF_ADMISSION", lastHoldAf ? "HOLD" : "LIVE", admission.holdAf ? "HOLD" : "LIVE", manifestHash);
@@ -468,34 +534,54 @@ public final class FlightRecorder implements DiagnosticObserver {
     }
 
     private void writerLoop() {
-        while (!stopping || hasQueuedWork()) {
+        while (!stopping || (driveQualified && hasQueuedWork())) {
             boolean didWork = false;
             if (enabled && !ioFailed) {
                 try {
-                    // Drain derived evidence first so state/display rows keep the
-                    // session that produced them if a reconnect changes manifest.
-                    didWork |= drainTrace(32);
-                    didWork |= drainEvents(64);
-                    didWork |= drainExtrema(64);
-                    didWork |= drainRaw(64);
-                    long now = SystemClock.elapsedRealtime();
-                    if (sessionDir != null && now - lastFlushElapsedMs >= FLUSH_INTERVAL_MS) flushAll(now);
-                    if (sessionDir != null && lastFrameElapsedMs > 0L
-                            && now - lastFrameElapsedMs >= SESSION_IDLE_CLOSE_MS && !hasQueuedWork()) {
-                        closeSession(true);
+                    if (protocolReady && !startupMaintenanceDone) {
+                        markInterruptedSessions();
+                        enforceRetention();
+                        startupMaintenanceDone = true;
+                    }
+
+                    if (driveQualified) {
+                        // Drain derived evidence first so state/display rows keep the
+                        // session that produced them if a reconnect changes manifest.
+                        didWork |= drainTrace(32);
+                        didWork |= drainEvents(64);
+                        didWork |= drainExtrema(64);
+                        didWork |= drainRaw(64);
+
+                        long now = SystemClock.elapsedRealtime();
+                        if (sessionDir != null && now - lastFlushElapsedMs >= FLUSH_INTERVAL_MS) {
+                            flushAll(now);
+                        }
+                        if (sessionDir != null
+                                && now - lastStatsCheckpointMs >= STATS_CHECKPOINT_MS) {
+                            writeStatsAtomic();
+                            lastStatsCheckpointMs = now;
+                        }
+
+                        if (engineSessionEndRequested && !hasQueuedWork()) {
+                            closeSession(true);
+                            driveQualified = false;
+                            engineSessionEndRequested = false;
+                            clearQueues();
+                        }
                     }
                 } catch (Throwable t) {
                     writeErrors++;
                     ioFailed = true;
                     closeSession(false);
+                    driveQualified = false;
+                    engineSessionEndRequested = false;
                     clearQueues();
                 }
             } else if (!enabled) {
-                // Single-writer ownership makes disable/shutdown queue disposal
-                // race-free. Recorder evidence may be discarded; production work
-                // is never delayed to preserve it.
                 clearQueues();
                 if (sessionDir != null) closeSession(true);
+                driveQualified = false;
+                engineSessionEndRequested = false;
             }
 
             if (!didWork) {
@@ -505,6 +591,7 @@ public final class FlightRecorder implements DiagnosticObserver {
                 }
             }
         }
+        if (!driveQualified) clearQueues();
         if (sessionDir != null) closeSession(true);
     }
 
@@ -650,12 +737,7 @@ public final class FlightRecorder implements DiagnosticObserver {
     private void ensureSession(int hash, long firstElapsed) throws IOException {
         if (sessionDir != null && sessionManifestHash == hash) return;
         if (sessionDir != null) closeSession(true);
-        if (!protocolReady || hash != manifestHash) return;
-        if (!startupMaintenanceDone) {
-            markInterruptedSessions();
-            enforceRetention();
-            startupMaintenanceDone = true;
-        }
+        if (!driveQualified || !protocolReady || hash != manifestHash) return;
         if (!rootDir.exists() && !rootDir.mkdirs()) throw new IOException("Cannot create diagnostic root");
         if (rootDir.getUsableSpace() > 0L && rootDir.getUsableSpace() < MIN_FREE_BYTES) {
             ioFailed = true;
@@ -666,18 +748,20 @@ public final class FlightRecorder implements DiagnosticObserver {
         sessionStartElapsedMs = firstElapsed;
         String stamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
                 .format(new Date(sessionStartWallMs));
-        File candidate = new File(rootDir, stamp + "_IT2");
+        File candidate = new File(rootDir, stamp + "_IT3");
         int suffix = 1;
         while (candidate.exists()) {
-            candidate = new File(rootDir, stamp + "_IT2_" + suffix);
+            candidate = new File(rootDir, stamp + "_IT3_" + suffix);
             suffix++;
         }
         if (!candidate.mkdirs()) throw new IOException("Cannot create session directory");
         sessionDir = candidate;
         sessionManifestHash = hash;
+        lastStatsCheckpointMs = SystemClock.elapsedRealtime();
 
-        writeSessionMetadata();
+        writeSessionMetadataAtomic();
         writeManifest();
+        new File(sessionDir, "ACTIVE").createNewFile();
 
         rawOut = new DataOutputStream(new BufferedOutputStream(
                 new FileOutputStream(new File(sessionDir, "raw_frames.bin")), 65536));
@@ -704,9 +788,11 @@ public final class FlightRecorder implements DiagnosticObserver {
         lastFlushElapsedMs = SystemClock.elapsedRealtime();
     }
 
-    private void writeSessionMetadata() throws IOException {
-        BufferedWriter out = new BufferedWriter(new OutputStreamWriter(
-                new FileOutputStream(new File(sessionDir, "session.json")), "UTF-8"));
+    private void writeSessionMetadataAtomic() throws IOException {
+        File target = new File(sessionDir, "session.json");
+        File tmp = new File(sessionDir, "session.json.tmp");
+        FileOutputStream fos = new FileOutputStream(tmp);
+        BufferedWriter out = new BufferedWriter(new OutputStreamWriter(fos, "UTF-8"));
         try {
             String iso = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ", Locale.US)
                     .format(new Date(sessionStartWallMs));
@@ -723,9 +809,13 @@ public final class FlightRecorder implements DiagnosticObserver {
             out.write("  \"traceIntervalMs\": " + TRACE_INTERVAL_MS + ",\n");
             out.write("  \"rawFormat\": \"big-endian header: magic/version/frameLength/channelCount; records: int64 sequence, int64 elapsedMs, int32 length, raw frame bytes\"\n");
             out.write("}\n");
+            out.flush();
+            fos.getFD().sync();
         } finally {
             out.close();
         }
+        if (target.exists() && !target.delete()) throw new IOException("Cannot replace session metadata");
+        if (!tmp.renameTo(target)) throw new IOException("Cannot commit session metadata");
     }
 
     private void writeManifest() throws IOException {
@@ -769,6 +859,7 @@ public final class FlightRecorder implements DiagnosticObserver {
         traceOut.write(",hold_af,hold_ign,hold_strim,released_af,released_ign,released_strim,front_guard");
         traceOut.write(",af_effective,ign_effective,strim_effective,strim_weight");
         traceOut.write(",fp_observable,fp_low_observed_ms,fp_pause_age_ms,fp_evidence_active,fp_alert");
+        traceOut.write(",boost_event_active,has_last_boost_peak,last_boost_peak");
         traceOut.newLine();
     }
 
@@ -828,6 +919,12 @@ public final class FlightRecorder implements DiagnosticObserver {
         traceOut.write(bool(s.fpEvidenceActive));
         traceOut.write(',');
         traceOut.write(bool(s.fpAlert));
+        traceOut.write(',');
+        traceOut.write(bool(s.boostEventActive));
+        traceOut.write(',');
+        traceOut.write(bool(s.hasLastBoostEventPeak));
+        traceOut.write(',');
+        traceOut.write(floatText(s.lastBoostEventPeak));
         traceOut.newLine();
     }
 
@@ -851,9 +948,11 @@ public final class FlightRecorder implements DiagnosticObserver {
         eventOut = null;
         extremaOut = null;
 
-        try { writeStats(); }
+        try { writeStatsAtomic(); }
         catch (Throwable t) { writeErrors++; complete = false; }
 
+        File active = new File(sessionDir, "ACTIVE");
+        if (active.exists()) active.delete();
         if (complete) {
             try { new File(sessionDir, "COMPLETE").createNewFile(); }
             catch (Throwable t) { writeErrors++; }
@@ -869,9 +968,12 @@ public final class FlightRecorder implements DiagnosticObserver {
         resetSessionTransitionMemory();
     }
 
-    private void writeStats() throws IOException {
+    private void writeStatsAtomic() throws IOException {
         if (sessionDir == null) return;
-        BufferedWriter out = new BufferedWriter(new FileWriter(new File(sessionDir, "recorder_stats.json")));
+        File target = new File(sessionDir, "recorder_stats.json");
+        File tmp = new File(sessionDir, "recorder_stats.json.tmp");
+        FileOutputStream fos = new FileOutputStream(tmp);
+        BufferedWriter out = new BufferedWriter(new OutputStreamWriter(fos, "UTF-8"));
         try {
             out.write("{\n");
             out.write("  \"rawReceived\": " + rawReceived + ",\n");
@@ -884,14 +986,36 @@ public final class FlightRecorder implements DiagnosticObserver {
             out.write("  \"extremaWritten\": " + extremaWritten + ",\n");
             out.write("  \"extremaDropped\": " + extremaDropped + ",\n");
             out.write("  \"writeErrors\": " + writeErrors + ",\n");
+            out.write("  \"rejectedSemanticFrames\": " + rejectedSemanticFrames + ",\n");
             out.write("  \"maxRawQueueDepth\": " + maxRawQueueDepth + ",\n");
             out.write("  \"maxTraceQueueDepth\": " + maxTraceQueueDepth + ",\n");
             out.write("  \"maxEventQueueDepth\": " + maxEventQueueDepth + ",\n");
             out.write("  \"maxExtremaQueueDepth\": " + maxExtremaQueueDepth + "\n");
             out.write("}\n");
+            out.flush();
+            fos.getFD().sync();
         } finally {
             out.close();
         }
+        if (target.exists() && !target.delete()) throw new IOException("Cannot replace recorder stats");
+        if (!tmp.renameTo(target)) throw new IOException("Cannot commit recorder stats");
+    }
+
+    private void resetSessionCountersExceptRawReceived() {
+        rawWritten = 0L;
+        rawDropped = 0L;
+        traceWritten = 0L;
+        traceDropped = 0L;
+        eventWritten = 0L;
+        eventDropped = 0L;
+        extremaWritten = 0L;
+        extremaDropped = 0L;
+        writeErrors = 0L;
+        rejectedSemanticFrames = 0L;
+        maxRawQueueDepth = rawCount;
+        maxTraceQueueDepth = 0;
+        maxEventQueueDepth = 0;
+        maxExtremaQueueDepth = 0;
     }
 
     private void resetSessionTransitionMemory() {
@@ -930,7 +1054,16 @@ public final class FlightRecorder implements DiagnosticObserver {
             if (!dir.isDirectory()) continue;
             File complete = new File(dir, "COMPLETE");
             File incomplete = new File(dir, "INCOMPLETE");
-            if (!complete.exists() && !incomplete.exists()) {
+            File recovered = new File(dir, "POWER_CUT_RECOVERED");
+            File active = new File(dir, "ACTIVE");
+            if (active.exists()) {
+                // Direct head-unit power loss after ignition-off is a normal vehicle
+                // lifecycle, not an app crash. Finalize it on next power-up so the
+                // user can copy it without starting a new drive session.
+                active.delete();
+                try { recovered.createNewFile(); } catch (IOException ignored) { }
+            } else if (!complete.exists() && !incomplete.exists() && !recovered.exists()) {
+                // Backward-compatible handling for IT2/unmarked interrupted folders.
                 try { incomplete.createNewFile(); } catch (IOException ignored) { }
             }
         }
@@ -946,11 +1079,13 @@ public final class FlightRecorder implements DiagnosticObserver {
         long total = directorySize(rootDir);
         int completeCount = 0;
         for (File dir : dirs) {
-            if (dir.isDirectory() && new File(dir, "COMPLETE").exists()) completeCount++;
+            if (dir.isDirectory() && (new File(dir, "COMPLETE").exists()
+                    || new File(dir, "POWER_CUT_RECOVERED").exists())) completeCount++;
         }
         for (File dir : dirs) {
             if (completeCount <= MAX_COMPLETE_SESSIONS && total <= MAX_TOTAL_BYTES) break;
-            if (!dir.isDirectory() || !new File(dir, "COMPLETE").exists()) continue;
+            if (!dir.isDirectory() || !(new File(dir, "COMPLETE").exists()
+                    || new File(dir, "POWER_CUT_RECOVERED").exists())) continue;
             long size = directorySize(dir);
             if (deleteRecursively(dir)) {
                 completeCount--;
@@ -1061,6 +1196,9 @@ public final class FlightRecorder implements DiagnosticObserver {
         long fpPauseAgeMs;
         boolean fpEvidenceActive;
         boolean fpAlert;
+        boolean boostEventActive;
+        boolean hasLastBoostEventPeak;
+        float lastBoostEventPeak;
     }
 
     private static final class EventSlot {
