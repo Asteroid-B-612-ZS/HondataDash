@@ -36,8 +36,8 @@ import java.util.Locale;
 public final class FlightRecorder implements DiagnosticObserver {
     public static final String APP_VERSION = "2.0.1-internal.3";
     public static final int VERSION_CODE = 47;
-    public static final String SEMANTIC_BASELINE =
-            "d0703f068517ae43e9a18492a65d4e4f4655f837";
+    public static final String SOURCE_BASE =
+            "04e952d18b00bee8a7a83019b7e1b49e2e9024e5";
     public static final int RECORDER_VERSION = 2;
 
     private static final int RAW_QUEUE_CAPACITY = 1024;
@@ -799,7 +799,8 @@ public final class FlightRecorder implements DiagnosticObserver {
             out.write("{\n");
             out.write("  \"appVersion\": \"" + APP_VERSION + "\",\n");
             out.write("  \"versionCode\": " + VERSION_CODE + ",\n");
-            out.write("  \"semanticBaseline\": \"" + SEMANTIC_BASELINE + "\",\n");
+            out.write("  \"sourceBase\": \"" + SOURCE_BASE + "\",\n");
+            out.write("  \"semanticChangeSet\": \"IT3\",\n");
             out.write("  \"recorderVersion\": " + RECORDER_VERSION + ",\n");
             out.write("  \"startTime\": \"" + iso + "\",\n");
             out.write("  \"startElapsedMs\": " + sessionStartElapsedMs + ",\n");
