@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static/API17 and hot-path resource checks for V2.0.1-internal.2."""
+"""Static/API17 and hot-path resource checks for V2.0.1-internal.3."""
 from pathlib import Path
 import re
 ROOT=Path(__file__).resolve().parents[1]
@@ -12,8 +12,8 @@ FILES=[DATA/n for n in (
 TEXT='\n'.join(p.read_text() for p in FILES)
 assert re.search(r'\bminSdk\s+17\b',BUILD)
 assert re.search(r'\btargetSdk\s+28\b',BUILD)
-assert re.search(r'\bversionCode\s+46\b',BUILD)
-assert re.search(r'versionName\s+["\']2\.0\.1-internal\.2["\']',BUILD)
+assert re.search(r'\bversionCode\s+47\b',BUILD)
+assert re.search(r'versionName\s+["\']2\.0\.1-internal\.3["\']',BUILD)
 for forbidden in ('java.time.','java.util.stream','java.util.function','.stream()','computeIfAbsent(',
                   'List.of(','Map.of(','Set.of(','Optional<','androidx.','kotlin.','CompletableFuture'):
     assert forbidden not in TEXT, forbidden
@@ -41,4 +41,4 @@ assert 'new ' not in body(trusted,'public boolean captureHold(','public boolean 
 assert 'new Animation' not in MAIN and 'ObjectAnimator' not in MAIN and 'ValueAnimator' not in MAIN
 assert not re.search(r'setText\s*\(\s*["\']SHIFT["\']\s*\)',MAIN)
 assert 'private float boostFilter' in MAIN and 'public void onError(final String msg)' in MAIN
-print('PASS: V2.0.1-internal.2 API17/static semantic hot-path and bounded-memory contracts')
+print('PASS: V2.0.1-internal.3 API17/static semantic hot-path and bounded-memory contracts')

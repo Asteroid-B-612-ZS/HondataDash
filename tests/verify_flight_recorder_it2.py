@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""V2.0.T2 flight-recorder observer-boundary and identity checks."""
+"""V2.0.T3 flight-recorder observer-boundary and identity checks."""
 from pathlib import Path
 import re
 
@@ -22,8 +22,8 @@ def body(text,start,end):
     assert end in part, end
     return part.split(end,1)[0]
 
-assert re.search(r'\bversionCode\s+46\b',BUILD)
-assert 'versionName "2.0.1-internal.2"' in BUILD
+assert re.search(r'\bversionCode\s+47\b',BUILD)
+assert 'versionName "2.0.1-internal.3"' in BUILD
 assert 'applicationId "io.github.asteroidb612zs.hondatadash.internal"' in BUILD
 assert 'WRITE_EXTERNAL_STORAGE' in MANIFEST
 assert 'ACCESS_FINE_LOCATION' not in MANIFEST
@@ -51,7 +51,17 @@ for forbidden in ('FileOutputStream','FileWriter','BufferedWriter','writeSession
 assert 'RAW_QUEUE_CAPACITY = 1024' in REC
 assert 'TRACE_QUEUE_CAPACITY = 256' in REC
 assert 'TRACE_INTERVAL_MS = 50L' in REC
-assert 'SESSION_IDLE_CLOSE_MS = 60000L' in REC
+assert 'SESSION_IDLE_CLOSE_MS' not in REC
+assert 'PRE_DRIVE_RAW_FRAMES = 64' in REC
+assert 'driveQualified' in REC
+assert 'POWER_CUT_RECOVERED' in REC
+assert '"ACTIVE"' in REC
+assert 'STATS_CHECKPOINT_MS = 10000L' in REC
+assert 'writeSessionMetadataAtomic' in REC
+assert 'writeStatsAtomic' in REC
+assert 'onEngineRunningSample' in REC
+assert 'onEngineSessionEnded' in REC
+assert 'onAppForegroundChanged' in REC
 assert '"Hondata-FlightRecorder"' in REC
 assert 'rawDropped++' in REC and 'traceDropped++' in REC
 
@@ -59,7 +69,6 @@ assert 'rawDropped++' in REC and 'traceDropped++' in REC
 for token in ('channel_manifest.csv','raw_frames.bin','semantic_trace.csv','events.csv',
               'extrema.csv','session.json','recorder_stats.json','"COMPLETE"','"INCOMPLETE"'):
     assert token in REC, token
-assert 'd0703f068517ae43e9a18492a65d4e4f4655f837' in REC
 assert 'manifestPids' in REC and 'manifestCs' in REC and 'manifestCt' in REC
 assert 'data.frameSequence' in BT and 'public long frameSequence' in (DATA/'SensorData.java').read_text()
 
@@ -76,4 +85,4 @@ for semantic_file in ('EngineStateTracker.java','CombustionDisplayAdmission.java
     assert 'FlightRecorder' not in text and 'DiagnosticObserver' not in text, semantic_file
 assert 'getLowObservedMs()' in FP and 'isLowEvidenceActive()' in FP
 
-print('PASS: IT2 observer-only Flight Recorder boundary, storage and identity contracts')
+print('PASS: IT3 drive-gated Flight Recorder boundary, recovery, storage and identity contracts')

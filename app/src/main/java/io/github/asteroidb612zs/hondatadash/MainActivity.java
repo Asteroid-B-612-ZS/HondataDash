@@ -198,6 +198,19 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private final long[] recentMaxDecayTimeMs = new long[8];
     private final long[] recentMinDecayTimeMs = new long[8];
 
+    // IT3: MAP MAX is no longer a rolling/decaying maximum. It is the exact peak
+    // from the most recent meaningful boost event and remains latched until the
+    // next boost event begins. MAP MIN keeps the existing recent-vacuum behaviour.
+    private static final float BOOST_EVENT_START_BAR = 0.20f;
+    private static final float BOOST_EVENT_KEEPALIVE_BAR = 0.10f;
+    private static final float BOOST_EVENT_START_TP = 35f;
+    private static final float BOOST_EVENT_KEEPALIVE_TP = 20f;
+    private static final long BOOST_EVENT_END_GRACE_MS = 1800L;
+    private boolean boostEventActive = false;
+    private boolean hasLastBoostEventPeak = false;
+    private float lastBoostEventPeak = Float.NaN;
+    private long boostEventLastDemandMs = 0L;
+
     // Session vs recent storage is independent from the visible label geometry.
     // RC7's visual labels are preserved exactly: cards 0..4 use MAX/MIN, cards 5..7
     // use HI/LO. MAP keeps RC7 MAX/MIN labels while its values now use recent semantic
@@ -760,6 +773,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
     protected void onResume() {
         super.onResume();
         foreground = true;
+        if (flightRecorder != null) flightRecorder.onAppForegroundChanged(true);
         lastAuxiliaryUpdateMs = 0L;
         freshnessHandler.removeCallbacks(freshnessRunnable);
         freshnessHandler.post(freshnessRunnable);
@@ -798,6 +812,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
         super.onPause();
         if (startupOverlay != null) startupOverlay.finish();
         foreground = false;
+        if (flightRecorder != null) flightRecorder.onAppForegroundChanged(false);
         freshnessHandler.removeCallbacks(freshnessRunnable);
         updateFlashState();
         if (shiftLight != null) shiftLight.setMonitoringActive(false);
@@ -981,6 +996,17 @@ public class MainActivity extends Activity implements DataSource.Callback {
             @Override public void run() {
                 // V2.2: 数据新鲜度追踪
                 if (activityDestroyed || !foreground) return;
+                // IT3: FlashPro reconnect may emit one placeholder frame (for example
+                // negative throttle / zero MAP) before real telemetry. Never allow
+                // that transport artifact to seed ThermalContext/MainState.
+                if (!isSemanticFramePlausible(data)) {
+                    if (flightRecorder != null) {
+                        flightRecorder.recordRejectedSemanticFrame(
+                                data.receivedAtElapsedMs > 0L
+                                        ? data.receivedAtElapsedMs : SystemClock.elapsedRealtime());
+                    }
+                    return;
+                }
                 boolean reacquiringAfterStale = displayDataStale;
                 long receivedAt = data.receivedAtElapsedMs;
                 lastValidFrameTimeMs = receivedAt > 0L ? receivedAt : SystemClock.elapsedRealtime();
@@ -1003,6 +1029,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 }
                 double rpmSample = data.getDouble(0x100);
                 rpmFrameValid = !Double.isNaN(rpmSample) && !Double.isInfinite(rpmSample);
+                if (flightRecorder != null && rpmFrameValid) {
+                    flightRecorder.onEngineRunningSample(
+                            rpmSample >= ENGINE_RUNNING_RPM_THRESHOLD,
+                            lastValidFrameTimeMs);
+                }
 
                 // V2.6.7: 蓝牙重连后判断是否需要重置 session
                 handleReconnectSessionPolicy(data);
@@ -1165,6 +1196,9 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
                         // History Admission System: V2.6.7 通电临时极值 + 发动机稳定后一次性 baseline 覆盖
                         float valueForExtreme = (i == 4) ? rawValueForExtreme : fVal;
+                        if (i == 4) {
+                            updateLastBoostEventPeak(valueForExtreme, state, data, now);
+                        }
 
                         // RC6: the same semantic admission applies to initialization,
                         // engine-baseline capture and subsequent HI/LO updates. Otherwise a
@@ -1203,7 +1237,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                 boolean maxExpired = (now - lastMaxTime[i] >= getCooldown(i, true, isWot));
                                 boolean minExpired = (now - lastMinTime[i] >= getCooldown(i, false, isWot));
 
-                                if ((EXTREME_POLICY[i] & EXTREME_MAX) != 0
+                                if (i != 4 && (EXTREME_POLICY[i] & EXTREME_MAX) != 0
                                         && isEligibleForExtreme(i, true, state, data)
                                         && fVal > maxTrack[i]) {
                                     if (maxExpired || isBreakthrough(i, true, fVal, maxTrack[i])) {
@@ -1250,7 +1284,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
                             if (maxValueViews[i] != null) {
                                 if (hasValue[i]) {
                                     float displayMax = SHOW_SESSION_EXTREME[i] ? maxTrack[i] : recentMax[i];
-                                    String maxText = formatExtremeText(i, displayMax);
+                                    String maxText = (i == 4 && !hasLastBoostEventPeak)
+                                            ? "--" : formatExtremeText(i, displayMax);
                                     renderExtremeText(maxValueViews[i], maxText);
                                     maxValueViews[i].setTextColor(extremeTextColor);
                                 } else {
@@ -1530,7 +1565,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
                             diagnosticEffectiveValue(5), diagnosticEffectiveValue(6),
                             diagnosticEffectiveValue(7), strimPresentationWeight,
                             fpObservable, fuelPressureAlert.getLowObservedMs(), fpPauseAge,
-                            fuelPressureAlert.isLowEvidenceActive(), fpFlashing);
+                            fuelPressureAlert.isLowEvidenceActive(), fpFlashing,
+                            boostEventActive, hasLastBoostEventPeak, lastBoostEventPeak);
                     flightRecorder.recordExtrema(now, state, maxTrack, minTrack, hasValue);
                 }
 
@@ -1690,6 +1726,104 @@ public class MainActivity extends Activity implements DataSource.Callback {
             return trustedDisplayMemory.getHoldValue(card);
         }
         return hasValidValue[card] ? lastValidValue[card] : Float.NaN;
+    }
+
+    /**
+     * Transport-level plausibility gate. This intentionally uses only impossible
+     * physical values on critical channels, so a genuine very-cold start remains valid.
+     */
+    private boolean isSemanticFramePlausible(SensorData data) {
+        if (data == null) return false;
+        double rpm = data.getDouble(HondataProtocol.CID_RPM);
+        double speed = data.getDouble(HondataProtocol.CID_Speed);
+        double map = data.getDouble(HondataProtocol.CID_MAP);
+        double tp = data.getDouble(HondataProtocol.CID_ThrottlePlate);
+        double inj = data.getDouble(HondataProtocol.CID_Inj);
+        if (Double.isNaN(rpm) || Double.isInfinite(rpm)
+                || Double.isNaN(speed) || Double.isInfinite(speed)
+                || Double.isNaN(map) || Double.isInfinite(map)
+                || Double.isNaN(tp) || Double.isInfinite(tp)
+                || Double.isNaN(inj) || Double.isInfinite(inj)) return false;
+        return rpm >= 0.0 && rpm <= 10000.0
+                && speed >= 0.0 && speed <= 350.0
+                && map >= 10.0 && map <= 400.0
+                && tp >= 0.0 && tp <= 100.0
+                && inj >= 0.0 && inj <= 50.0;
+    }
+
+    /**
+     * IT3 Last Boost Event Peak.
+     *
+     * Start: thermally-ready, real boost demand (>0.20 bar), RPM >1500 and TP >35%.
+     * Peak: raw relative MAP, not the filtered display value.
+     * Bridge: 1.8 s demand grace keeps one multi-gear pull as one event.
+     * Retention: latched until the next event begins; there is no time decay.
+     */
+    private void updateLastBoostEventPeak(float rawBoostBar, EngineSemanticState state,
+            SensorData data, long now) {
+        if (state == null || data == null || Float.isNaN(rawBoostBar)
+                || Float.isInfinite(rawBoostBar)) return;
+        float rpm = (float) data.getDouble(HondataProtocol.CID_RPM);
+        float tp = (float) data.getDouble(HondataProtocol.CID_ThrottlePlate);
+        if (Float.isNaN(rpm) || Float.isNaN(tp)) return;
+
+        boolean canStart = !state.isThermalWarmup()
+                && !state.isShiftActive()
+                && !state.isFuelCut()
+                && rpm > 1500f
+                && tp > BOOST_EVENT_START_TP
+                && rawBoostBar > BOOST_EVENT_START_BAR;
+
+        if (!boostEventActive && canStart) {
+            boostEventActive = true;
+            hasLastBoostEventPeak = true;
+            lastBoostEventPeak = rawBoostBar;
+            boostEventLastDemandMs = now;
+            recentMax[4] = rawBoostBar;
+            maxTrack[4] = rawBoostBar;
+            recentMaxTime[4] = now;
+            lastMaxTime[4] = now;
+            if (flightRecorder != null) {
+                // A new Last-Boost event is a semantic reset of MAP MAX, not a
+                // mathematical decrease of the previous event's maximum.
+                flightRecorder.onExtremaReset(4, now);
+                flightRecorder.recordBoostEvent("BOOST_EVENT_START", rawBoostBar, now);
+            }
+            return;
+        }
+
+        if (!boostEventActive) return;
+
+        boolean peakEligible = !state.isShiftActive() && !state.isFuelCut()
+                && rpm > 1000f && rawBoostBar > -0.20f;
+        if (peakEligible && rawBoostBar > lastBoostEventPeak) {
+            lastBoostEventPeak = rawBoostBar;
+            recentMax[4] = rawBoostBar;
+            maxTrack[4] = rawBoostBar;
+            recentMaxTime[4] = now;
+            lastMaxTime[4] = now;
+        }
+
+        boolean demandAlive = state.isShiftActive()
+                || tp > BOOST_EVENT_KEEPALIVE_TP
+                || rawBoostBar > BOOST_EVENT_KEEPALIVE_BAR;
+        if (demandAlive) boostEventLastDemandMs = now;
+
+        if (boostEventLastDemandMs > 0L
+                && now - boostEventLastDemandMs >= BOOST_EVENT_END_GRACE_MS) {
+            boostEventActive = false;
+            recentMax[4] = lastBoostEventPeak;
+            if (flightRecorder != null) {
+                flightRecorder.recordBoostEvent("BOOST_EVENT_END", lastBoostEventPeak, now);
+            }
+        }
+    }
+
+    private void resetLastBoostEventPeak() {
+        boostEventActive = false;
+        hasLastBoostEventPeak = false;
+        lastBoostEventPeak = Float.NaN;
+        boostEventLastDemandMs = 0L;
     }
 
     private float getFloat(SensorData data, int pid) {
@@ -1895,7 +2029,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
     /** RC8 Recent semantic peak decay: retention is parameter-specific, not one-size-fits-all. */
     private void updateRecentPeak(int i, float currentVal, long now) {
         long holdMs = RECENT_PEAK_HOLD_MS[i];
-        if ((EXTREME_POLICY[i] & EXTREME_MAX) != 0) {
+        if (i != 4 && (EXTREME_POLICY[i] & EXTREME_MAX) != 0) {
             if (now - recentMaxTime[i] > holdMs) {
                 recentMax[i] = decayToward(recentMax[i], currentVal, recentMaxDecayTimeMs, i, now);
             } else {
@@ -2119,6 +2253,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
         recentMinTime[i] = 0L;
         recentMaxDecayTimeMs[i] = 0L;
         recentMinDecayTimeMs[i] = 0L;
+        if (i == 4) resetLastBoostEventPeak();
+        if (flightRecorder != null) flightRecorder.onExtremaReset(i, SystemClock.elapsedRealtime());
     }
 
     private void resetAllExtremeHistory() {
@@ -2178,7 +2314,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
     }
 
     // V2.6.7: 发动机运行周期结束
-    private void endEngineExtremeSession() {
+    private void endEngineExtremeSession(long now) {
+        if (flightRecorder != null) flightRecorder.onEngineSessionEnded(now);
         engineExtremeSessionActive = false;
         engineExtremeSessionStartMs = 0L;
         engineStoppedSinceMs = 0L;
@@ -2211,6 +2348,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
             // 发动机运行周期开始后，Ethanol baseline 需重新等待稳定
             resetEthanolSettlingGate();
+            resetLastBoostEventPeak();
         }
 
         if (rpm <= ENGINE_STOPPED_RPM_THRESHOLD) {
@@ -2219,7 +2357,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
             }
 
             if (now - engineStoppedSinceMs >= ENGINE_STOPPED_STABLE_MS) {
-                endEngineExtremeSession();
+                endEngineExtremeSession(now);
             }
         } else {
             engineStoppedSinceMs = 0L;

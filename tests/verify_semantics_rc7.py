@@ -68,6 +68,33 @@ public final class Rc7SemanticProbe {
       "held clutch after completed shift is not endless SHIFT fuel cut");
  }
 
+ static void testBt42GearAuthoritativeShift(){
+  // BT42 profile: Gear exists, Clutch.Pos is unavailable.
+  set(7000); EngineStateTracker t=new EngineStateTracker();
+  t.update(f(3200,70,3,120,40,2.2,Double.NaN,.82,.82,0,82));
+
+  // Sharp lift/RPM drop may pre-arm, but must not directly confirm SHIFT.
+  step(50); EngineSemanticState s=t.update(f(3000,70,3,80,2,0.0,Double.NaN,2,2,0,82));
+  ok(s.isShiftArmed(),"BT42 legacy trajectory may pre-arm");
+  ok(!s.isShiftConfirmed(),"BT42 trajectory alone must not confirm SHIFT");
+  ok(s.isDfcoFuelCut(),"BT42 armed-only fuel cut must remain DFCO-authoritative");
+
+  // New Gear must remain stable for 100 ms before authoritative confirmation.
+  step(50); s=t.update(f(2500,69,4,70,5,1.0,Double.NaN,1,1,1,82));
+  ok(!s.isShiftConfirmed(),"first changed-Gear frame is candidate only");
+  step(100); s=t.update(f(2450,69,4,70,5,1.0,Double.NaN,1,1,1,82));
+  ok(s.isShiftConfirmed(),"100 ms stable Gear change confirms BT42 SHIFT");
+
+  // Ordinary lift with no Gear change must time out instead of becoming confirmed SHIFT.
+  set(10000); t=new EngineStateTracker();
+  t.update(f(3000,70,4,110,35,2.0,Double.NaN,.9,.9,0,82));
+  step(50); s=t.update(f(2700,70,4,60,1,0.0,Double.NaN,2,2,0,82));
+  ok(s.isShiftArmed() && !s.isShiftConfirmed(),"lift-only trajectory is armed, not confirmed");
+  step(700); s=t.update(f(2200,68,4,40,1,0.0,Double.NaN,2,2,0,82));
+  ok(!s.isShiftActive(),"BT42 false arm must time out without Gear transition");
+  ok(s.isDfcoFuelCut(),"ordinary overrun remains DFCO after false-arm timeout");
+ }
+
  static void testFuelCutTaxonomy(){
   set(8000); EngineStateTracker t=new EngineStateTracker();
   t.update(f(2200,60,4,50,5,1.2,0,1,1,1,82));
@@ -169,9 +196,10 @@ public final class Rc7SemanticProbe {
  }
 
  public static void main(String[]a){
-  testArmedCancelAndUpshift(); testRevMatchAndLongClutchExit(); testFuelCutTaxonomy();
+  testArmedCancelAndUpshift(); testRevMatchAndLongClutchExit(); testBt42GearAuthoritativeShift();
+  testFuelCutTaxonomy();
   testAdmissionFrontAndRecovery(); testTrustedMemory(); testEphemeralMemory(); testFuelPressurePersistence();
-  System.out.println("PASS: RC7 semantic/admission/trusted-memory/ephemeral-memory probe");
+  System.out.println("PASS: IT3 semantic/BT42-shift/admission/trusted-memory/ephemeral-memory probe");
  }
 }'''
 
