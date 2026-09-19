@@ -1784,6 +1784,9 @@ public class MainActivity extends Activity implements DataSource.Callback {
             recentMaxTime[4] = now;
             lastMaxTime[4] = now;
             if (flightRecorder != null) {
+                // A new Last-Boost event is a semantic reset of MAP MAX, not a
+                // mathematical decrease of the previous event's maximum.
+                flightRecorder.onExtremaReset(4, now);
                 flightRecorder.recordBoostEvent("BOOST_EVENT_START", rawBoostBar, now);
             }
             return;
