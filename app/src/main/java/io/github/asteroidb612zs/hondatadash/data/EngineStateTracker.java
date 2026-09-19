@@ -32,6 +32,12 @@ public class EngineStateTracker {
     private float lastMap = 0f;
     private float lastGear = Float.NaN;
     private float lastClutch = Float.NaN;
+    // IT3 BT42 runtime profile: FlashPro Bluetooth exposes Gear but not Clutch.Pos.
+    // A stable gear transition is therefore the authoritative shift confirmation
+    // when clutch data is unavailable.
+    private float stableGear = Float.NaN;
+    private float candidateStableGear = Float.NaN;
+    private long candidateStableGearSince = 0L;
     private long lastTime = 0L;
     private boolean initialized = false;
 
@@ -72,6 +78,12 @@ public class EngineStateTracker {
     private static final float SHIFT_CLUTCH_CONFIRM = 18f;
     private static final float SHIFT_CLUTCH_STRONG = 35f;
     private static final long SHIFT_ARM_TIMEOUT_MS = 600L;
+    // Historical 50 ms replays: a 100 ms-stable Gear transition produced
+    // 95/95 and 97/97 clutch-backed shifts in two long Hondata logs.
+    private static final long BT42_GEAR_STABLE_MS = 100L;
+    // Legacy RPM/throttle trajectory may only pre-arm the BT42 path; it no longer
+    // directly confirms SHIFT when Gear is available but Clutch.Pos is absent.
+    private static final long BT42_ARM_TIMEOUT_MS = 650L;
     private static final long SHIFT_CONFIRM_BRIDGE_MS = 420L;
     private static final long SHIFT_CLUTCH_EXTEND_MS = 220L;
     // Historical long logs show 99% of observed gear changes within ~2.13 s and all
@@ -121,6 +133,9 @@ public class EngineStateTracker {
             lastMap = mapVal;
             lastGear = gear;
             lastClutch = clutch;
+            stableGear = gear;
+            candidateStableGear = Float.NaN;
+            candidateStableGearSince = 0L;
             initialized = true;
             warmupActive = (ect < ECT_WARMUP_ENTER);
             thermalContext = initialThermalContext(ect);
@@ -144,8 +159,14 @@ public class EngineStateTracker {
         state.shiftPhase = currentShiftPhase;
 
         // 2) Combustion validity (orthogonal to MainState).
+        boolean clutchAvailableForShift = !Float.isNaN(clutch);
+        boolean shiftFuelCutAuthoritative =
+                currentShiftPhase == EngineSemanticState.ShiftPhase.SHIFT_CONFIRMED
+                || (clutchAvailableForShift
+                    && currentShiftPhase == EngineSemanticState.ShiftPhase.SHIFT_ARMED);
         EngineSemanticState.CombustionState combustion = classifyCombustion(
-                speed, rpm, tp, inj, targetLambda, measuredLambda, closedLoop, currentShiftPhase, now);
+                speed, rpm, tp, inj, targetLambda, measuredLambda, closedLoop,
+                currentShiftPhase, shiftFuelCutAuthoritative, now);
         state.combustion = combustion;
 
         // 3) MainState. Keep V2.0 strategy ordering intact for regression comparability.
@@ -248,6 +269,9 @@ public class EngineStateTracker {
         lastMap = 0f;
         lastGear = Float.NaN;
         lastClutch = Float.NaN;
+        stableGear = Float.NaN;
+        candidateStableGear = Float.NaN;
+        candidateStableGearSince = 0L;
         currentShiftPhase = EngineSemanticState.ShiftPhase.NONE;
         previousShiftPhase = EngineSemanticState.ShiftPhase.NONE;
         shiftArmedSince = 0L;
@@ -314,8 +338,11 @@ public class EngineStateTracker {
             float gear, float clutch, float rpmRate, float tpRate, long now) {
         boolean gearAvailable = !Float.isNaN(gear);
         boolean clutchAvailable = !Float.isNaN(clutch);
+        boolean bt42Profile = gearAvailable && !clutchAvailable;
         boolean roadShiftContext = speed > 5f && rpm > 900f;
-        boolean gearChanged = gearAvailable && !Float.isNaN(lastGear) && Math.abs(gear - lastGear) >= 0.5f;
+        boolean rawGearChanged = gearAvailable && !Float.isNaN(lastGear)
+                && Math.abs(gear - lastGear) >= 0.5f;
+        boolean stableGearChanged = gearAvailable && updateStableGear(gear, now);
         boolean clutchAboveArm = clutchAvailable && clutch >= SHIFT_ARM_CLUTCH_ON;
         boolean clutchConfirmed = clutchAvailable && clutch >= SHIFT_CLUTCH_CONFIRM;
         boolean strongClutch = clutchAvailable && clutch >= SHIFT_CLUTCH_STRONG;
@@ -323,38 +350,54 @@ public class EngineStateTracker {
                 && (Float.isNaN(lastClutch) || lastClutch < SHIFT_ARM_CLUTCH_ON)
                 && clutch >= SHIFT_ARM_CLUTCH_ON;
         boolean fuelCut = !Float.isNaN(inj) && inj <= FUEL_CUT_INJ_MAX;
+        boolean legacyTrajectory = roadShiftContext
+                && rpmRate < -RPM_RATE_THRESHOLD && tpRate < -20f;
 
         if (clutchAvailable && clutch <= SHIFT_ARM_CLUTCH_RESET) {
             suppressRearmUntilClutchRelease = false;
         }
 
-        if (currentShiftPhase == EngineSemanticState.ShiftPhase.NONE
-                && roadShiftContext && clutchRisingEdge && !suppressRearmUntilClutchRelease) {
-            currentShiftPhase = EngineSemanticState.ShiftPhase.SHIFT_ARMED;
-            shiftArmedSince = now;
-            shiftConfirmedSince = 0L;
-            shiftConfirmedUntil = 0L;
-            shiftGearChangeObserved = false;
+        if (currentShiftPhase == EngineSemanticState.ShiftPhase.NONE && roadShiftContext) {
+            if (clutchRisingEdge && !suppressRearmUntilClutchRelease) {
+                currentShiftPhase = EngineSemanticState.ShiftPhase.SHIFT_ARMED;
+                shiftArmedSince = now;
+                shiftConfirmedSince = 0L;
+                shiftConfirmedUntil = 0L;
+                shiftGearChangeObserved = false;
+            } else if (bt42Profile && legacyTrajectory) {
+                // BT42 has no Clutch.Pos. Trajectory may protect the display edge,
+                // but may NOT become authoritative SHIFT without a stable Gear change.
+                currentShiftPhase = EngineSemanticState.ShiftPhase.SHIFT_ARMED;
+                shiftArmedSince = now;
+                shiftConfirmedSince = 0L;
+                shiftConfirmedUntil = 0L;
+                shiftGearChangeObserved = false;
+            }
         }
 
         boolean trajectoryEvidence = strongClutch && Math.abs(rpmRate) >= SHIFT_CONFIRM_RPM_RATE;
         boolean fuelCutEvidence = clutchConfirmed && fuelCut;
-        boolean gearEvidence = gearChanged && (clutchAboveArm || currentShiftPhase != EngineSemanticState.ShiftPhase.NONE);
-        boolean legacyFallback = roadShiftContext && (!gearAvailable || !clutchAvailable)
-                && rpmRate < -RPM_RATE_THRESHOLD && tpRate < -20f;
+        boolean clutchGearEvidence = rawGearChanged
+                && (clutchAboveArm || currentShiftPhase != EngineSemanticState.ShiftPhase.NONE);
+        boolean bt42GearEvidence = bt42Profile && stableGearChanged;
+        // Legacy direct confirmation remains only for a transport that exposes
+        // neither Gear nor Clutch. If Gear exists, IT3 requires Gear evidence.
+        boolean legacyFallback = roadShiftContext && !gearAvailable && !clutchAvailable
+                && legacyTrajectory;
 
         boolean confirmEvidence = roadShiftContext
-                && (gearEvidence || fuelCutEvidence || trajectoryEvidence || legacyFallback);
+                && (clutchGearEvidence || bt42GearEvidence
+                    || fuelCutEvidence || trajectoryEvidence || legacyFallback);
         if (confirmEvidence && currentShiftPhase != EngineSemanticState.ShiftPhase.SHIFT_CONFIRMED) {
             currentShiftPhase = EngineSemanticState.ShiftPhase.SHIFT_CONFIRMED;
             shiftConfirmedSince = now;
             shiftConfirmedUntil = now + SHIFT_CONFIRM_BRIDGE_MS;
-            shiftGearChangeObserved = gearChanged;
+            shiftGearChangeObserved = rawGearChanged || stableGearChanged;
             shiftArmedSince = 0L;
         }
 
         if (currentShiftPhase == EngineSemanticState.ShiftPhase.SHIFT_CONFIRMED) {
-            if (gearChanged) {
+            if (rawGearChanged || stableGearChanged) {
                 shiftGearChangeObserved = true;
                 shiftConfirmedUntil = Math.max(shiftConfirmedUntil, now + SHIFT_CONFIRM_BRIDGE_MS);
             }
@@ -381,7 +424,8 @@ public class EngineStateTracker {
             }
         } else if (currentShiftPhase == EngineSemanticState.ShiftPhase.SHIFT_ARMED) {
             boolean armReleased = clutchAvailable && clutch <= SHIFT_ARM_CLUTCH_RESET;
-            boolean armTimedOut = now - shiftArmedSince >= SHIFT_ARM_TIMEOUT_MS;
+            long armTimeout = bt42Profile ? BT42_ARM_TIMEOUT_MS : SHIFT_ARM_TIMEOUT_MS;
+            boolean armTimedOut = now - shiftArmedSince >= armTimeout;
             if (armReleased || armTimedOut || !roadShiftContext) {
                 currentShiftPhase = EngineSemanticState.ShiftPhase.NONE;
                 if (armTimedOut && clutchAvailable && clutch > SHIFT_ARM_CLUTCH_RESET) {
@@ -394,15 +438,47 @@ public class EngineStateTracker {
         return currentShiftPhase;
     }
 
+    /** 100 ms stable Gear transition: authoritative BT42 shift evidence. */
+    private boolean updateStableGear(float gear, long now) {
+        if (Float.isNaN(gear) || gear < 1f || gear > 8f) {
+            candidateStableGear = Float.NaN;
+            candidateStableGearSince = 0L;
+            return false;
+        }
+        if (Float.isNaN(stableGear)) {
+            stableGear = gear;
+            candidateStableGear = Float.NaN;
+            candidateStableGearSince = 0L;
+            return false;
+        }
+        if (Math.abs(gear - stableGear) < 0.5f) {
+            candidateStableGear = Float.NaN;
+            candidateStableGearSince = 0L;
+            return false;
+        }
+        if (Float.isNaN(candidateStableGear)
+                || Math.abs(gear - candidateStableGear) >= 0.5f) {
+            candidateStableGear = gear;
+            candidateStableGearSince = now;
+            return false;
+        }
+        if (now - candidateStableGearSince < BT42_GEAR_STABLE_MS) return false;
+
+        stableGear = candidateStableGear;
+        candidateStableGear = Float.NaN;
+        candidateStableGearSince = 0L;
+        return true;
+    }
+
     private EngineSemanticState.CombustionState classifyCombustion(float speed, float rpm, float tp,
             float inj, float targetLambda, float measuredLambda, float closedLoop,
-            EngineSemanticState.ShiftPhase shiftPhase, long now) {
+            EngineSemanticState.ShiftPhase shiftPhase, boolean shiftFuelCutAuthoritative, long now) {
         boolean fuelCut = !Float.isNaN(inj) && inj <= FUEL_CUT_INJ_MAX;
         boolean lowThrottle = !Float.isNaN(tp) && tp < 3f;
         boolean dfcoRoadContext = speed > 15f && rpm > RPM_DFCO_MIN;
 
         EngineSemanticState.CombustionState direct;
-        if (fuelCut && shiftPhase != EngineSemanticState.ShiftPhase.NONE) {
+        if (fuelCut && shiftFuelCutAuthoritative) {
             direct = EngineSemanticState.CombustionState.SHIFT_FUEL_CUT;
         } else if (fuelCut && lowThrottle && dfcoRoadContext) {
             // Once injection is actually off in a conventional overrun context,
