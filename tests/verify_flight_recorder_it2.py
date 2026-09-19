@@ -22,7 +22,7 @@ def body(text,start,end):
     assert end in part, end
     return part.split(end,1)[0]
 
-assert re.search(r'\\bversionCode\\s+47\\b',BUILD)
+assert re.search(r'\bversionCode\s+47\b',BUILD)
 assert 'versionName "2.0.1-internal.3"' in BUILD
 assert 'applicationId "io.github.asteroidb612zs.hondatadash.internal"' in BUILD
 assert 'WRITE_EXTERNAL_STORAGE' in MANIFEST
