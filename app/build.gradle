@@ -10,8 +10,8 @@ android {
         applicationId "io.github.asteroidb612zs.hondatadash.internal"
         minSdk 17
         targetSdk 28
-        versionCode 48
-        versionName "2.0.1-internal.3-hf1"
+        versionCode 49
+        versionName "2.0.1-internal.3-hf2"
     }
 
     lintOptions {
