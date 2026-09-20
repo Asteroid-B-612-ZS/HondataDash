@@ -12,9 +12,9 @@ BT=(JAVA/'data/BluetoothSource.java').read_text()
 BUILD=(ROOT/'app/build.gradle').read_text()
 STRINGS=(ROOT/'app/src/main/res/values/strings.xml').read_text()
 
-assert re.search(r'\bversionCode\s+49\b',BUILD)
-assert 'versionName "2.0.1-internal.3-hf2"' in BUILD
-assert 'Hondata Dash IT3 HF2' in STRINGS
+assert re.search(r'\bversionCode\s+50\b',BUILD)
+assert 'versionName "2.0.1-internal.3-hf3"' in BUILD
+assert 'Hondata Dash IT3 HF3' in STRINGS
 
 # Last Boost Event Peak: event-latched, raw-MAP sourced, no rolling MAX decay.
 for token in (
@@ -37,9 +37,25 @@ assert 'flightRecorder.onExtremaReset(4, now);' in MAIN
 gate=MAIN.index('if (!isSemanticFramePlausible(data))')
 state=MAIN.index('EngineSemanticState state = engineState.update(data);')
 assert gate < state
-for token in ('tp >= 0.0 && tp <= 100.0','map >= 10.0 && map <= 400.0',
+for token in ('tp >= 0.0 && tp <= 105.0','map >= 10.0 && map <= 400.0',
               'rpm >= 0.0 && rpm <= 10000.0'):
     assert token in MAIN
+
+# HF3: FC1 BT42 high-load T.P may legitimately exceed 100% slightly.
+# Road evidence reached 101.5%; preserve narrow headroom without weakening
+# the reconnect-placeholder guards.
+def plausible(rpm, speed, map_kpa, tp, inj):
+    return (0.0 <= rpm <= 10000.0
+            and 0.0 <= speed <= 350.0
+            and 10.0 <= map_kpa <= 400.0
+            and 0.0 <= tp <= 105.0
+            and 0.0 <= inj <= 50.0)
+
+assert plausible(2850.0, 80.0, 180.0, 101.5, 5.0)
+assert plausible(2500.0, 70.0, 150.0, 105.0, 4.0)
+assert not plausible(2500.0, 70.0, 150.0, 105.5, 4.0)
+assert not plausible(0.0, 0.0, 0.0, -10.0, 0.0)
+assert not plausible(1010.0, 0.0, 0.0, 4.5, 1.0)
 
 # BT42 shift: stable Gear is authoritative; trajectory alone is only an arm.
 for token in (

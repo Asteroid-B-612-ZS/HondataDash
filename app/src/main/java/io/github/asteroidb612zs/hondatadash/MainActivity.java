@@ -1746,10 +1746,13 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 || Double.isNaN(map) || Double.isInfinite(map)
                 || Double.isNaN(tp) || Double.isInfinite(tp)
                 || Double.isNaN(inj) || Double.isInfinite(inj)) return false;
+        // Real FC1 BT42 road data reaches 100.5-101.5% T.P at high load.
+        // Keep a narrow 105% plausibility headroom while still rejecting the
+        // reconnect placeholder sentinel (-10%) and genuinely impossible values.
         return rpm >= 0.0 && rpm <= 10000.0
                 && speed >= 0.0 && speed <= 350.0
                 && map >= 10.0 && map <= 400.0
-                && tp >= 0.0 && tp <= 100.0
+                && tp >= 0.0 && tp <= 105.0
                 && inj >= 0.0 && inj <= 50.0;
     }
 

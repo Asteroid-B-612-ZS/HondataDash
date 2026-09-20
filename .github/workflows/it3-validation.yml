@@ -42,10 +42,10 @@ jobs:
 
       - name: Verify IT3 identity
         run: |
-          grep -q 'versionCode 49' app/build.gradle
-          grep -q 'versionName "2.0.1-internal.3-hf2"' app/build.gradle
+          grep -q 'versionCode 50' app/build.gradle
+          grep -q 'versionName "2.0.1-internal.3-hf3"' app/build.gradle
           grep -q 'applicationId "io.github.asteroidb612zs.hondatadash.internal"' app/build.gradle
-          grep -q 'Hondata Dash IT3 HF2' app/src/main/res/values/strings.xml
+          grep -q 'Hondata Dash IT3 HF3' app/src/main/res/values/strings.xml
 
       - name: Restore pinned Roboto Condensed fonts
         run: |
@@ -101,17 +101,17 @@ jobs:
           "$bt/aapt" dump badging "$apk" | tee apk_badging.txt
           grep -q "package: name='io.github.asteroidb612zs.hondatadash.internal'" apk_badging.txt
           grep -q "versionCode='49'" apk_badging.txt
-          grep -q "versionName='2.0.1-internal.3-hf2'" apk_badging.txt
+          grep -q "versionName='2.0.1-internal.3-hf3'" apk_badging.txt
           "$bt/apksigner" verify --verbose --print-certs "$apk" | tee apk_signature.txt
           sha256sum "$apk" | tee apk_sha256.txt
-          cp "$apk" HondataDash_V2.0.1-internal.3-hf2.apk
+          cp "$apk" HondataDash_V2.0.1-internal.3-hf3.apk
 
       - name: Upload IT3 artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HondataDash_V2.0.1-internal.3-hf2
+          name: HondataDash_V2.0.1-internal.3-hf3
           path: |
-            HondataDash_V2.0.1-internal.3-hf2.apk
+            HondataDash_V2.0.1-internal.3-hf3.apk
             apk_badging.txt
             apk_signature.txt
             apk_sha256.txt
