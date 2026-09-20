@@ -57,6 +57,10 @@ public class BluetoothSource implements DataSource {
     // V2.6.9 (P0-2): 区分"生命周期暂停"与"蓝牙真实断线"
     // stopPolling() 设 true, startPolling() 清 false; pollThread 退出时若为 true 则不触发重连
     private volatile boolean pollingPausedByLifecycle = false;
+    // IT3 HF1: if onResume arrives before the old poll worker has exited, defer
+    // resume until that worker releases ownership. Do not clear the pause flag
+    // early or a pause-window read error can be misclassified as transport loss.
+    private volatile boolean resumePollingAfterLifecyclePause = false;
     // V2.6.8: 重连入口/出口用同一把 lock 保护, 防止多线程并发触发重连
     private final Object reconnectLock = new Object();
 
@@ -479,9 +483,14 @@ public class BluetoothSource implements DataSource {
     public void startPolling() {
         synchronized (reconnectLock) {
             if (intentionalDisconnect || !connected) return;
-            // V2.6.9 (P0-2): 无论是否启动新线程, 恢复轮询都清除生命周期暂停标志
+            if (pollThread != null && pollThread.isAlive()) {
+                // Fast UI return: let the old lifecycle-paused reader finish first.
+                // Its finally block will restart polling without reopening RFCOMM.
+                if (pollingPausedByLifecycle) resumePollingAfterLifecyclePause = true;
+                return;
+            }
             pollingPausedByLifecycle = false;
-            if (pollThread != null && pollThread.isAlive()) return;
+            resumePollingAfterLifecyclePause = false;
             running = true;
 
             pollThread = new Thread(new Runnable() {
@@ -544,12 +553,17 @@ public class BluetoothSource implements DataSource {
 
                             } catch (IOException e) {
                                 Log.w(TAG, "数据读取异常: " + e.getMessage());
-                                connected = false;
 
-                                // V2.6.9 (P0-2): 生命周期暂停 (onPause) 导致的退出不算断线
+                                // IT3 HF1: a bounded read may finish with an exception
+                                // after onPause requested polling stop. While lifecycle
+                                // pause owns the stop, preserve the RFCOMM connected
+                                // state. Resume will try the existing socket first; if
+                                // it is genuinely dead, the first resumed I/O will enter
+                                // the normal transport-failure/reconnect path.
                                 if (intentionalDisconnect || pollingPausedByLifecycle) {
                                     break;
                                 }
+                                connected = false;
 
                                 // 通知 UI 断线 (真实 I/O 异常)
                                 uiHandler.post(new Runnable() {
@@ -569,11 +583,12 @@ public class BluetoothSource implements DataSource {
                             } catch (RuntimeException e) {
                                 // V2.6.7: 捕获协议解析等 RuntimeException，防止线程静默死亡
                                 Log.e(TAG, "数据处理异常: " + e.getMessage(), e);
-                                connected = false;
 
+                                // Same lifecycle ownership rule as IOException above.
                                 if (intentionalDisconnect || pollingPausedByLifecycle) {
                                     break;
                                 }
+                                connected = false;
 
                                 uiHandler.post(new Runnable() {
                                     @Override public void run() {
@@ -591,9 +606,17 @@ public class BluetoothSource implements DataSource {
                             // An old worker must never clear or restart a newer worker.
                             if (pollThread == Thread.currentThread()) {
                                 pollThread = null;
-                                if (!intentionalDisconnect && !pollingPausedByLifecycle) {
-                                    if (connected) startPolling();
-                                    else scheduleReconnect();
+                                if (!intentionalDisconnect) {
+                                    if (pollingPausedByLifecycle) {
+                                        if (resumePollingAfterLifecyclePause && connected) {
+                                            resumePollingAfterLifecyclePause = false;
+                                            pollingPausedByLifecycle = false;
+                                            startPolling();
+                                        }
+                                    } else {
+                                        if (connected) startPolling();
+                                        else scheduleReconnect();
+                                    }
                                 }
                             }
                         }
@@ -610,6 +633,7 @@ public class BluetoothSource implements DataSource {
         // V2.6.9 (P0-2): 标记为生命周期暂停, pollThread 退出时不触发 fullReset/onDisconnected
         synchronized (reconnectLock) {
             pollingPausedByLifecycle = true;
+            resumePollingAfterLifecyclePause = false;
             running = false;
             // Finish the current bounded read to preserve the packet boundary.
             // Keep ownership until finally; a fast resume cannot start a second reader.
