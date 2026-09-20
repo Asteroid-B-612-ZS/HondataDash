@@ -12,9 +12,9 @@ BT=(JAVA/'data/BluetoothSource.java').read_text()
 BUILD=(ROOT/'app/build.gradle').read_text()
 STRINGS=(ROOT/'app/src/main/res/values/strings.xml').read_text()
 
-assert re.search(r'\bversionCode\s+48\b',BUILD)
-assert 'versionName "2.0.1-internal.3-hf1"' in BUILD
-assert 'Hondata Dash IT3 HF1' in STRINGS
+assert re.search(r'\bversionCode\s+49\b',BUILD)
+assert 'versionName "2.0.1-internal.3-hf2"' in BUILD
+assert 'Hondata Dash IT3 HF2' in STRINGS
 
 # Last Boost Event Peak: event-latched, raw-MAP sourced, no rolling MAX decay.
 for token in (
@@ -79,6 +79,11 @@ assert 'if (!isEnabled() || !driveQualified || data == null' in REC
 assert 'rawCount >= PRE_DRIVE_RAW_FRAMES' in REC
 assert 'stamp + "_IT3"' in REC
 assert 'syncBestEffort' in REC and 'SyncFailedException' in REC and 'syncWarnings' in REC
+# HF2: during road acceptance, Recorder has no automatic Session-directory deletion path.
+assert 'enforceRetention()' not in REC
+assert 'deleteRecursively(' not in REC
+assert 'MAX_TOTAL_BYTES' not in REC and 'MAX_COMPLETE_SESSIONS' not in REC
+assert 'if (recoveryMarked) active.delete();' in REC
 
 # HF1: drive qualification must use the existing 1 s stable-running gate.
 gate_update = MAIN.index('updateEngineRunningGate(data);')
