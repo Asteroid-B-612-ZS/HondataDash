@@ -19,7 +19,6 @@ import java.io.OutputStreamWriter;
 import java.io.SyncFailedException;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -35,8 +34,8 @@ import java.util.Locale;
  *  - raw frames are retained so future decoders can reinterpret historical sessions.
  */
 public final class FlightRecorder implements DiagnosticObserver {
-    public static final String APP_VERSION = "2.0.1-internal.3-hf1";
-    public static final int VERSION_CODE = 48;
+    public static final String APP_VERSION = "2.0.1-internal.3-hf2";
+    public static final int VERSION_CODE = 49;
     public static final String SOURCE_BASE =
             "04e952d18b00bee8a7a83019b7e1b49e2e9024e5";
     public static final int RECORDER_VERSION = 2;
@@ -51,8 +50,6 @@ public final class FlightRecorder implements DiagnosticObserver {
     private static final long FLUSH_INTERVAL_MS = 2000L;
     private static final long STATS_CHECKPOINT_MS = 10000L;
     private static final long MIN_FREE_BYTES = 200L * 1024L * 1024L;
-    private static final long MAX_TOTAL_BYTES = 1024L * 1024L * 1024L;
-    private static final int MAX_COMPLETE_SESSIONS = 30;
     private static final int RAW_MAGIC = 0x48444652; // HDFR
 
     private static final String[] MAIN_NAMES = {"DFCO","WOT","WARMUP","IDLE","NORMAL"};
@@ -545,7 +542,9 @@ public final class FlightRecorder implements DiagnosticObserver {
                         // drive even if FlashPro has not finished handshaking yet.
                         // This runs on the recorder writer, never the UI thread.
                         markInterruptedSessions();
-                        enforceRetention();
+                        // IT3 HF2 diagnostic invariant: road-test evidence is never
+                        // deleted automatically on App startup. Retention is suspended
+                        // until real-car evidence proves the startup-loss root cause.
                         startupMaintenanceDone = true;
                     }
 
@@ -1080,62 +1079,20 @@ public final class FlightRecorder implements DiagnosticObserver {
             File active = new File(dir, "ACTIVE");
             if (active.exists()) {
                 // Direct head-unit power loss after ignition-off is a normal vehicle
-                // lifecycle, not an app crash. Finalize it on next power-up so the
-                // user can copy it without starting a new drive session.
-                active.delete();
-                try { recovered.createNewFile(); } catch (IOException ignored) { }
+                // lifecycle, not an app crash. Create the recovered marker first;
+                // only then remove ACTIVE. If marker creation fails, keep ACTIVE so
+                // the next startup can retry without losing lifecycle evidence.
+                boolean recoveryMarked = recovered.exists();
+                if (!recoveryMarked) {
+                    try { recoveryMarked = recovered.createNewFile(); }
+                    catch (IOException ignored) { recoveryMarked = false; }
+                }
+                if (recoveryMarked) active.delete();
             } else if (!complete.exists() && !incomplete.exists() && !recovered.exists()) {
                 // Backward-compatible handling for IT2/unmarked interrupted folders.
                 try { incomplete.createNewFile(); } catch (IOException ignored) { }
             }
         }
-    }
-
-    private void enforceRetention() {
-        if (!rootDir.exists()) return;
-        File[] dirs = rootDir.listFiles();
-        if (dirs == null) return;
-        Arrays.sort(dirs, new Comparator<File>() {
-            @Override public int compare(File a, File b) { return a.getName().compareTo(b.getName()); }
-        });
-        long total = directorySize(rootDir);
-        int completeCount = 0;
-        for (File dir : dirs) {
-            if (dir.isDirectory() && (new File(dir, "COMPLETE").exists()
-                    || new File(dir, "POWER_CUT_RECOVERED").exists())) completeCount++;
-        }
-        for (File dir : dirs) {
-            if (completeCount <= MAX_COMPLETE_SESSIONS && total <= MAX_TOTAL_BYTES) break;
-            if (!dir.isDirectory() || !(new File(dir, "COMPLETE").exists()
-                    || new File(dir, "POWER_CUT_RECOVERED").exists())) continue;
-            long size = directorySize(dir);
-            if (deleteRecursively(dir)) {
-                completeCount--;
-                total = Math.max(0L, total - size);
-            }
-        }
-    }
-
-    private static long directorySize(File file) {
-        if (file == null || !file.exists()) return 0L;
-        if (file.isFile()) return file.length();
-        long total = 0L;
-        File[] children = file.listFiles();
-        if (children != null) {
-            for (File child : children) total += directorySize(child);
-        }
-        return total;
-    }
-
-    private static boolean deleteRecursively(File file) {
-        if (file == null || !file.exists()) return true;
-        if (file.isDirectory()) {
-            File[] children = file.listFiles();
-            if (children != null) for (File child : children) {
-                if (!deleteRecursively(child)) return false;
-            }
-        }
-        return file.delete();
     }
 
     private static void closeQuietly(java.io.Closeable closeable) {
