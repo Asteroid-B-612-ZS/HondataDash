@@ -100,7 +100,7 @@ jobs:
           bt="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           "$bt/aapt" dump badging "$apk" | tee apk_badging.txt
           grep -q "package: name='io.github.asteroidb612zs.hondatadash.internal'" apk_badging.txt
-          grep -q "versionCode='49'" apk_badging.txt
+          grep -q "versionCode='50'" apk_badging.txt
           grep -q "versionName='2.0.1-internal.3-hf3'" apk_badging.txt
           "$bt/apksigner" verify --verbose --print-certs "$apk" | tee apk_signature.txt
           sha256sum "$apk" | tee apk_sha256.txt
