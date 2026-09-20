@@ -1029,11 +1029,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 }
                 double rpmSample = data.getDouble(0x100);
                 rpmFrameValid = !Double.isNaN(rpmSample) && !Double.isInfinite(rpmSample);
-                if (flightRecorder != null && rpmFrameValid) {
-                    flightRecorder.onEngineRunningSample(
-                            rpmSample >= ENGINE_RUNNING_RPM_THRESHOLD,
-                            lastValidFrameTimeMs);
-                }
 
                 // V2.6.7: 蓝牙重连后判断是否需要重置 session
                 handleReconnectSessionPolicy(data);
@@ -1053,6 +1048,13 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 EngineSemanticState state = engineState.update(data);
                 boolean shiftTransient = state.isShiftActive();
                 updateEngineRunningGate(data);
+                // IT3 HF1: Recorder drive qualification uses the same proven 1 s
+                // engine-running gate as the product session. A single RPM>=500
+                // frame is not sufficient to create a persistent drive session.
+                if (flightRecorder != null && rpmFrameValid) {
+                    flightRecorder.onEngineRunningSample(
+                            engineRunningStable, lastValidFrameTimeMs);
+                }
                 updateEngineExtremeSession(data);
                 long now = SystemClock.elapsedRealtime();
                 CombustionDisplayAdmission.Snapshot admission = combustionAdmission.update(state, data, now);
