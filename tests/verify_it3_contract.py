@@ -8,12 +8,13 @@ JAVA=ROOT/'app/src/main/java/io/github/asteroidb612zs/hondatadash'
 MAIN=(JAVA/'MainActivity.java').read_text()
 TRACK=(JAVA/'data/EngineStateTracker.java').read_text()
 REC=(JAVA/'diagnostic/FlightRecorder.java').read_text()
+BT=(JAVA/'data/BluetoothSource.java').read_text()
 BUILD=(ROOT/'app/build.gradle').read_text()
 STRINGS=(ROOT/'app/src/main/res/values/strings.xml').read_text()
 
-assert re.search(r'\bversionCode\s+47\b',BUILD)
-assert 'versionName "2.0.1-internal.3"' in BUILD
-assert 'Hondata Dash IT3' in STRINGS
+assert re.search(r'\bversionCode\s+48\b',BUILD)
+assert 'versionName "2.0.1-internal.3-hf1"' in BUILD
+assert 'Hondata Dash IT3 HF1' in STRINGS
 
 # Last Boost Event Peak: event-latched, raw-MAP sourced, no rolling MAX decay.
 for token in (
@@ -77,6 +78,27 @@ assert 'if (protocolReady && !startupMaintenanceDone)' not in REC
 assert 'if (!isEnabled() || !driveQualified || data == null' in REC
 assert 'rawCount >= PRE_DRIVE_RAW_FRAMES' in REC
 assert 'stamp + "_IT3"' in REC
+assert 'syncBestEffort' in REC and 'SyncFailedException' in REC and 'syncWarnings' in REC
+
+# HF1: drive qualification must use the existing 1 s stable-running gate.
+gate_update = MAIN.index('updateEngineRunningGate(data);')
+qualify = MAIN.index('flightRecorder.onEngineRunningSample(')
+assert gate_update < qualify
+qualify_window = MAIN[qualify:qualify+220]
+assert 'engineRunningStable' in qualify_window
+assert 'rpmSample >= ENGINE_RUNNING_RPM_THRESHOLD' not in MAIN[qualify-250:qualify+300]
+
+# HF1: lifecycle pause owns poll-worker shutdown until the old reader exits.
+for token in (
+    'resumePollingAfterLifecyclePause',
+    'if (pollingPausedByLifecycle) resumePollingAfterLifecyclePause = true;',
+    'if (intentionalDisconnect || pollingPausedByLifecycle)',
+    'if (resumePollingAfterLifecyclePause && connected)',
+):
+    assert token in BT, token
+io_catch = BT.index('} catch (IOException e)')
+io_block = BT[io_catch:io_catch+1100]
+assert io_block.index('if (intentionalDisconnect || pollingPausedByLifecycle)') < io_block.index('connected = false;')
 
 # UI lifecycle only hints recorder; Bluetooth background policy remains unchanged.
 assert 'flightRecorder.onAppForegroundChanged(false)' in MAIN
