@@ -16,6 +16,7 @@ import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
+import java.io.SyncFailedException;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -34,8 +35,8 @@ import java.util.Locale;
  *  - raw frames are retained so future decoders can reinterpret historical sessions.
  */
 public final class FlightRecorder implements DiagnosticObserver {
-    public static final String APP_VERSION = "2.0.1-internal.3";
-    public static final int VERSION_CODE = 47;
+    public static final String APP_VERSION = "2.0.1-internal.3-hf1";
+    public static final int VERSION_CODE = 48;
     public static final String SOURCE_BASE =
             "04e952d18b00bee8a7a83019b7e1b49e2e9024e5";
     public static final int RECORDER_VERSION = 2;
@@ -126,6 +127,7 @@ public final class FlightRecorder implements DiagnosticObserver {
     private long extremaWritten;
     private long extremaDropped;
     private long writeErrors;
+    private long syncWarnings;
     private long rejectedSemanticFrames;
     private int maxRawQueueDepth;
     private int maxTraceQueueDepth;
@@ -814,7 +816,7 @@ public final class FlightRecorder implements DiagnosticObserver {
             out.write("  \"rawFormat\": \"big-endian header: magic/version/frameLength/channelCount; records: int64 sequence, int64 elapsedMs, int32 length, raw frame bytes\"\n");
             out.write("}\n");
             out.flush();
-            fos.getFD().sync();
+            syncBestEffort(fos);
         } finally {
             out.close();
         }
@@ -990,6 +992,7 @@ public final class FlightRecorder implements DiagnosticObserver {
             out.write("  \"extremaWritten\": " + extremaWritten + ",\n");
             out.write("  \"extremaDropped\": " + extremaDropped + ",\n");
             out.write("  \"writeErrors\": " + writeErrors + ",\n");
+            out.write("  \"syncWarnings\": " + syncWarnings + ",\n");
             out.write("  \"rejectedSemanticFrames\": " + rejectedSemanticFrames + ",\n");
             out.write("  \"maxRawQueueDepth\": " + maxRawQueueDepth + ",\n");
             out.write("  \"maxTraceQueueDepth\": " + maxTraceQueueDepth + ",\n");
@@ -997,12 +1000,26 @@ public final class FlightRecorder implements DiagnosticObserver {
             out.write("  \"maxExtremaQueueDepth\": " + maxExtremaQueueDepth + "\n");
             out.write("}\n");
             out.flush();
-            fos.getFD().sync();
+            syncBestEffort(fos);
         } finally {
             out.close();
         }
         if (target.exists() && !target.delete()) throw new IOException("Cannot replace recorder stats");
         if (!tmp.renameTo(target)) throw new IOException("Cannot commit recorder stats");
+    }
+
+    /**
+     * Some older/custom Android head units expose writable shared storage but cannot
+     * guarantee FileDescriptor.sync(). The atomic temp->rename contract still protects
+     * against a zero-byte committed metadata file. Treat only SyncFailedException as
+     * a durability warning; ordinary IOException remains fatal and disables Recorder.
+     */
+    private void syncBestEffort(FileOutputStream fos) throws IOException {
+        try {
+            fos.getFD().sync();
+        } catch (SyncFailedException e) {
+            syncWarnings++;
+        }
     }
 
     private void resetSessionCountersExceptRawReceived() {
@@ -1015,6 +1032,7 @@ public final class FlightRecorder implements DiagnosticObserver {
         extremaWritten = 0L;
         extremaDropped = 0L;
         writeErrors = 0L;
+        syncWarnings = 0L;
         rejectedSemanticFrames = 0L;
         maxRawQueueDepth = rawCount;
         maxTraceQueueDepth = 0;
