@@ -1586,7 +1586,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 // CYL counters are historical totals. Keep the stored number cold white
                 // once an event is over; only a new-count window stays amber and the
                 // existing rapid-accumulation condition stays flashing red.
-                if (i >= 1 && i <= 4 && !cylRedFlashing
+                if (i >= 1 && i <= 4 && auxiliaryValid[i] && !cylRedFlashing
                         && now >= cylYellowEnd[i - 1]) {
                     color = DashboardPalette.PRIMARY;
                 }
