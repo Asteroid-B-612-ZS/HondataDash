@@ -1,6 +1,5 @@
 package io.github.asteroidb612zs.hondatadash;
 
-import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
@@ -9,10 +8,7 @@ import android.content.ActivityNotFoundException;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
-import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
 import android.graphics.PorterDuff;
 import android.provider.Settings;
 import android.util.Log;
@@ -36,10 +32,7 @@ import io.github.asteroidb612zs.hondatadash.data.FuelPressureAlertTracker;
 import io.github.asteroidb612zs.hondatadash.data.TrustedDisplayMemory;
 import io.github.asteroidb612zs.hondatadash.data.EphemeralDiagnosticMemory;
 import io.github.asteroidb612zs.hondatadash.data.SensorData;
-import io.github.asteroidb612zs.hondatadash.diagnostic.FlightRecorder;
 
-import java.io.File;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -62,14 +55,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
     private static final boolean USE_DEMO = false;
     private static final int REQUEST_ENABLE_BLUETOOTH = 1001;
-    private static final int REQUEST_DIAGNOSTIC_STORAGE = 1002;
     private static final String BLUETOOTH_PREFS = "bluetooth_device";
     private static final String PREF_DEVICE_ADDRESS = "address";
     private static final String PREF_DEVICE_NAME = "name";
 
     private DataSource dataSource;
-    // IT2 observer-only flight recorder. It never participates in display decisions.
-    private FlightRecorder flightRecorder;
     private TextView statusText;
     private TextView sourceName;
     private View connectionStatus;
@@ -561,23 +551,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
                     auxiliaryReferences[i], "--");
         }
 
-        // IT2: persistent observer-only evidence under public internal storage.
-        // Permission is requested once on API 23+ using reflection so API17 static
-        // compilation remains valid. Denial only disables recording, never the dash.
-        File diagnosticRoot = new File(Environment.getExternalStorageDirectory(),
-                "HondataDash/Diagnostics");
-        flightRecorder = new FlightRecorder(diagnosticRoot);
-        boolean diagnosticStorageReady = hasDiagnosticStoragePermission();
-        flightRecorder.setEnabled(diagnosticStorageReady);
-        if (!diagnosticStorageReady) requestDiagnosticStoragePermission();
-
         // 数据源
         if (USE_DEMO) {
             dataSource = new DemoSource();
         } else {
-            BluetoothSource btSource = new BluetoothSource();
-            btSource.setDiagnosticObserver(flightRecorder);
-            dataSource = btSource;
+            dataSource = new BluetoothSource();
         }
         dataSource.setCallback(this);
         // Synthetic data must remain unmistakable; production hides the redundant source label.
@@ -773,7 +751,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
     protected void onResume() {
         super.onResume();
         foreground = true;
-        if (flightRecorder != null) flightRecorder.onAppForegroundChanged(true);
         lastAuxiliaryUpdateMs = 0L;
         freshnessHandler.removeCallbacks(freshnessRunnable);
         freshnessHandler.post(freshnessRunnable);
@@ -812,7 +789,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
         super.onPause();
         if (startupOverlay != null) startupOverlay.finish();
         foreground = false;
-        if (flightRecorder != null) flightRecorder.onAppForegroundChanged(false);
         freshnessHandler.removeCallbacks(freshnessRunnable);
         updateFlashState();
         if (shiftLight != null) shiftLight.setMonitoringActive(false);
@@ -830,15 +806,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
         trustedDisplayMemory.reset();
         diagnosticMemory.clear();
         // V2.6.9 (P2-3): 先解绑 callback, 防止 disconnect 异步回调到已销毁的 Activity
-        if (flightRecorder != null) {
-            flightRecorder.recordTransportEvent("APP_DESTROY", SystemClock.elapsedRealtime());
-        }
-        if (dataSource instanceof BluetoothSource) {
-            ((BluetoothSource) dataSource).setDiagnosticObserver(null);
-        }
         dataSource.setCallback(null);
         dataSource.disconnect();
-        if (flightRecorder != null) flightRecorder.shutdown();
     }
 
     @Override
@@ -852,45 +821,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
         }
     }
 
-    /** API17-safe runtime storage permission query. */
-    private boolean hasDiagnosticStoragePermission() {
-        if (Build.VERSION.SDK_INT < 23) return true;
-        try {
-            Method method = Activity.class.getMethod("checkSelfPermission", String.class);
-            Object result = method.invoke(this, Manifest.permission.WRITE_EXTERNAL_STORAGE);
-            return result instanceof Integer
-                    && ((Integer) result).intValue() == PackageManager.PERMISSION_GRANTED;
-        } catch (Exception e) {
-            Log.w("HondataDash", "无法查询诊断存储权限: " + e.getMessage());
-            return false;
-        }
-    }
-
-    /** API17-safe runtime permission request; recorder remains optional on failure/denial. */
-    private void requestDiagnosticStoragePermission() {
-        if (Build.VERSION.SDK_INT < 23) return;
-        try {
-            Method method = Activity.class.getMethod("requestPermissions",
-                    String[].class, int.class);
-            method.invoke(this, new Object[] {
-                    new String[] {Manifest.permission.WRITE_EXTERNAL_STORAGE},
-                    Integer.valueOf(REQUEST_DIAGNOSTIC_STORAGE)
-            });
-        } catch (Exception e) {
-            Log.w("HondataDash", "无法请求诊断存储权限: " + e.getMessage());
-        }
-    }
-
-    // Intentionally no @Override: API17 android.jar does not declare this callback,
-    // while Android 23+ dispatches to the matching subclass method at runtime.
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        if (requestCode == REQUEST_DIAGNOSTIC_STORAGE && flightRecorder != null) {
-            boolean granted = grantResults != null && grantResults.length > 0
-                    && grantResults[0] == PackageManager.PERMISSION_GRANTED;
-            flightRecorder.setEnabled(granted);
-        }
-    }
-
     // ===== DataSource.Callback =====
 
     @Override
@@ -898,9 +828,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
         runOnUiThread(new Runnable() {
             @Override public void run() {
                 connectedSinceMs = SystemClock.elapsedRealtime();
-                if (flightRecorder != null) {
-                    flightRecorder.recordTransportEvent("BLUETOOTH_CONNECTED", connectedSinceMs);
-                }
                 engineState.reset();
                 combustionAdmission.requireReacquire(connectedSinceMs);
                 fuelPressureAlert.reset();
@@ -927,10 +854,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
         // 不清 ethanol settling gate。
         lastBtDisconnectedAtMs = SystemClock.elapsedRealtime();
         btWasDisconnected = true;
-        if (flightRecorder != null) {
-            flightRecorder.recordTransportEvent("BLUETOOTH_LOST", lastBtDisconnectedAtMs);
-        }
-
         runOnUiThread(new Runnable() {
             @Override public void run() {
                 engineState.reset();
@@ -1000,11 +923,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 // negative throttle / zero MAP) before real telemetry. Never allow
                 // that transport artifact to seed ThermalContext/MainState.
                 if (!isSemanticFramePlausible(data)) {
-                    if (flightRecorder != null) {
-                        flightRecorder.recordRejectedSemanticFrame(
-                                data.receivedAtElapsedMs > 0L
-                                        ? data.receivedAtElapsedMs : SystemClock.elapsedRealtime());
-                    }
                     return;
                 }
                 boolean reacquiringAfterStale = displayDataStale;
@@ -1048,13 +966,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 EngineSemanticState state = engineState.update(data);
                 boolean shiftTransient = state.isShiftActive();
                 updateEngineRunningGate(data);
-                // IT3 HF1: Recorder drive qualification uses the same proven 1 s
-                // engine-running gate as the product session. A single RPM>=500
-                // frame is not sufficient to create a persistent drive session.
-                if (flightRecorder != null && rpmFrameValid) {
-                    flightRecorder.onEngineRunningSample(
-                            engineRunningStable, lastValidFrameTimeMs);
-                }
                 updateEngineExtremeSession(data);
                 long now = SystemClock.elapsedRealtime();
                 CombustionDisplayAdmission.Snapshot admission = combustionAdmission.update(state, data, now);
@@ -1552,26 +1463,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
                     }
                 }
 
-                // IT2 flight recorder: copy the already-decoded input + already-made
-                // semantic decisions after fuel-pressure logic has run. No decision below
-                // reads recorder state, preserving observer-only directionality.
-                if (flightRecorder != null && flightRecorder.isEnabled()) {
-                    double fpDiag = data.getDouble(FP_PID);
-                    long fpPausedSince = fuelPressureAlert.getEvidencePausedSinceMs();
-                    long fpPauseAge = fpPausedSince > 0L ? Math.max(0L, now - fpPausedSince) : 0L;
-                    boolean fpObservable = engineRunningStable
-                            && !Double.isNaN(fpDiag) && !Double.isInfinite(fpDiag)
-                            && !state.isShiftActive()
-                            && state.combustion == EngineSemanticState.CombustionState.FIRING_VALID;
-                    flightRecorder.recordSemantic(data, state, admission,
-                            diagnosticEffectiveValue(5), diagnosticEffectiveValue(6),
-                            diagnosticEffectiveValue(7), strimPresentationWeight,
-                            fpObservable, fuelPressureAlert.getLowObservedMs(), fpPauseAge,
-                            fuelPressureAlert.isLowEvidenceActive(), fpFlashing,
-                            boostEventActive, hasLastBoostEventPeak, lastBoostEventPeak);
-                    flightRecorder.recordExtrema(now, state, maxTrack, minTrack, hasValue);
-                }
-
                 // 更新彩虹转速灯条
                 if (shiftLight != null) {
                     Double rpmVal = data.get(0x100);
@@ -1722,14 +1613,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
         }
     }
 
-    private float diagnosticEffectiveValue(int card) {
-        if (card >= 5 && card <= 7 && displayHoldMode[card]
-                && trustedDisplayMemory.hasHoldValue(card)) {
-            return trustedDisplayMemory.getHoldValue(card);
-        }
-        return hasValidValue[card] ? lastValidValue[card] : Float.NaN;
-    }
-
     /**
      * Transport-level plausibility gate. This intentionally uses only impossible
      * physical values on critical channels, so a genuine very-cold start remains valid.
@@ -1788,12 +1671,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
             maxTrack[4] = rawBoostBar;
             recentMaxTime[4] = now;
             lastMaxTime[4] = now;
-            if (flightRecorder != null) {
-                // A new Last-Boost event is a semantic reset of MAP MAX, not a
-                // mathematical decrease of the previous event's maximum.
-                flightRecorder.onExtremaReset(4, now);
-                flightRecorder.recordBoostEvent("BOOST_EVENT_START", rawBoostBar, now);
-            }
             return;
         }
 
@@ -1818,9 +1695,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 && now - boostEventLastDemandMs >= BOOST_EVENT_END_GRACE_MS) {
             boostEventActive = false;
             recentMax[4] = lastBoostEventPeak;
-            if (flightRecorder != null) {
-                flightRecorder.recordBoostEvent("BOOST_EVENT_END", lastBoostEventPeak, now);
-            }
         }
     }
 
@@ -2259,7 +2133,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
         recentMaxDecayTimeMs[i] = 0L;
         recentMinDecayTimeMs[i] = 0L;
         if (i == 4) resetLastBoostEventPeak();
-        if (flightRecorder != null) flightRecorder.onExtremaReset(i, SystemClock.elapsedRealtime());
     }
 
     private void resetAllExtremeHistory() {
@@ -2320,7 +2193,6 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
     // V2.6.7: 发动机运行周期结束
     private void endEngineExtremeSession(long now) {
-        if (flightRecorder != null) flightRecorder.onEngineSessionEnded(now);
         engineExtremeSessionActive = false;
         engineExtremeSessionStartMs = 0L;
         engineStoppedSinceMs = 0L;
