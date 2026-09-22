@@ -199,9 +199,9 @@ public class ColorPolicyProbe {
  public static void main(String[] args){ColorPolicyProbe p=new ColorPolicyProbe();int checks=0;
   if(p.getEctColor(Float.NaN)!=0xffff4444||p.getIatColor(Float.NaN)!=0xffff4444||p.getEthanolColor(Float.NaN)!=0xffff4444)throw new AssertionError("invalid-value fallback");checks+=3;
   for(int n=-2000;n<=13000;n++){float v=n/100f;
-   int ect=v<65?0xff00d8ff:v<=96?0xff27dce6:v<=102?0xffd29922:v<=108?0xffff4444:0xffb040ff;
-   int iat=v<10?0xff27dce6:v<45?0xffe8eef2:v<55?0xffd29922:v<65?0xffff4444:0xffb040ff;
-   int eth=v<20?0xffe8eef2:v<=50?0xff70dd48:v<=85?0xff27dce6:0xffd29922;
+   int ect=v<65?0xff00d8ff:v<=96?0xff65c9e8:v<=102?0xffd29922:v<=108?0xffff4444:0xffb040ff;
+   int iat=v<10?0xff65c9e8:v<45?0xffe8eef2:v<55?0xffd29922:v<65?0xffff4444:0xffb040ff;
+   int eth=v<20?0xffe8eef2:v<=50?0xff70d65b:v<=85?0xff65c9e8:0xffd29922;
    if(p.getEctColor(v)!=ect||p.getIatColor(v)!=iat||p.getEthanolColor(v)!=eth)throw new AssertionError("temperature/ethanol policy "+v);
    checks+=3;
   }
