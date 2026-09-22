@@ -74,18 +74,18 @@ jobs:
           bt="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           "$bt/aapt" dump badging "$apk" | tee apk_badging.txt
           grep -q "package: name='io.github.asteroidb612zs.hondatadash'" apk_badging.txt
-          grep -q "versionCode='54'" apk_badging.txt
-          grep -q "versionName='2.1.0-visual.2'" apk_badging.txt
+          grep -q "versionCode='55'" apk_badging.txt
+          grep -q "versionName='2.1.0-visual.3'" apk_badging.txt
           "$bt/apksigner" verify --verbose --print-certs "$apk" | tee apk_signature.txt
           sha256sum "$apk" | tee apk_sha256.txt
-          cp "$apk" HondataDash_V2.1.0-visual.2.apk
+          cp "$apk" HondataDash_V2.1.0-visual.3.apk
 
       - name: Upload OEM visual artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HondataDash_V2.1.0-visual.2
+          name: HondataDash_V2.1.0-visual.3
           path: |
-            HondataDash_V2.1.0-visual.2.apk
+            HondataDash_V2.1.0-visual.3.apk
             apk_badging.txt
             apk_signature.txt
             apk_sha256.txt
