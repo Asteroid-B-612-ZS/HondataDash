@@ -4,8 +4,6 @@
 
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-    <!-- IT2 flight-recorder evidence in /HondataDash/Diagnostics. -->
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-feature android:name="android.hardware.bluetooth" android:required="true" />
 
     <application
