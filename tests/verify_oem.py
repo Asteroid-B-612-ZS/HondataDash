@@ -83,6 +83,55 @@ public class OemProbe {
  }
 }'''
 
+PRESENTATION_PROBE = r'''package io.github.asteroidb612zs.hondatadash;
+public class PresentationProbe {
+ static class SystemClock {static long now=10000;static long elapsedRealtime(){return now;}}
+ static class TextView {
+  int color=0xff555555;void setTextColor(int c){color=c;}int getCurrentTextColor(){return color;}
+ }
+ static class ScaleBarView {int liveColor;void setLiveColor(int c){liveColor=c;}}
+ TextView[] valueIntViews=new TextView[8];
+ ScaleBarView[] scaleBars=new ScaleBarView[8];
+ TextView[] auxiliaryViews=new TextView[11];
+ boolean[] auxiliaryValid=new boolean[11];
+ boolean cylRedFlashing;
+ long[] cylYellowEnd=new long[4];
+ static void check(boolean p,String s){if(!p)throw new AssertionError(s);}
+ PresentationProbe(){
+  for(int i=0;i<8;i++){valueIntViews[i]=new TextView();scaleBars[i]=new ScaleBarView();}
+  for(int i=0;i<11;i++)auxiliaryViews[i]=new TextView();
+ }
+ PRESENTATION_METHOD
+ public static void main(String[] args){
+  PresentationProbe p=new PresentationProbe();
+  for(int i=0;i<8;i++)p.valueIntViews[i].color=0xff3fb950;
+  p.applyOemPalette();
+  for(int i=0;i<8;i++)check(p.valueIntViews[i].color==DashboardPalette.PRIMARY,"safe main must be white "+i);
+
+  p.valueIntViews[1].color=0xffd29922;p.valueIntViews[4].color=0xffff4444;p.applyOemPalette();
+  check(p.valueIntViews[1].color==DashboardPalette.AMBER,"warning preserved");
+  check(p.valueIntViews[4].color==DashboardPalette.RED,"danger preserved");
+
+  p.auxiliaryViews[0].color=0xff3fb950;p.applyOemPalette();
+  check(p.auxiliaryViews[0].color==DashboardPalette.PRIMARY,"KC normal white");
+  p.auxiliaryViews[0].color=0xffd29922;p.applyOemPalette();
+  check(p.auxiliaryViews[0].color==DashboardPalette.AMBER,"KC amber preserved");
+
+  p.auxiliaryViews[1].color=0xff555555;p.auxiliaryValid[1]=false;p.cylYellowEnd[0]=0;p.applyOemPalette();
+  check(p.auxiliaryViews[1].color==0xff555555,"invalid CYL placeholder remains grey");
+
+  p.auxiliaryViews[1].color=0xffff4444;p.auxiliaryValid[1]=true;p.cylYellowEnd[0]=0;p.applyOemPalette();
+  check(p.auxiliaryViews[1].color==DashboardPalette.PRIMARY,"historical CYL total returns white");
+
+  p.auxiliaryViews[2].color=0xffd29922;p.auxiliaryValid[2]=true;p.cylYellowEnd[1]=11000;p.applyOemPalette();
+  check(p.auxiliaryViews[2].color==DashboardPalette.AMBER,"new CYL event keeps amber window");
+
+  p.cylRedFlashing=true;p.auxiliaryViews[3].color=0xffff4444;p.auxiliaryValid[3]=true;p.applyOemPalette();
+  check(p.auxiliaryViews[3].color==DashboardPalette.RED,"rapid CYL accumulation keeps red flash colour");
+  System.out.println("PASS: visual.3 final-presentation state transitions");
+ }
+}'''
+
 STATUS_PROBE = r'''package io.github.asteroidb612zs.hondatadash;
 public class StatusProbe {
  static int checks;
@@ -208,10 +257,15 @@ def main():
         status.write_text(STATUS_PROBE.replace("STATUS_METHODS", "\n".join(
             reg.method(main_source, s) for s in ("private void updateFreshnessStatus(",
                                                 "private void setConnectionStatus(", "private boolean isDataFresh("))))
+        presentation = temp / "PresentationProbe.java"
+        presentation.write_text(PRESENTATION_PROBE.replace(
+            "PRESENTATION_METHOD", reg.method(main_source, "private void applyOemPalette(")))
         subprocess.run(["java", "-m", "jdk.compiler/com.sun.tools.javac.Main", "--release", "11", "-d", str(temp),
-                        str(path), str(status), str(JAVA / "StartupSequence.java"), str(JAVA / "DashboardPalette.java")], check=True)
+                        str(path), str(status), str(presentation), str(JAVA / "StartupSequence.java"),
+                        str(JAVA / "DashboardPalette.java")], check=True)
         subprocess.run(["java", "-cp", str(temp), "io.github.asteroidb612zs.hondatadash.OemProbe"], check=True)
         subprocess.run(["java", "-cp", str(temp), "io.github.asteroidb612zs.hondatadash.StatusProbe"], check=True)
+        subprocess.run(["java", "-cp", str(temp), "io.github.asteroidb612zs.hondatadash.PresentationProbe"], check=True)
 
 
 if __name__ == "__main__":
