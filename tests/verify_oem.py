@@ -70,8 +70,8 @@ public class OemProbe {
   check(DashboardPalette.common(DashboardPalette.CRITICAL)==DashboardPalette.CRITICAL,
         "critical presentation mapping is idempotent");
   for(int card=0;card<8;card++){
-   int safe=card==1?DashboardPalette.CYAN:card==2||card==4?DashboardPalette.GREEN:DashboardPalette.PRIMARY;
-   check(DashboardPalette.main(card,0xff3fb950)==safe,"OEM calm colour by role");
+   check(DashboardPalette.main(card,0xff3fb950)==DashboardPalette.PRIMARY,
+         "normal/safe main digit stays cold white");
    check(DashboardPalette.main(card,0xffd29922)==DashboardPalette.AMBER,"warning survives palette");
    check(DashboardPalette.main(card,0xffff4444)==DashboardPalette.RED,"danger survives palette");
    for(int color:new int[]{0xff3fb950,0xffff4444,0xffd29922,0xff00d8ff,0xffe8eef2,0xffb040ff,0xffa0a0a0}){
@@ -146,6 +146,10 @@ def static_contracts():
         assert "-keep class io.github.asteroidb612zs.hondatadash." + name in keep
     main = (JAVA / "MainActivity.java").read_text()
     overlay = (JAVA / "StartupOverlayView.java").read_text()
+    assert '{"E99", "--"}' in main, "Ethanol normal-width reference must be E99"
+    assert 'bar.setRange(0, 100);' in main, "Ethanol data scale must still preserve E100"
+    assert '{0, 100},       // 0: Ethanol %' in main, "Ethanol sensor validity must remain 0..100"
+    assert 'now >= cylYellowEnd[i - 1]' in main and '!cylRedFlashing' in main, "CYL history/event presentation split missing"
     assert "!startupShown && savedInstanceState == null" in main
     for signature in ("protected void onPause(", "protected void onDestroy("):
         assert "startupOverlay.finish()" in reg.method(main, signature)
