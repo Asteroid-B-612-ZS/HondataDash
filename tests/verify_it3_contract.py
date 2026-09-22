@@ -12,9 +12,9 @@ BT=(JAVA/'data/BluetoothSource.java').read_text()
 BUILD=(ROOT/'app/build.gradle').read_text()
 STRINGS=(ROOT/'app/src/main/res/values/strings.xml').read_text()
 
-assert re.search(r'\bversionCode\s+50\b',BUILD)
-assert 'versionName "2.0.1-internal.3-hf3"' in BUILD
-assert 'Hondata Dash IT3 HF3' in STRINGS
+assert re.search(r'\bversionCode\s+52\b',BUILD)
+assert 'versionName "2.0.1-internal"' in BUILD
+assert 'Hondata Dash Internal' in STRINGS
 
 # Last Boost Event Peak: event-latched, raw-MAP sourced, no rolling MAX decay.
 for token in (
