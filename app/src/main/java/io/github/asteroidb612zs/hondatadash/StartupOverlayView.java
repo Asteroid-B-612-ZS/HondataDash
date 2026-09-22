@@ -98,7 +98,7 @@ public final class StartupOverlayView extends View {
         if (!running || dashboard == null) return;
         long elapsed = SystemClock.elapsedRealtime() - started;
         float wake = StartupSequence.ease(elapsed, 0, 450);
-        paint.setColor(0xFF000000 | Math.round(5 * wake) << 16 | Math.round(10 * wake) << 8 | Math.round(13 * wake));
+        paint.setColor(0xFF000000 | Math.round(3 * wake) << 16 | Math.round(6 * wake) << 8 | Math.round(9 * wake));
         c.drawRect(0, 0, getWidth(), getHeight(), paint);
         if (items.isEmpty() || cachedWidth != getWidth() || cachedHeight != getHeight()) {
             cachedWidth = getWidth(); cachedHeight = getHeight(); items.clear();
