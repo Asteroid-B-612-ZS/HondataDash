@@ -64,12 +64,11 @@ final class DashboardPalette {
     private DashboardPalette() { }
 
     static int main(int card, int semanticColor) {
-        if (semanticColor == 0xFF3FB950) {
-            // IAT and MAP keep green when it is physically meaningful.
-            // TRIM/IGN/A-F normal states remain cold white for long-term calmness.
-            if (card == 1) return CYAN;
-            return card == 2 || card == 4 ? GREEN : PRIMARY;
-        }
+        // V2.1 visual.2: main digits use colour for attention, not parameter identity.
+        // Normal/safe values stay cold white; scale bars retain operating-region colour.
+        if (semanticColor == 0xFF3FB950 || semanticColor == GREEN) return PRIMARY;
+        if (card >= 0 && card <= 2
+                && (semanticColor == 0xFF00D8FF || semanticColor == CYAN)) return PRIMARY;
         return common(semanticColor);
     }
 
