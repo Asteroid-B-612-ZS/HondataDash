@@ -22,8 +22,8 @@ def body(text,start,end):
     assert end in part, end
     return part.split(end,1)[0]
 
-assert re.search(r'\bversionCode\s+50\b',BUILD)
-assert 'versionName "2.0.1-internal.3-hf3"' in BUILD
+assert re.search(r'\bversionCode\s+52\b',BUILD)
+assert 'versionName "2.0.1-internal"' in BUILD
 assert 'applicationId "io.github.asteroidb612zs.hondatadash.internal"' in BUILD
 assert 'WRITE_EXTERNAL_STORAGE' in MANIFEST
 assert 'ACCESS_FINE_LOCATION' not in MANIFEST
