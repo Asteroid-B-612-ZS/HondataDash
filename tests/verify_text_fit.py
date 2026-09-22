@@ -155,7 +155,7 @@ import android.graphics.Typeface;
 public class TextFitProbe {
  static int draws, glyphs, transitions, scaleLabels;
  static final String[][] CASES={
- {"E0","E9","E85","E100","E888","--"},
+ {"E0","E9","E25","E85","E99","--"},
  {"-20","-1","0","99","100","130","888","--"},
  {"-20","-1","0","99","100","130","888","--"},
  {"-30.0","-15.1","-15.0","-10.0","-9.9","-0.1","+0.0","+9.9","+10.0","+15.0","+15.1","+30.0","+88.8","-88.8","--"},
@@ -164,7 +164,7 @@ public class TextFitProbe {
  {"-25.0","-0.1","+0.0","+9.9","+10.0","+55.0","--"},
  {"-30.0","-15.1","-15.0","-10.0","-9.9","-0.1","+0.0","+9.9","+10.0","+15.0","+15.1","+30.0","+88.8","-88.8","--"}
  };
- static final String[][] REFS={{"E888","--"},{"888","-88","--"},{"888","-88","--"},
+ static final String[][] REFS={{"E99","--"},{"888","-88","--"},{"888","-88","--"},
  {"+88.8","-88.8","--"},{"+8.88","-8.88","--"},{"88.8","--"},
  {"+88.8","-88.8","--"},{"+88.8","-88.8","--"}};
  static final String[] AUX={"888","88888","88888","88888","88888","-88.8","888.8","88.8","888.8","888","888"};
@@ -241,6 +241,11 @@ public class TextFitProbe {
  if(decimalX!=null&&Math.abs(decimalX-dx)>.001)throw new AssertionError("decimal drift: screen="+screen+" card="+card+" id="+id+" value="+value+" prev="+decimalX+" now="+dx);
  decimalX=dx;}}
  if(kind.equals("main")){
+ if(card==0){
+  // E99 is the normal design reference, but a genuine E100 must still render in full.
+  v.setText("E100");render(v);
+  v.setText("E888");render(v);
+ }
  for(String overflow:new String[]{"-100.0","+100.0","-888.88"}){v.setText(overflow);render(v);}
  v.setTextSize(80);v.setFitReference(false,false,"DFCO","SYNC");v.setText("DFCO");Canvas a=render(v);v.setText("SYNC");sameScale(a,render(v));
  // Resize without setText: exercises the old same-width/changed-height cache bug.
