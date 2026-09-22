@@ -449,7 +449,7 @@ def main():
     configure += "\n" + trim_zone_method(main_source)
     probe = PROBE.replace("CONFIGURE_SCALE", configure)
     # Keep fixture profiles honest if production references change.
-    for ref in ("E888", "+8.88", "-88.8", "88888"):
+    for ref in ("E99", "+8.88", "-88.8", "88888"):
         assert f'"{ref}"' in main_source, f"fixture profile stale: {ref}"
     slots = []
     viewports = [(800, 480), (800, 432), (800, 408), (752, 480), (752, 408),
