@@ -150,6 +150,7 @@ def static_contracts():
     assert 'bar.setRange(0, 100);' in main, "Ethanol data scale must still preserve E100"
     assert '{0, 100},       // 0: Ethanol %' in main, "Ethanol sensor validity must remain 0..100"
     assert 'now >= cylYellowEnd[i - 1]' in main and '!cylRedFlashing' in main, "CYL history/event presentation split missing"
+    assert 'i >= 1 && i <= 4 && auxiliaryValid[i] && !cylRedFlashing' in main, "invalid CYL placeholders must not be promoted to normal white"
     assert "!startupShown && savedInstanceState == null" in main
     for signature in ("protected void onPause(", "protected void onDestroy("):
         assert "startupOverlay.finish()" in reg.method(main, signature)
