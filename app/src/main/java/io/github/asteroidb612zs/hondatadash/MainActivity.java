@@ -693,7 +693,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 bar.addGradientZone(1.20f, 1.40f, DashboardPalette.SCALE_LOAD_HIGH, DashboardPalette.SCALE_LOAD_PEAK);
                 bar.addGradientZone(1.40f, 1.45f, DashboardPalette.SCALE_LOAD_PEAK, DashboardPalette.SCALE_AMBER);
                 bar.addZone(1.45f, 1.60f, DashboardPalette.SCALE_AMBER);
-                bar.addGradientZone(1.60f, 2.0f, DashboardPalette.SCALE_RED, 0xFFB63C4A);
+                bar.addGradientZone(1.60f, 2.0f, DashboardPalette.SCALE_RED, 0xFFB9554D);
                 bar.setAnchor(0);
                 bar.setExpand(0, 1.5f, 2.0f);
                 bar.setStatic();
@@ -1955,7 +1955,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private void setConnectionStatus(String label, int color) {
         if ("CONNECT".equals(label)) label = "CONNECTING";
         if ("RECONNECT".equals(label)) label = "RECONNECTING";
-        if ("LIVE".equals(label)) color = DashboardPalette.LIVE_RED;
+        if ("LIVE".equals(label)) color = DashboardPalette.LIVE;
         else if ("CONNECTING".equals(label) || "INITIALIZING".equals(label)
                 || "RECONNECTING".equals(label)) color = DashboardPalette.SECONDARY;
         else color = DashboardPalette.AMBER;
