@@ -16,9 +16,9 @@
         <shape android:shape="rectangle">
             <gradient
                 android:angle="270"
-                android:startColor="#FF0A171C"
-                android:centerColor="#FF081318"
-                android:endColor="#FF061014" />
+                android:startColor="#FF0D151D"
+                android:centerColor="#FF091017"
+                android:endColor="#FF060B11" />
             <corners android:radius="7dp" />
         </shape>
     </item>
@@ -28,8 +28,8 @@
         <shape android:shape="rectangle">
             <gradient
                 android:angle="270"
-                android:startColor="#1639BFD6"
-                android:centerColor="#050F2730"
+                android:startColor="#169DBDCB"
+                android:centerColor="#05121E29"
                 android:endColor="#00000000" />
             <corners android:radius="7dp" />
         </shape>
@@ -40,7 +40,7 @@
         <shape android:shape="rectangle">
             <gradient
                 android:angle="0"
-                android:startColor="#0B43B8CF"
+                android:startColor="#0B94B2C4"
                 android:endColor="#00000000" />
             <corners android:radius="7dp" />
         </shape>
@@ -50,7 +50,7 @@
     <item>
         <shape android:shape="rectangle">
             <solid android:color="@android:color/transparent" />
-            <stroke android:width="3dp" android:color="#1236BCD7" />
+            <stroke android:width="3dp" android:color="#12638499" />
             <corners android:radius="7dp" />
         </shape>
     </item>
@@ -59,7 +59,7 @@
     <item>
         <shape android:shape="rectangle">
             <solid android:color="@android:color/transparent" />
-            <stroke android:width="2dp" android:color="#344B8798" />
+            <stroke android:width="2dp" android:color="#34667785" />
             <corners android:radius="7dp" />
         </shape>
     </item>
@@ -68,7 +68,7 @@
     <item>
         <shape android:shape="rectangle">
             <solid android:color="@android:color/transparent" />
-            <stroke android:width="1dp" android:color="#FF536F7B" />
+            <stroke android:width="1dp" android:color="#FF71808C" />
             <corners android:radius="7dp" />
         </shape>
     </item>
@@ -77,7 +77,7 @@
     <item android:left="1dp" android:top="1dp" android:right="1dp" android:bottom="1dp">
         <shape android:shape="rectangle">
             <solid android:color="@android:color/transparent" />
-            <stroke android:width="1dp" android:color="#1F68C9DC" />
+            <stroke android:width="1dp" android:color="#1F9AB9C9" />
             <corners android:radius="6dp" />
         </shape>
     </item>
