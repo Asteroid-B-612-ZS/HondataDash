@@ -98,7 +98,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private final View[] extremePanelViews = new View[8];
     private final boolean[] semanticMode = new boolean[8];
     private static final String[][] MAIN_WIDTH_REFERENCE = {
-        {"E888", "--"}, {"888", "-88", "--"}, {"888", "-88", "--"},
+        {"E99", "--"}, {"888", "-88", "--"}, {"888", "-88", "--"},
         {"+88.8", "-88.8", "--"}, {"+8.88", "-8.88", "--"}, {"88.8", "--"},
         {"+88.8", "-88.8", "--"}, {"+88.8", "-88.8", "--"}
     };
@@ -1570,8 +1570,28 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 if (scaleBars[i] != null) scaleBars[i].setLiveColor(color);
             }
         }
-        if (auxiliaryViews != null) for (TextView view : auxiliaryViews) {
-            if (view != null) view.setTextColor(DashboardPalette.common(view.getCurrentTextColor()));
+        if (auxiliaryViews != null) {
+            long now = SystemClock.elapsedRealtime();
+            for (int i = 0; i < auxiliaryViews.length; i++) {
+                TextView view = auxiliaryViews[i];
+                if (view == null) continue;
+                int color = DashboardPalette.common(view.getCurrentTextColor());
+
+                // K.C normal (<55) is information, not a positive-status lamp.
+                // The existing 55~65 amber and >65 red-flash paths remain untouched.
+                if (i == 0 && color == DashboardPalette.GREEN) {
+                    color = DashboardPalette.PRIMARY;
+                }
+
+                // CYL counters are historical totals. Keep the stored number cold white
+                // once an event is over; only a new-count window stays amber and the
+                // existing rapid-accumulation condition stays flashing red.
+                if (i >= 1 && i <= 4 && !cylRedFlashing
+                        && now >= cylYellowEnd[i - 1]) {
+                    color = DashboardPalette.PRIMARY;
+                }
+                view.setTextColor(color);
+            }
         }
     }
 
