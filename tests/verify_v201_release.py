@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""V2.0.1 production-release contract: HF3 semantics, no persistent diagnostics."""
+"""V2.1 OEM visual-preview contract: V2.0.1 semantics, no persistent diagnostics."""
 from pathlib import Path
 import re
 
@@ -13,10 +13,10 @@ BT=(DATA/'BluetoothSource.java').read_text()
 STRINGS=(ROOT/'app/src/main/res/values/strings.xml').read_text()
 TRACK=(DATA/'EngineStateTracker.java').read_text()
 
-assert re.search(r'\bversionCode\s+51\b', BUILD)
-assert 'versionName "2.0.1"' in BUILD
+assert re.search(r'\bversionCode\s+53\b', BUILD)
+assert 'versionName "2.1.0-visual.1"' in BUILD
 assert 'applicationId "io.github.asteroidb612zs.hondatadash"' in BUILD
-assert 'Hondata Dash' in STRINGS and 'IT3' not in STRINGS and 'HF3' not in STRINGS
+assert 'Hondata Dash OEM' in STRINGS and 'IT3' not in STRINGS and 'HF3' not in STRINGS
 
 # Production must not persist local diagnostics.
 assert 'WRITE_EXTERNAL_STORAGE' not in MANIFEST
@@ -48,4 +48,4 @@ assert 'data.receivedAtElapsedMs = receivedAt;' in BT
 assert 'pollingPausedByLifecycle' in BT
 assert 'resumePollingAfterLifecyclePause' in BT
 
-print('PASS: V2.0.1 production contract (HF3 semantics, recorder removed)')
+print('PASS: V2.1 OEM visual-preview contract (HF3 semantics, recorder removed)')
