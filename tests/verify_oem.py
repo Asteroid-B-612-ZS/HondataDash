@@ -181,12 +181,17 @@ def protect_data():
     current = (ROOT / path).read_text()
     protected = ("public void onDataReceived(", "private String formatMainText(", "private String formatExtremeText(",
                  "private int getTrimSemanticColor(", "private int getIgnSemanticColor(", "private int getMapSemanticColor(",
-                 "private int getEctColor(", "private int getIatColor(", "private int getAfColorByLambda(",
+                 "private int getEthanolColor(", "private int getEctColor(", "private int getIatColor(",
+                 "private int getAfColorByLambda(", "private int getAfSeverity(", "private boolean isAfColorContext(",
+                 "private long getAfAttackMs(", "private boolean isSemanticFramePlausible(",
                  "private boolean shouldSyncIgnAfterDfco(", "private boolean shouldSyncAfAfterDfco(",
-                 "private boolean shouldSyncStrimAfterDfco(", "private void updateEngineRunningGate(")
+                 "private boolean shouldSyncStrimAfterDfco(", "private void updateEngineRunningGate(",
+                 "private void updateMainColorState(", "private void applyMainValueSemanticColor(",
+                 "private void applyConfidenceVisual(", "private void applyStrimInterpretabilityVisual(",
+                 "private void renderHeldCombustionCard(")
     for name in protected:
         assert reg.method(previous, name) == reg.method(current, name), name
-    print(f"PASS: all data-layer files and {len(protected)} protected parsing/formatting/threshold/state methods unchanged")
+    print(f"PASS: all data-layer files and {len(protected)} protected parsing/formatting/threshold/state/display-admission methods unchanged")
 
 
 def main():
