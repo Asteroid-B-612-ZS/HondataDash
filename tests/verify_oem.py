@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 JAVA = ROOT / "app/src/main/java/io/github/asteroidb612zs/hondatadash"
 RES = ROOT / "app/src/main/res"
-BASELINE = "92cd19f0d7ae61b63c5fc6a9451b38acb7513ae4"
+BASELINE = "6cedcdd14fe0d6c1357129fa3e65388acffc3ebc"
 
 
 def load(name, path):
@@ -60,6 +60,15 @@ public class OemProbe {
   check(StartupSequence.DURATION_MS==2900&&StartupSequence.reveal(2900)==1,"finite 2.9 second startup");
   check(StartupSequence.SIGNATURE.equals("Designed by ZhouQiZhi"),"exact author case");
   check(StartupSequence.placeholders(2100)>0 && StartupSequence.checkStatus(2100)>0,"check text visible before handoff");
+  check(DashboardPalette.BACKGROUND==0xff030609,"OEM background");
+  check(DashboardPalette.PRIMARY==0xfff2f5f7,"OEM cold white");
+  check(DashboardPalette.SECONDARY==0xffadbdc9,"OEM secondary");
+  check(DashboardPalette.CYAN==0xff65c9e8&&DashboardPalette.GREEN==0xff70d65b,"OEM cool accents");
+  check(DashboardPalette.AMBER==0xffffbf47&&DashboardPalette.RED==0xfff34a43,"OEM warning colours");
+  check(DashboardPalette.common(DashboardPalette.PURPLE)==DashboardPalette.CRITICAL,
+        "legacy purple semantic maps to distinct critical coral");
+  check(DashboardPalette.common(DashboardPalette.CRITICAL)==DashboardPalette.CRITICAL,
+        "critical presentation mapping is idempotent");
   for(int card=0;card<8;card++){
    int safe=card==1?DashboardPalette.CYAN:card==2||card==4?DashboardPalette.GREEN:DashboardPalette.PRIMARY;
    check(DashboardPalette.main(card,0xff3fb950)==safe,"OEM calm colour by role");
@@ -99,14 +108,14 @@ public class StatusProbe {
   SystemClock.now=10100;p.lastValidFrameTimeMs=9999;p.frameValid[1]=true;
   p.expect("INITIALIZING",DashboardPalette.SECONDARY);
   check(!p.isDataFresh(),"old session cannot reactivate live bars or alarms");
-  p.lastValidFrameTimeMs=10100;p.expect("LIVE",DashboardPalette.LIVE_RED);
+  p.lastValidFrameTimeMs=10100;p.expect("LIVE",DashboardPalette.LIVE);
   check(p.isDataFresh(),"current session sample is fresh");
   p.rpmFrameValid=false;p.expect("NO DATA",DashboardPalette.AMBER);
   p.rpmFrameValid=true;p.frameValid[1]=false;p.expect("NO DATA",DashboardPalette.AMBER);
   for(int card:new int[]{1,2,4}){
-   p.frameValid[card]=true;p.expect("LIVE",DashboardPalette.LIVE_RED);p.frameValid[card]=false;
+   p.frameValid[card]=true;p.expect("LIVE",DashboardPalette.LIVE);p.frameValid[card]=false;
   }
-  p.frameValid[1]=true;SystemClock.now=10599;p.expect("LIVE",DashboardPalette.LIVE_RED);
+  p.frameValid[1]=true;SystemClock.now=10599;p.expect("LIVE",DashboardPalette.LIVE);
   SystemClock.now=10600;p.expect("STALE",DashboardPalette.AMBER);
   check(!p.isDataFresh(),"500ms freshness boundary");
   SystemClock.now=11599;p.expect("STALE",DashboardPalette.AMBER);
