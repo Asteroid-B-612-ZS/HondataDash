@@ -404,8 +404,10 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
     // 底部 PID
     private static final int BAT_PID = 0x180;
-    private static final int FP_PID = 0x191;    // Fuel Pressure kPa
-    private static final int FP_TARGET_PID = 0x190; // Fuel Pressure Target kPa
+    // BT42 evidence: 0x191 is already decoded in bar (about 35-36 bar at warm idle).
+    // 0x190 target scaling is not yet verified strongly enough for production alerting.
+    private static final int FP_PID = 0x191;    // Fuel Pressure bar
+    private static final int FP_TARGET_PID = 0x190; // Raw/quantized target channel; alert scaling unverified
     private static final int WG_PID = 0x1A0;    // Wastegate CMD %
     private static final int TP_PID = 0x122;    // Throttle Plate %
 
@@ -1428,24 +1430,22 @@ public class MainActivity extends Activity implements DataSource.Callback {
                     if (updateAuxiliary) setTextIfChanged(bottomBatValue, String.format(Locale.US, "%.1f", bat));
                 }
 
-                // F.P Fuel Pressure (PID 0x191 kPa → bar) vs 目标 (0x190)
+                // F.P Fuel Pressure: BT42 PID 0x191 is already decoded in bar.
+                // Keep the live value truthful. The legacy target-tracking alarm compared
+                // incompatible/unverified 0x190/0x191 units, so production alerting stays
+                // explicitly disabled until the target scaling is independently verified.
                 Double fp = data.get(FP_PID);
                 if (fp != null && bottomFpValue != null) {
-                    if (updateAuxiliary) setTextIfChanged(bottomFpValue, String.format(Locale.US, "%.1f", fp / 100.0));
-
-                    Double fpTarget = data.get(FP_TARGET_PID);
-                    boolean wasFpFlash = fpFlashing;
-                    double fpTargetKpa = fpTarget != null ? fpTarget : Double.NaN;
-                    // RC6: the number remains live, but shift/fuel-cut/recovery frames are not
-                    // diagnostic evidence of a rail-pressure fault. A real low-pressure event
-                    // must persist for 300 ms after FIRING_VALID resumes.
-                    fpFlashing = fuelPressureAlert.update(engineRunningStable, state,
-                            fp, fpTargetKpa, now);
-                    if (fpFlashing != wasFpFlash) updateFlashState();
-                    if (!fpFlashing) {
-                        bottomFpValue.setTextColor(COLOR_TEXT_NORMAL);
-                        bottomFpValue.setAlpha(1f);
+                    if (updateAuxiliary) {
+                        setTextIfChanged(bottomFpValue, String.format(Locale.US, "%.1f", fp));
                     }
+                    if (fpFlashing) {
+                        fpFlashing = false;
+                        updateFlashState();
+                    }
+                    fuelPressureAlert.reset();
+                    bottomFpValue.setTextColor(COLOR_TEXT_NORMAL);
+                    bottomFpValue.setAlpha(1f);
                 }
 
                 // W.G Wastegate (PID 0x1A0 %)
