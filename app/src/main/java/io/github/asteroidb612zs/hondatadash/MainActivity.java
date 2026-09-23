@@ -299,6 +299,14 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private final float[] lastValidValue = new float[8];
     private final boolean[] hasValidValue = new boolean[8];
     private final boolean[] displayHoldMode = new boolean[8];
+
+    // V2.1.1 stability: after IGN admission releases, the ECU can still emit the
+    // fuel-cut sentinel (observed as 117.5°) for a handful of frames. This guard is
+    // presentation-only: a physically invalid IGN sample briefly keeps the last
+    // trusted value in HOLD instead of flashing an empty/0.4-alpha card.
+    private static final long IGN_RECOVERY_SENTINEL_GUARD_MS = 500L;
+    private long ignRecoverySentinelGuardUntilMs = 0L;
+
     private final Runnable flashTick = new Runnable() {
         @Override public void run() {
             flashScheduled = false;
@@ -1001,6 +1009,9 @@ public class MainActivity extends Activity implements DataSource.Callback {
                         hasFiltered[i] = false;
                         lastUpdateTime[i] = 0L;
                         trustedDisplayMemory.releaseHold(i);
+                        if (i == 6) {
+                            ignRecoverySentinelGuardUntilMs = now + IGN_RECOVERY_SENTINEL_GUARD_MS;
+                        }
                     }
                     displayHoldMode[i] = false;
 
@@ -1032,8 +1043,19 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
                         frameValid[i] = true;
 
-                        // Admitted live values now pass the ordinary physical-range gate.
+                        // IGN recovery sentinel handling is deliberately presentation-only.
+                        // Admission/SHIFT/DFCO semantics stay frozen; only a physically
+                        // impossible IGN value inside the short post-release guard is held.
                         float[] range = VALID_RANGE[i];
+                        if (i == 6 && now <= ignRecoverySentinelGuardUntilMs
+                                && (fVal < range[0] || fVal > range[1])
+                                && hasValidValue[i]) {
+                            displayHoldMode[i] = true;
+                            renderHeldCombustionCard(i);
+                            continue;
+                        }
+
+                        // Admitted live values now pass the ordinary physical-range gate.
                         if (fVal < range[0] || fVal > range[1]) {
                             frameValid[i] = false;
                             if (hasValidValue[i]) {
