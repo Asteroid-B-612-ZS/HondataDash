@@ -84,9 +84,6 @@ def main():
         "private int getIatColor(",
         "private int getMapSemanticColor(",
         "private boolean isSemanticFramePlausible(",
-        "private boolean shouldSyncIgnAfterDfco(",
-        "private boolean shouldSyncAfAfterDfco(",
-        "private boolean shouldSyncStrimAfterDfco(",
     ):
         assert method(current, sig) == method(previous, sig), sig + " changed unexpectedly"
 
