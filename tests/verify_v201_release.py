@@ -14,9 +14,9 @@ STRINGS=(ROOT/'app/src/main/res/values/strings.xml').read_text()
 TRACK=(DATA/'EngineStateTracker.java').read_text()
 
 identity_ok = (
-    re.search(r'\\bversionCode\\s+55\\b', BUILD) and 'versionName "2.1.0-visual.3"' in BUILD
+    re.search(r'\bversionCode\s+55\b', BUILD) and 'versionName "2.1.0-visual.3"' in BUILD
 ) or (
-    re.search(r'\\bversionCode\\s+56\\b', BUILD) and 'versionName "2.1.1-stability.1"' in BUILD
+    re.search(r'\bversionCode\s+56\b', BUILD) and 'versionName "2.1.1-stability.1"' in BUILD
 )
 assert identity_ok
 assert 'applicationId "io.github.asteroidb612zs.hondatadash"' in BUILD
