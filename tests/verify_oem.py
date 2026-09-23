@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """OEM+ grid/clock/palette contracts; not an Android emulator or hardware test."""
 from pathlib import Path
+import argparse
 import importlib.util
 import subprocess
 import tempfile
@@ -87,7 +88,7 @@ PRESENTATION_PROBE = r'''package io.github.asteroidb612zs.hondatadash;
 public class PresentationProbe {
  static class SystemClock {static long now=10000;static long elapsedRealtime(){return now;}}
  static class TextView {
-  int color=0xff555555;void setTextColor(int c){color=c;}int getCurrentTextColor(){return color;}
+  int color=0xff555555,writes;void setTextColor(int c){color=c;writes++;}int getCurrentTextColor(){return color;}
  }
  static class ScaleBarView {int liveColor;void setLiveColor(int c){liveColor=c;}}
  TextView[] valueIntViews=new TextView[8];
@@ -128,7 +129,11 @@ public class PresentationProbe {
 
   p.cylRedFlashing=true;p.auxiliaryViews[3].color=0xffff4444;p.auxiliaryValid[3]=true;p.applyOemPalette();
   check(p.auxiliaryViews[3].color==DashboardPalette.RED,"rapid CYL accumulation keeps red flash colour");
-  System.out.println("PASS: visual.3 final-presentation state transitions");
+  int writes=0;for(TextView v:p.valueIntViews)writes+=v.writes;for(TextView v:p.auxiliaryViews)writes+=v.writes;
+  for(int n=0;n<1000;n++)p.applyOemPalette();
+  int after=0;for(TextView v:p.valueIntViews)after+=v.writes;for(TextView v:p.auxiliaryViews)after+=v.writes;
+  check(after==writes,"unchanged palette must not reapply text colours");
+  System.out.println("PASS: final-presentation transitions and 1000 unchanged palette passes without colour writes");
  }
 }'''
 
@@ -137,7 +142,9 @@ public class StatusProbe {
  static int checks;
  static class SystemClock {static long now;static long elapsedRealtime(){return now;}}
  static class Source {boolean connected=true;boolean isConnected(){return connected;}}
- static class TextView {String label;int color;void setText(String s){label=s;}void setTextColor(int c){color=c;}}
+ static class TextView {String label="";int color,textWrites,colorWrites;
+  void setText(String s){label=s;textWrites++;}CharSequence getText(){return label;}
+  int getCurrentTextColor(){return color;}void setTextColor(int c){color=c;colorWrites++;}}
  static class PorterDuff {enum Mode {SRC_IN}}
  static class Drawable {Drawable mutate(){return this;}void setColorFilter(int c,PorterDuff.Mode m){}}
  static class Dot {Drawable getBackground(){return null;}}
@@ -158,6 +165,10 @@ public class StatusProbe {
   p.expect("INITIALIZING",DashboardPalette.SECONDARY);
   check(!p.isDataFresh(),"old session cannot reactivate live bars or alarms");
   p.lastValidFrameTimeMs=10100;p.expect("LIVE",DashboardPalette.LIVE);
+  int textWrites=p.statusText.textWrites,colorWrites=p.statusText.colorWrites;
+  for(int n=0;n<1000;n++)p.updateFreshnessStatus();
+  check(p.statusText.textWrites==textWrites&&p.statusText.colorWrites==colorWrites,
+        "steady LIVE does not churn text/layout/colour setters");
   check(p.isDataFresh(),"current session sample is fresh");
   p.rpmFrameValid=false;p.expect("NO DATA",DashboardPalette.AMBER);
   p.rpmFrameValid=true;p.frameValid[1]=false;p.expect("NO DATA",DashboardPalette.AMBER);
@@ -217,10 +228,12 @@ def static_contracts():
     print("PASS: production reference-lock XML, shrinking rules and non-blocking startup lifecycle static contracts")
 
 
-def protect_data():
+def protect_data(require_baseline=False):
     # The repository history is optional in a source ZIP. Compare when available.
     probe = subprocess.run(["git", "cat-file", "-e", BASELINE + "^{commit}"], cwd=ROOT, capture_output=True)
     if probe.returncode:
+        if require_baseline:
+            raise AssertionError("Required baseline history absent: fetch the full repository before release QA")
         print("SKIP: baseline history absent; use source archive's recorded scope for manual review")
         return
     changes = subprocess.check_output(["git", "diff", BASELINE, "--", "app/src/main/java/io/github/asteroidb612zs/hondatadash/data"], cwd=ROOT, text=True)
@@ -231,10 +244,10 @@ def protect_data():
     protected = ("public void onDataReceived(", "private String formatMainText(", "private String formatExtremeText(",
                  "private int getTrimSemanticColor(", "private int getIgnSemanticColor(", "private int getMapSemanticColor(",
                  "private int getEthanolColor(", "private int getEctColor(", "private int getIatColor(",
-                 "private int getAfColorByLambda(", "private int getAfSeverity(", "private boolean isAfColorContext(",
+                 "private float boostFilter(", "private int getAfSeverity(", "private boolean isAfColorContext(",
                  "private long getAfAttackMs(", "private boolean isSemanticFramePlausible(",
-                 "private boolean shouldSyncIgnAfterDfco(", "private boolean shouldSyncAfAfterDfco(",
-                 "private boolean shouldSyncStrimAfterDfco(", "private void updateEngineRunningGate(",
+                 "private boolean shouldUseFastCombustionRefresh(", "private void renderSemanticCard(",
+                 "private void invalidateCombustionDisplayForLinkGap(", "private void updateEngineRunningGate(",
                  "private void updateMainColorState(", "private void applyMainValueSemanticColor(",
                  "private void applyConfidenceVisual(", "private void applyStrimInterpretabilityVisual(",
                  "private void renderHeldCombustionCard(")
@@ -244,8 +257,12 @@ def protect_data():
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--require-baseline", action="store_true",
+                        help="Fail instead of skipping semantic freeze if git history is missing")
+    args = parser.parse_args()
     static_contracts()
-    protect_data()
+    protect_data(args.require_baseline)
     grid = reg.method((JAVA / "DashboardGridLayout.java").read_text(), "static int gridWidth(")
     boundary = reg.method((JAVA / "AlignedRowLayout.java").read_text(), "static int boundary(")
     with tempfile.TemporaryDirectory(prefix="hondata-oem-") as tmp:
@@ -256,7 +273,8 @@ def main():
         status = temp / "StatusProbe.java"
         status.write_text(STATUS_PROBE.replace("STATUS_METHODS", "\n".join(
             reg.method(main_source, s) for s in ("private void updateFreshnessStatus(",
-                                                "private void setConnectionStatus(", "private boolean isDataFresh("))))
+                                                "private void setConnectionStatus(", "private boolean isDataFresh(",
+                                                "private static void setTextIfChanged("))))
         presentation = temp / "PresentationProbe.java"
         presentation.write_text(PRESENTATION_PROBE.replace(
             "PRESENTATION_METHOD", reg.method(main_source, "private void applyOemPalette(")))

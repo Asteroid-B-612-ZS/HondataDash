@@ -318,8 +318,19 @@ public class ScaleBarView extends View {
     /** 核心入口 */
     public void setValue(float v) {
         if (Float.isNaN(v) || Float.isInfinite(v)) {
+            boolean hadValue = !Float.isNaN(curVal);
             curVal = Float.NaN;
             clearDynamics();
+            if (hadValue) invalidate();
+            return;
+        }
+        // All eight production cards use direct/static presentation. Repeated
+        // samples need neither the retired dynamics clock nor another redraw.
+        // Target marker, monitoring, alpha and geometry have their own setters.
+        if (archetype == ARCH_STATIC && emotion == EMOTION_NONE
+                && emotionIntensity == 0f && emotionCurrent == 0f) {
+            if (curVal == v) return;
+            curVal = v;
             invalidate();
             return;
         }

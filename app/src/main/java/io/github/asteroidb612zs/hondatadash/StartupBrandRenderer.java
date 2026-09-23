@@ -22,9 +22,10 @@ final class StartupBrandRenderer {
         c.drawText(text, x - paint.measureText(text) / 2f, baseline, paint);
     }
     void draw(Canvas c, int width, int height, long elapsed) {
+        float brand = StartupSequence.brand(elapsed);
+        if (brand <= 0f) return;
         float unit = Math.min(width / 800f, height / 480f);
         int save = c.save(); c.translate(width / 2f, height / 2f); c.scale(unit, unit);
-        float brand = StartupSequence.brand(elapsed);
         float slash = StartupSequence.ease(elapsed, 100, 320);
         paint.setColor(alpha(DashboardPalette.HONDA_RED, brand * (1f - StartupSequence.ease(elapsed, 950, 350))));
         paint.setStrokeWidth(1.5f);

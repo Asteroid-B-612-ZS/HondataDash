@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.util.AttributeSet;
 import android.view.View;
 import android.view.ViewGroup;
@@ -17,6 +18,7 @@ import java.util.List;
  */
 public final class StartupOverlayView extends View {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint.FontMetrics valueMetrics = new Paint.FontMetrics();
     private final ShiftLightRenderer lamps = new ShiftLightRenderer();
     private StartupBrandRenderer brand;
     private ViewGroup dashboard;
@@ -52,8 +54,20 @@ public final class StartupOverlayView extends View {
 
     public void start(ViewGroup content) {
         if (running) return;
+        // API 17 system preference; no extra app setting or Bluetooth delay.
+        if (!animationsEnabled()) { finish(); return; }
         dashboard = content; started = SystemClock.elapsedRealtime(); running = true;
         items.clear(); setAlpha(1); setVisibility(VISIBLE); postOnAnimation(frame);
+    }
+
+    private boolean animationsEnabled() {
+        try {
+            return Settings.Global.getFloat(getContext().getContentResolver(),
+                    Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f;
+        } catch (SecurityException unavailable) {
+            // Some OEMs restrict settings reads. Retain the existing startup.
+            return true;
+        }
     }
 
     public void finish() {
@@ -110,18 +124,21 @@ public final class StartupOverlayView extends View {
             float w = item.view.getWidth(), h = item.view.getHeight();
             float alpha = StartupSequence.shell(elapsed, item.group);
             if (item.kind == BACKGROUND) {
+                if (alpha <= 0f) continue;
                 color(item.view.getId() == R.id.header ? DashboardPalette.BACKGROUND : DashboardPalette.CARD, alpha);
                 c.drawRect(item.x, item.y, item.x + w, item.y + h, paint);
                 color(w <= 2 * density ? DashboardPalette.LINE_INNER : DashboardPalette.LINE, alpha);
                 c.drawRect(item.x + Math.max(0, w - edge), item.y, item.x + w, item.y + h, paint);
                 if (w > 2 * density) c.drawRect(item.x, item.y + h - edge, item.x + w, item.y + h, paint);
             } else if (item.kind == VALUE) {
-                color(DashboardPalette.SECONDARY, StartupSequence.placeholders(elapsed) * .7f);
+                float placeholderAlpha = StartupSequence.placeholders(elapsed) * .7f;
+                if (placeholderAlpha <= 0f) continue;
+                color(DashboardPalette.SECONDARY, placeholderAlpha);
                 TextView value = (TextView) item.view;
                 paint.setTypeface(value.getTypeface()); paint.setTextSize(Math.min(value.getTextSize(), h * .65f));
-                Paint.FontMetrics fm = paint.getFontMetrics();
+                paint.getFontMetrics(valueMetrics);
                 c.drawText("--", item.x + (w - paint.measureText("--")) / 2f,
-                        item.y + h / 2f - (fm.ascent + fm.descent) / 2f, paint);
+                        item.y + h / 2f - (valueMetrics.ascent + valueMetrics.descent) / 2f, paint);
             } else if (item.kind == LAMPS && alpha > .01f) {
                 lamps.draw(c, item.x, item.y, w, h, density, StartupSequence.lampStage(elapsed), true);
             }
