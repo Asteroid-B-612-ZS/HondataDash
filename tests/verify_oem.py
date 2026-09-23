@@ -231,10 +231,9 @@ def protect_data():
     protected = ("public void onDataReceived(", "private String formatMainText(", "private String formatExtremeText(",
                  "private int getTrimSemanticColor(", "private int getIgnSemanticColor(", "private int getMapSemanticColor(",
                  "private int getEthanolColor(", "private int getEctColor(", "private int getIatColor(",
-                 "private int getAfColorByLambda(", "private int getAfSeverity(", "private boolean isAfColorContext(",
+                 "private int getAfSeverity(", "private boolean isAfColorContext(",
                  "private long getAfAttackMs(", "private boolean isSemanticFramePlausible(",
-                 "private boolean shouldSyncIgnAfterDfco(", "private boolean shouldSyncAfAfterDfco(",
-                 "private boolean shouldSyncStrimAfterDfco(", "private void updateEngineRunningGate(",
+                 "private void updateEngineRunningGate(",
                  "private void updateMainColorState(", "private void applyMainValueSemanticColor(",
                  "private void applyConfidenceVisual(", "private void applyStrimInterpretabilityVisual(",
                  "private void renderHeldCombustionCard(")
