@@ -329,11 +329,14 @@ def validate_visual_contract():
         "flash latch retains stage five": "if (flashing)" in shift and "currentStage = 5" in shift,
         "af physical range widened": "{6.5f, 25.0f}" in main,
         "af target/actual gauge": "setTargetTracking(true)" in main and "targetLambda * 14.7f" in main,
-        "af target continues through alarm flash": "updateAfTargetMarker(i, targetLambda, color" in main
+        "af target remains structural through alarm flash": "updateAfTargetMarker(i, targetLambda);" in main
+            and "DashboardPalette.SCALE_TARGET" in method(main, "private void updateAfTargetMarker(")
             and "afFlashing" not in method(main, "private void updateAfTargetMarker("),
         "no 14.7 expansion on af": "setExpand(14.5f, 15.5f, 2.5f)" not in main,
-        "fp alarm gated on engine/semantics/persistence": "FuelPressureAlertTracker" in main
-            and "fuelPressureAlert.update(engineRunningStable, state" in main,
+        "fp display truthful; unverified target alarm disabled": 'String.format(Locale.US, "%.1f", fp)' in main
+            and 'String.format(Locale.US, "%.1f", fp / 100.0)' not in main
+            and "fuelPressureAlert.update(engineRunningStable, state" not in main
+            and "fuelPressureAlert.reset();" in main,
         "time-based recent decay": "RECENT_DECAY_TAU_MS" in main and "RECENT_DECAY_RATE" not in main,
         "independent recent max/min decay clocks": "recentMaxDecayTimeMs" in main and "recentMinDecayTimeMs" in main
             and "recentDecayTimeMs" not in main,
