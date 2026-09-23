@@ -2714,8 +2714,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
     private long getAfAttackMs(int severity, EngineSemanticState state) {
         if (severity <= 0) return 0L;
+        // WOT protection stays fast and unchanged. Ordinary closed-loop colour is
+        // deliberately slower so brief lambda-control activity does not train the
+        // driver to ignore amber/red warnings.
         if (state != null && state.isWot()) return severity >= 2 ? 100L : 150L;
-        return severity >= 2 ? 250L : 350L;
+        return severity >= 2 ? 1000L : 1500L;
     }
 
     private int severityColor(int severity) {
