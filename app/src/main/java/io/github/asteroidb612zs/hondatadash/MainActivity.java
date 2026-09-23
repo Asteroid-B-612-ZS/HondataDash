@@ -1310,7 +1310,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                 }
                                 // Target marker keeps updating through the alarm flash
                                 // so the gauge never freezes on a stale ECU target.
-                                updateAfTargetMarker(i, targetLambda, color);
+                                updateAfTargetMarker(i, targetLambda);
                             }
 
                             // V2.7.0: L.TRIM / MAP / IGN / S.TRIM 主数据语义颜色
@@ -1343,7 +1343,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 Double kc = data.get(KNOCK_CTRL_PID);
                 if (kc != null && knockRetValue != null) {
                     int pct = kc.intValue();
-                    setTextIfChanged(knockRetValue, String.valueOf(pct));
+                    // Text is informational and does not need frame-rate churn.
+                    // Alert evaluation below remains per-frame and unchanged.
+                    if (updateAuxiliary) {
+                        setTextIfChanged(knockRetValue, String.valueOf(pct));
+                    }
 
                     boolean shouldFlash = pct > 65;
                     if (shouldFlash != kcFlashing) {
@@ -2010,14 +2014,15 @@ public class MainActivity extends Activity implements DataSource.Callback {
         }
     }
 
-    /** A/F target marker update: same λ×14.7 conversion as the digit colour path;
-     *  runs on every valid frame, including during the alarm flash. */
-    private void updateAfTargetMarker(int i, float targetLambda, int color) {
+    /** A/F target marker update: same λ×14.7 conversion as the digit path.
+     *  The marker is a structural ECU target, not an alarm lamp, so it stays in the
+     *  subdued OEM target colour while the main digit alone owns warning severity. */
+    private void updateAfTargetMarker(int i, float targetLambda) {
         if (scaleBars[i] == null) return;
         if (Float.isNaN(targetLambda) || targetLambda <= 0f) {
             scaleBars[i].clearTargetValue();
         } else {
-            scaleBars[i].setTargetValue(targetLambda * 14.7f, DashboardPalette.common(color));
+            scaleBars[i].setTargetValue(targetLambda * 14.7f, DashboardPalette.SCALE_TARGET);
         }
     }
 
