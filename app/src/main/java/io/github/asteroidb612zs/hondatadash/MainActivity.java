@@ -1566,7 +1566,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
         for (int i = 0; i < valueIntViews.length; i++) {
             if (valueIntViews[i] != null) {
                 int color = DashboardPalette.main(i, valueIntViews[i].getCurrentTextColor());
-                valueIntViews[i].setTextColor(color);
+                if (valueIntViews[i].getCurrentTextColor() != color) valueIntViews[i].setTextColor(color);
                 if (scaleBars[i] != null) scaleBars[i].setLiveColor(color);
             }
         }
@@ -1590,7 +1590,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
                         && now >= cylYellowEnd[i - 1]) {
                     color = DashboardPalette.PRIMARY;
                 }
-                view.setTextColor(color);
+                if (view.getCurrentTextColor() != color) view.setTextColor(color);
             }
         }
     }
@@ -1980,8 +1980,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 || "RECONNECTING".equals(label)) color = DashboardPalette.SECONDARY;
         else color = DashboardPalette.AMBER;
         if (statusText != null) {
-            statusText.setText(label);
-            statusText.setTextColor(color);
+            setTextIfChanged(statusText, label);
+            if (statusText.getCurrentTextColor() != color) statusText.setTextColor(color);
         }
         if (statusDot != null && statusDot.getBackground() != null) {
             statusDot.getBackground().mutate().setColorFilter(color, PorterDuff.Mode.SRC_IN);

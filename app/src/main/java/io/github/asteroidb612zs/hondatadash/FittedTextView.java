@@ -11,6 +11,7 @@ import android.widget.TextView;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Arrays;
 
 /**
  * Single-line, non-editable instrument text for API 17+. Measures the actual
@@ -75,6 +76,8 @@ public class FittedTextView extends TextView {
 
     /** Configure only when entering a different numeric/semantic display profile. */
     public void setFitReference(boolean tabular, boolean compact, String... samples) {
+        if (tabularDigits == tabular && compactSign == compact
+                && (samples == null ? references.length == 0 : Arrays.equals(references, samples))) return;
         tabularDigits = tabular;
         compactSign = compact;
         references = samples == null ? new String[0] : samples.clone();
