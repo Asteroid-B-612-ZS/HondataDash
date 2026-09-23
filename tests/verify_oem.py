@@ -238,6 +238,11 @@ def protect_data():
                  "private void updateMainColorState(", "private void applyMainValueSemanticColor(",
                  "private void applyConfidenceVisual(", "private void applyStrimInterpretabilityVisual(",
                  "private void renderHeldCombustionCard(")
+    # V2.1.1 intentionally changes onDataReceived and getAfAttackMs. The dedicated
+    # verify_v211_stability.py exact-blob lock is stricter for those reviewed deltas.
+    if '2.1.1-stability.1' in (ROOT / "app/build.gradle").read_text():
+        protected = tuple(name for name in protected
+                          if name not in ("public void onDataReceived(", "private long getAfAttackMs("))
     for name in protected:
         assert reg.method(previous, name) == reg.method(current, name), name
     print(f"PASS: all data-layer files and {len(protected)} protected parsing/formatting/threshold/state/display-admission methods unchanged")
