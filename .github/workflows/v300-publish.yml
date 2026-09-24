@@ -21,19 +21,23 @@ jobs:
           fetch-depth: 0
 
       - name: Guard exact V3 release identity
+        id: guard
         run: |
           set -euxo pipefail
           grep -q 'versionCode 57' app/build.gradle
           grep -q 'versionName "3.0.0"' app/build.gradle
           python3 tests/verify_v300_release.py
           if gh release view v3.0.0 >/dev/null 2>&1; then
-            echo "v3.0.0 already published; nothing to do."
-            exit 0
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+            echo "v3.0.0 already published; publish/cleanup steps will be skipped."
+          else
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
           fi
         env:
           GH_TOKEN: ${{ github.token }}
 
       - name: Archive historical branch heads as tags
+        if: steps.guard.outputs.already_published != 'true'
         run: |
           set -euxo pipefail
           archive_branch() {
@@ -54,6 +58,7 @@ jobs:
           archive_branch "stability/v2.1.1-final-candidate" "archive/v2.1.1-road-tested"
 
       - name: Tag and publish V3.0.0
+        if: steps.guard.outputs.already_published != 'true'
         run: |
           set -euxo pipefail
           git config user.name "github-actions[bot]"
@@ -71,6 +76,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Remove obsolete development branches
+        if: steps.guard.outputs.already_published != 'true'
         run: |
           set -euxo pipefail
           for branch in \
@@ -80,7 +86,8 @@ jobs:
             release/v2.0.1 \
             stability/v2.1.1-final-candidate \
             release/v3.0.0 \
-            release-assets/v3.0.0
+            release-assets/v3.0.0 \
+            release/v3.0-publish-finalize
           do
             if git ls-remote --exit-code origin "refs/heads/$branch" >/dev/null 2>&1; then
               git push origin --delete "$branch"
@@ -88,6 +95,7 @@ jobs:
           done
 
       - name: Remove obsolete Actions artifacts
+        if: steps.guard.outputs.already_published != 'true'
         run: |
           set -euo pipefail
           ids="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --jq '.artifacts[].id' || true)"
