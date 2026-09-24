@@ -31,7 +31,7 @@ jobs:
             exit 0
           fi
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
 
       - name: Archive historical branch heads as tags
         run: |
@@ -66,7 +66,7 @@ jobs:
             --notes-file docs/V3.0_RELEASE_NOTES.md \
             --verify-tag
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
 
       - name: Remove obsolete development branches
         run: |
@@ -93,4 +93,4 @@ jobs:
             gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" || true
           done
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
