@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static/API17 and hot-path resource checks for V2.0.1 production."""
+"""Static/API17 and hot-path resource checks for current production candidates."""
 from pathlib import Path
 import re
 ROOT=Path(__file__).resolve().parents[1]
@@ -12,8 +12,14 @@ FILES=[DATA/n for n in (
 TEXT='\n'.join(p.read_text() for p in FILES)
 assert re.search(r'\bminSdk\s+17\b',BUILD)
 assert re.search(r'\btargetSdk\s+28\b',BUILD)
-assert re.search(r'\bversionCode\s+51\b',BUILD)
-assert re.search(r'versionName\s+["\']2\.0\.1["\']',BUILD)
+identity_ok = (
+    re.search(r'\bversionCode\s+55\b', BUILD)
+    and re.search(r'versionName\s+["\']2\.1\.0-visual\.3["\']', BUILD)
+) or (
+    re.search(r'\bversionCode\s+56\b', BUILD)
+    and re.search(r'versionName\s+["\']2\.1\.1-stability\.1["\']', BUILD)
+)
+assert identity_ok
 for forbidden in ('java.time.','java.util.stream','java.util.function','.stream()','computeIfAbsent(',
                   'List.of(','Map.of(','Set.of(','Optional<','androidx.','kotlin.','CompletableFuture'):
     assert forbidden not in TEXT, forbidden
@@ -41,4 +47,4 @@ assert 'new ' not in body(trusted,'public boolean captureHold(','public boolean 
 assert 'new Animation' not in MAIN and 'ObjectAnimator' not in MAIN and 'ValueAnimator' not in MAIN
 assert not re.search(r'setText\s*\(\s*["\']SHIFT["\']\s*\)',MAIN)
 assert 'private float boostFilter' in MAIN and 'public void onError(final String msg)' in MAIN
-print('PASS: V2.0.1 production API17/static semantic hot-path and bounded-memory contracts')
+print('PASS: V2.1 OEM visual preview API17/static semantic hot-path and bounded-memory contracts')

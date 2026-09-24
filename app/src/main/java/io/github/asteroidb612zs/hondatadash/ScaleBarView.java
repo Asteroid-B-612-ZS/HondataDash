@@ -96,7 +96,7 @@ public class ScaleBarView extends View {
 
     // ========== Paints ==========
     /** 未点亮槽色: 均匀灰蓝, 比半透明黑更可见。 */
-    private static final int TRACK_REST = 0xFF25343D;
+    private static final int TRACK_REST = 0xFF253641;
     private static final float TARGET_BAND_DEADBAND = 0.20f;
     private static final float TARGET_BAND_FULL = 1.20f;
 
@@ -141,16 +141,16 @@ public class ScaleBarView extends View {
     private void init(Context ctx) {
         density = ctx.getResources().getDisplayMetrics().density;
 
-        bgPaint.setColor(0xFF172229);
+        bgPaint.setColor(0xFF15222D);
         bgPaint.setStyle(Paint.Style.FILL);
 
         fillPaint.setStyle(Paint.Style.FILL);
 
-        tickPaint.setColor(0xFF6E7D86);
+        tickPaint.setColor(0xFF7F929F);
         tickPaint.setStrokeWidth(Math.max(1f, density));
         tickPaint.setStyle(Paint.Style.STROKE);
 
-        labelPaint.setColor(0xFFAEB9BF);
+        labelPaint.setColor(0xFFC0CCD5);
         // The fixed scale slot budgets 13sp at density=1. Larger accessibility
         // settings cannot enlarge it into the ticks or sacrifice signed endpoints.
         nominalLabelSize = 13 * Math.min(ctx.getResources().getDisplayMetrics().scaledDensity, density);
@@ -170,13 +170,13 @@ public class ScaleBarView extends View {
         glowPaint.setStyle(Paint.Style.FILL);
         // V2.9.2 detail pass: two-stage crisp halo around the small scale track.
         // No BlurMaskFilter/shadow is used: this stays deterministic and cheap on API 17.
-        edgeGlowPaint.setColor(0x243D6C7B);
+        edgeGlowPaint.setColor(0x24638499);
         edgeGlowPaint.setStyle(Paint.Style.FILL);
-        edgePaint.setColor(0xFF526872);
+        edgePaint.setColor(0xFF6D7F8D);
         edgePaint.setStyle(Paint.Style.FILL);
         targetPaint.setColor(DashboardPalette.SCALE_TARGET);
         targetPaint.setStyle(Paint.Style.FILL);
-        referencePaint.setColor(0xC08E9CA4);
+        referencePaint.setColor(0xC0AABAC5);
     }
 
     // ========== 公开接口 ==========
@@ -588,28 +588,28 @@ public class ScaleBarView extends View {
          */
         float halo = Math.max(2, Math.round(2 * density));
 
-        edgeGlowPaint.setColor(0x2A6E8A98); // top catch
+        edgeGlowPaint.setColor(0x2A8B9CA9); // top catch
         canvas.drawRect(left, top, right, Math.min(bottom, top + halo), edgeGlowPaint);
-        edgeGlowPaint.setColor(0x1D607C89); // left catch
+        edgeGlowPaint.setColor(0x1D6D7F8D); // left catch
         canvas.drawRect(left, top, Math.min(right, left + halo), bottom, edgeGlowPaint);
-        edgeGlowPaint.setColor(0x123F5965); // right falloff
+        edgeGlowPaint.setColor(0x12425564); // right falloff
         canvas.drawRect(Math.max(left, right - halo), top, right, bottom, edgeGlowPaint);
-        edgeGlowPaint.setColor(0x0B17262D); // bottom falloff
+        edgeGlowPaint.setColor(0x0B283A47); // bottom falloff
         canvas.drawRect(left, Math.max(top, bottom - halo), right, bottom, edgeGlowPaint);
 
         float stroke = Math.max(1, Math.round(density));
-        edgePaint.setColor(0xFF687F89); // top metallic highlight
+        edgePaint.setColor(0xFF8B9CA9); // top metallic highlight
         canvas.drawRect(left, top, right, top + stroke, edgePaint);
-        edgePaint.setColor(0xFF596F79); // left
+        edgePaint.setColor(0xFF6D7F8D); // left
         canvas.drawRect(left, top, left + stroke, bottom, edgePaint);
-        edgePaint.setColor(0xFF475A63); // right
+        edgePaint.setColor(0xFF425564); // right
         canvas.drawRect(right - stroke, top, right, bottom, edgePaint);
-        edgePaint.setColor(0xFF34464E); // bottom
+        edgePaint.setColor(0xFF283A47); // bottom
         canvas.drawRect(left, bottom - stroke, right, bottom, edgePaint);
 
         // One-pixel inner reflections make the colour bar feel recessed in a shell.
         float inner = Math.max(1, Math.round(density));
-        edgeGlowPaint.setColor(0x20C7D8DE);
+        edgeGlowPaint.setColor(0x20C0CCD5);
         canvas.drawRect(left + stroke, top + stroke,
                 Math.max(left + stroke, right - stroke),
                 Math.min(bottom - stroke, top + stroke + inner), edgeGlowPaint);
@@ -661,11 +661,11 @@ public class ScaleBarView extends View {
             if (ticks[i] < minVal || ticks[i] > maxVal) continue;
             float x = valToX(ticks[i], barLeft, barW);
             if (labelVisible[i]) {
-                labelPaint.setColor(labelPriority(i) == 0 ? 0xFFC7D1D6 : 0xFFAAB6BC);
+                labelPaint.setColor(labelPriority(i) == 0 ? 0xFFC0CCD5 : 0xFFAABAC5);
                 canvas.drawText(tickLabels[i], labelLeft[i] + labelOrigin[i], labelBaseline, labelPaint);
             }
             boolean referenceTick = !Float.isNaN(tickReference) && Math.abs(ticks[i] - tickReference) < .0001f;
-            tickPaint.setColor(referenceTick ? 0xFF9AA7AE : labelVisible[i] ? 0xFF6E7D86 : 0xFF46545D);
+            tickPaint.setColor(referenceTick ? 0xFFAABAC5 : labelVisible[i] ? 0xFF7F929F : 0xFF4D6271);
             float tickStart = referenceTick ? tickTop - Math.round(density)
                     : labelVisible[i] ? tickTop : tickBottom - Math.round(3 * density);
             drawHairline(canvas, x, tickStart, tickBottom, tickPaint);

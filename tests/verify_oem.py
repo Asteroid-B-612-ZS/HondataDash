@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 JAVA = ROOT / "app/src/main/java/io/github/asteroidb612zs/hondatadash"
 RES = ROOT / "app/src/main/res"
-BASELINE = "92cd19f0d7ae61b63c5fc6a9451b38acb7513ae4"
+BASELINE = "6cedcdd14fe0d6c1357129fa3e65388acffc3ebc"
 
 
 def load(name, path):
@@ -60,9 +60,18 @@ public class OemProbe {
   check(StartupSequence.DURATION_MS==2900&&StartupSequence.reveal(2900)==1,"finite 2.9 second startup");
   check(StartupSequence.SIGNATURE.equals("Designed by ZhouQiZhi"),"exact author case");
   check(StartupSequence.placeholders(2100)>0 && StartupSequence.checkStatus(2100)>0,"check text visible before handoff");
+  check(DashboardPalette.BACKGROUND==0xff030609,"OEM background");
+  check(DashboardPalette.PRIMARY==0xfff2f5f7,"OEM cold white");
+  check(DashboardPalette.SECONDARY==0xffadbdc9,"OEM secondary");
+  check(DashboardPalette.CYAN==0xff65c9e8&&DashboardPalette.GREEN==0xff70d65b,"OEM cool accents");
+  check(DashboardPalette.AMBER==0xffffbf47&&DashboardPalette.RED==0xfff34a43,"OEM warning colours");
+  check(DashboardPalette.common(DashboardPalette.PURPLE)==DashboardPalette.CRITICAL,
+        "legacy purple semantic maps to distinct critical coral");
+  check(DashboardPalette.common(DashboardPalette.CRITICAL)==DashboardPalette.CRITICAL,
+        "critical presentation mapping is idempotent");
   for(int card=0;card<8;card++){
-   int safe=card==1?DashboardPalette.CYAN:card==2||card==4?DashboardPalette.GREEN:DashboardPalette.PRIMARY;
-   check(DashboardPalette.main(card,0xff3fb950)==safe,"OEM calm colour by role");
+   check(DashboardPalette.main(card,0xff3fb950)==DashboardPalette.PRIMARY,
+         "normal/safe main digit stays cold white");
    check(DashboardPalette.main(card,0xffd29922)==DashboardPalette.AMBER,"warning survives palette");
    check(DashboardPalette.main(card,0xffff4444)==DashboardPalette.RED,"danger survives palette");
    for(int color:new int[]{0xff3fb950,0xffff4444,0xffd29922,0xff00d8ff,0xffe8eef2,0xffb040ff,0xffa0a0a0}){
@@ -71,6 +80,55 @@ public class OemProbe {
    }
   }
   System.out.println("PASS: "+checks+" reference grid, animation clock and palette assertions (pure production methods)");
+ }
+}'''
+
+PRESENTATION_PROBE = r'''package io.github.asteroidb612zs.hondatadash;
+public class PresentationProbe {
+ static class SystemClock {static long now=10000;static long elapsedRealtime(){return now;}}
+ static class TextView {
+  int color=0xff555555;void setTextColor(int c){color=c;}int getCurrentTextColor(){return color;}
+ }
+ static class ScaleBarView {int liveColor;void setLiveColor(int c){liveColor=c;}}
+ TextView[] valueIntViews=new TextView[8];
+ ScaleBarView[] scaleBars=new ScaleBarView[8];
+ TextView[] auxiliaryViews=new TextView[11];
+ boolean[] auxiliaryValid=new boolean[11];
+ boolean cylRedFlashing;
+ long[] cylYellowEnd=new long[4];
+ static void check(boolean p,String s){if(!p)throw new AssertionError(s);}
+ PresentationProbe(){
+  for(int i=0;i<8;i++){valueIntViews[i]=new TextView();scaleBars[i]=new ScaleBarView();}
+  for(int i=0;i<11;i++)auxiliaryViews[i]=new TextView();
+ }
+ PRESENTATION_METHOD
+ public static void main(String[] args){
+  PresentationProbe p=new PresentationProbe();
+  for(int i=0;i<8;i++)p.valueIntViews[i].color=0xff3fb950;
+  p.applyOemPalette();
+  for(int i=0;i<8;i++)check(p.valueIntViews[i].color==DashboardPalette.PRIMARY,"safe main must be white "+i);
+
+  p.valueIntViews[1].color=0xffd29922;p.valueIntViews[4].color=0xffff4444;p.applyOemPalette();
+  check(p.valueIntViews[1].color==DashboardPalette.AMBER,"warning preserved");
+  check(p.valueIntViews[4].color==DashboardPalette.RED,"danger preserved");
+
+  p.auxiliaryViews[0].color=0xff3fb950;p.applyOemPalette();
+  check(p.auxiliaryViews[0].color==DashboardPalette.PRIMARY,"KC normal white");
+  p.auxiliaryViews[0].color=0xffd29922;p.applyOemPalette();
+  check(p.auxiliaryViews[0].color==DashboardPalette.AMBER,"KC amber preserved");
+
+  p.auxiliaryViews[1].color=0xff555555;p.auxiliaryValid[1]=false;p.cylYellowEnd[0]=0;p.applyOemPalette();
+  check(p.auxiliaryViews[1].color==0xff555555,"invalid CYL placeholder remains grey");
+
+  p.auxiliaryViews[1].color=0xffff4444;p.auxiliaryValid[1]=true;p.cylYellowEnd[0]=0;p.applyOemPalette();
+  check(p.auxiliaryViews[1].color==DashboardPalette.PRIMARY,"historical CYL total returns white");
+
+  p.auxiliaryViews[2].color=0xffd29922;p.auxiliaryValid[2]=true;p.cylYellowEnd[1]=11000;p.applyOemPalette();
+  check(p.auxiliaryViews[2].color==DashboardPalette.AMBER,"new CYL event keeps amber window");
+
+  p.cylRedFlashing=true;p.auxiliaryViews[3].color=0xffff4444;p.auxiliaryValid[3]=true;p.applyOemPalette();
+  check(p.auxiliaryViews[3].color==DashboardPalette.RED,"rapid CYL accumulation keeps red flash colour");
+  System.out.println("PASS: visual.3 final-presentation state transitions");
  }
 }'''
 
@@ -99,14 +157,14 @@ public class StatusProbe {
   SystemClock.now=10100;p.lastValidFrameTimeMs=9999;p.frameValid[1]=true;
   p.expect("INITIALIZING",DashboardPalette.SECONDARY);
   check(!p.isDataFresh(),"old session cannot reactivate live bars or alarms");
-  p.lastValidFrameTimeMs=10100;p.expect("LIVE",DashboardPalette.LIVE_RED);
+  p.lastValidFrameTimeMs=10100;p.expect("LIVE",DashboardPalette.LIVE);
   check(p.isDataFresh(),"current session sample is fresh");
   p.rpmFrameValid=false;p.expect("NO DATA",DashboardPalette.AMBER);
   p.rpmFrameValid=true;p.frameValid[1]=false;p.expect("NO DATA",DashboardPalette.AMBER);
   for(int card:new int[]{1,2,4}){
-   p.frameValid[card]=true;p.expect("LIVE",DashboardPalette.LIVE_RED);p.frameValid[card]=false;
+   p.frameValid[card]=true;p.expect("LIVE",DashboardPalette.LIVE);p.frameValid[card]=false;
   }
-  p.frameValid[1]=true;SystemClock.now=10599;p.expect("LIVE",DashboardPalette.LIVE_RED);
+  p.frameValid[1]=true;SystemClock.now=10599;p.expect("LIVE",DashboardPalette.LIVE);
   SystemClock.now=10600;p.expect("STALE",DashboardPalette.AMBER);
   check(!p.isDataFresh(),"500ms freshness boundary");
   SystemClock.now=11599;p.expect("STALE",DashboardPalette.AMBER);
@@ -137,6 +195,11 @@ def static_contracts():
         assert "-keep class io.github.asteroidb612zs.hondatadash." + name in keep
     main = (JAVA / "MainActivity.java").read_text()
     overlay = (JAVA / "StartupOverlayView.java").read_text()
+    assert '{"E99", "--"}' in main, "Ethanol normal-width reference must be E99"
+    assert 'bar.setRange(0, 100);' in main, "Ethanol data scale must still preserve E100"
+    assert '{0, 100},       // 0: Ethanol %' in main, "Ethanol sensor validity must remain 0..100"
+    assert 'now >= cylYellowEnd[i - 1]' in main and '!cylRedFlashing' in main, "CYL history/event presentation split missing"
+    assert 'i >= 1 && i <= 4 && auxiliaryValid[i] && !cylRedFlashing' in main, "invalid CYL placeholders must not be promoted to normal white"
     assert "!startupShown && savedInstanceState == null" in main
     for signature in ("protected void onPause(", "protected void onDestroy("):
         assert "startupOverlay.finish()" in reg.method(main, signature)
@@ -167,12 +230,21 @@ def protect_data():
     current = (ROOT / path).read_text()
     protected = ("public void onDataReceived(", "private String formatMainText(", "private String formatExtremeText(",
                  "private int getTrimSemanticColor(", "private int getIgnSemanticColor(", "private int getMapSemanticColor(",
-                 "private int getEctColor(", "private int getIatColor(", "private int getAfColorByLambda(",
-                 "private boolean shouldSyncIgnAfterDfco(", "private boolean shouldSyncAfAfterDfco(",
-                 "private boolean shouldSyncStrimAfterDfco(", "private void updateEngineRunningGate(")
+                 "private int getEthanolColor(", "private int getEctColor(", "private int getIatColor(",
+                 "private int getAfSeverity(", "private boolean isAfColorContext(",
+                 "private long getAfAttackMs(", "private boolean isSemanticFramePlausible(",
+                 "private void updateEngineRunningGate(",
+                 "private void updateMainColorState(", "private void applyMainValueSemanticColor(",
+                 "private void applyConfidenceVisual(", "private void applyStrimInterpretabilityVisual(",
+                 "private void renderHeldCombustionCard(")
+    # V2.1.1 intentionally changes onDataReceived and getAfAttackMs. The dedicated
+    # verify_v211_stability.py exact-blob lock is stricter for those reviewed deltas.
+    if '2.1.1-stability.1' in (ROOT / "app/build.gradle").read_text():
+        protected = tuple(name for name in protected
+                          if name not in ("public void onDataReceived(", "private long getAfAttackMs("))
     for name in protected:
         assert reg.method(previous, name) == reg.method(current, name), name
-    print(f"PASS: all data-layer files and {len(protected)} protected parsing/formatting/threshold/state methods unchanged")
+    print(f"PASS: all data-layer files and {len(protected)} protected parsing/formatting/threshold/state/display-admission methods unchanged")
 
 
 def main():
@@ -189,10 +261,15 @@ def main():
         status.write_text(STATUS_PROBE.replace("STATUS_METHODS", "\n".join(
             reg.method(main_source, s) for s in ("private void updateFreshnessStatus(",
                                                 "private void setConnectionStatus(", "private boolean isDataFresh("))))
+        presentation = temp / "PresentationProbe.java"
+        presentation.write_text(PRESENTATION_PROBE.replace(
+            "PRESENTATION_METHOD", reg.method(main_source, "private void applyOemPalette(")))
         subprocess.run(["java", "-m", "jdk.compiler/com.sun.tools.javac.Main", "--release", "11", "-d", str(temp),
-                        str(path), str(status), str(JAVA / "StartupSequence.java"), str(JAVA / "DashboardPalette.java")], check=True)
+                        str(path), str(status), str(presentation), str(JAVA / "StartupSequence.java"),
+                        str(JAVA / "DashboardPalette.java")], check=True)
         subprocess.run(["java", "-cp", str(temp), "io.github.asteroidb612zs.hondatadash.OemProbe"], check=True)
         subprocess.run(["java", "-cp", str(temp), "io.github.asteroidb612zs.hondatadash.StatusProbe"], check=True)
+        subprocess.run(["java", "-cp", str(temp), "io.github.asteroidb612zs.hondatadash.PresentationProbe"], check=True)
 
 
 if __name__ == "__main__":

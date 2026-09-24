@@ -98,7 +98,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private final View[] extremePanelViews = new View[8];
     private final boolean[] semanticMode = new boolean[8];
     private static final String[][] MAIN_WIDTH_REFERENCE = {
-        {"E888", "--"}, {"888", "-88", "--"}, {"888", "-88", "--"},
+        {"E99", "--"}, {"888", "-88", "--"}, {"888", "-88", "--"},
         {"+88.8", "-88.8", "--"}, {"+8.88", "-8.88", "--"}, {"88.8", "--"},
         {"+88.8", "-88.8", "--"}, {"+88.8", "-88.8", "--"}
     };
@@ -299,6 +299,14 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private final float[] lastValidValue = new float[8];
     private final boolean[] hasValidValue = new boolean[8];
     private final boolean[] displayHoldMode = new boolean[8];
+
+    // V2.1.1 stability: after IGN admission releases, the ECU can still emit the
+    // fuel-cut sentinel (observed as 117.5°) for a handful of frames. This guard is
+    // presentation-only: a physically invalid IGN sample briefly keeps the last
+    // trusted value in HOLD instead of flashing an empty/0.4-alpha card.
+    private static final long IGN_RECOVERY_SENTINEL_GUARD_MS = 500L;
+    private long ignRecoverySentinelGuardUntilMs = 0L;
+
     private final Runnable flashTick = new Runnable() {
         @Override public void run() {
             flashScheduled = false;
@@ -404,8 +412,10 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
     // 底部 PID
     private static final int BAT_PID = 0x180;
-    private static final int FP_PID = 0x191;    // Fuel Pressure kPa
-    private static final int FP_TARGET_PID = 0x190; // Fuel Pressure Target kPa
+    // BT42 evidence: 0x191 is already decoded in bar (about 35-36 bar at warm idle).
+    // 0x190 target scaling is not yet verified strongly enough for production alerting.
+    private static final int FP_PID = 0x191;    // Fuel Pressure bar
+    private static final int FP_TARGET_PID = 0x190; // Raw/quantized target channel; alert scaling unverified
     private static final int WG_PID = 0x1A0;    // Wastegate CMD %
     private static final int TP_PID = 0x122;    // Throttle Plate %
 
@@ -693,7 +703,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 bar.addGradientZone(1.20f, 1.40f, DashboardPalette.SCALE_LOAD_HIGH, DashboardPalette.SCALE_LOAD_PEAK);
                 bar.addGradientZone(1.40f, 1.45f, DashboardPalette.SCALE_LOAD_PEAK, DashboardPalette.SCALE_AMBER);
                 bar.addZone(1.45f, 1.60f, DashboardPalette.SCALE_AMBER);
-                bar.addGradientZone(1.60f, 2.0f, DashboardPalette.SCALE_RED, 0xFFB63C4A);
+                bar.addGradientZone(1.60f, 2.0f, DashboardPalette.SCALE_RED, 0xFFB9554D);
                 bar.setAnchor(0);
                 bar.setExpand(0, 1.5f, 2.0f);
                 bar.setStatic();
@@ -999,6 +1009,9 @@ public class MainActivity extends Activity implements DataSource.Callback {
                         hasFiltered[i] = false;
                         lastUpdateTime[i] = 0L;
                         trustedDisplayMemory.releaseHold(i);
+                        if (i == 6) {
+                            ignRecoverySentinelGuardUntilMs = now + IGN_RECOVERY_SENTINEL_GUARD_MS;
+                        }
                     }
                     displayHoldMode[i] = false;
 
@@ -1030,8 +1043,19 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
                         frameValid[i] = true;
 
-                        // Admitted live values now pass the ordinary physical-range gate.
+                        // IGN recovery sentinel handling is deliberately presentation-only.
+                        // Admission/SHIFT/DFCO semantics stay frozen; only a physically
+                        // impossible IGN value inside the short post-release guard is held.
                         float[] range = VALID_RANGE[i];
+                        if (i == 6 && now <= ignRecoverySentinelGuardUntilMs
+                                && (fVal < range[0] || fVal > range[1])
+                                && hasValidValue[i]) {
+                            displayHoldMode[i] = true;
+                            renderHeldCombustionCard(i);
+                            continue;
+                        }
+
+                        // Admitted live values now pass the ordinary physical-range gate.
                         if (fVal < range[0] || fVal > range[1]) {
                             frameValid[i] = false;
                             if (hasValidValue[i]) {
@@ -1286,7 +1310,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                 }
                                 // Target marker keeps updating through the alarm flash
                                 // so the gauge never freezes on a stale ECU target.
-                                updateAfTargetMarker(i, targetLambda, color);
+                                updateAfTargetMarker(i, targetLambda);
                             }
 
                             // V2.7.0: L.TRIM / MAP / IGN / S.TRIM 主数据语义颜色
@@ -1319,7 +1343,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 Double kc = data.get(KNOCK_CTRL_PID);
                 if (kc != null && knockRetValue != null) {
                     int pct = kc.intValue();
-                    setTextIfChanged(knockRetValue, String.valueOf(pct));
+                    // Text is informational and does not need frame-rate churn.
+                    // Alert evaluation below remains per-frame and unchanged.
+                    if (updateAuxiliary) {
+                        setTextIfChanged(knockRetValue, String.valueOf(pct));
+                    }
 
                     boolean shouldFlash = pct > 65;
                     if (shouldFlash != kcFlashing) {
@@ -1428,24 +1456,22 @@ public class MainActivity extends Activity implements DataSource.Callback {
                     if (updateAuxiliary) setTextIfChanged(bottomBatValue, String.format(Locale.US, "%.1f", bat));
                 }
 
-                // F.P Fuel Pressure (PID 0x191 kPa → bar) vs 目标 (0x190)
+                // F.P Fuel Pressure: BT42 PID 0x191 is already decoded in bar.
+                // Keep the live value truthful. The legacy target-tracking alarm compared
+                // incompatible/unverified 0x190/0x191 units, so production alerting stays
+                // explicitly disabled until the target scaling is independently verified.
                 Double fp = data.get(FP_PID);
                 if (fp != null && bottomFpValue != null) {
-                    if (updateAuxiliary) setTextIfChanged(bottomFpValue, String.format(Locale.US, "%.1f", fp / 100.0));
-
-                    Double fpTarget = data.get(FP_TARGET_PID);
-                    boolean wasFpFlash = fpFlashing;
-                    double fpTargetKpa = fpTarget != null ? fpTarget : Double.NaN;
-                    // RC6: the number remains live, but shift/fuel-cut/recovery frames are not
-                    // diagnostic evidence of a rail-pressure fault. A real low-pressure event
-                    // must persist for 300 ms after FIRING_VALID resumes.
-                    fpFlashing = fuelPressureAlert.update(engineRunningStable, state,
-                            fp, fpTargetKpa, now);
-                    if (fpFlashing != wasFpFlash) updateFlashState();
-                    if (!fpFlashing) {
-                        bottomFpValue.setTextColor(COLOR_TEXT_NORMAL);
-                        bottomFpValue.setAlpha(1f);
+                    if (updateAuxiliary) {
+                        setTextIfChanged(bottomFpValue, String.format(Locale.US, "%.1f", fp));
                     }
+                    if (fpFlashing) {
+                        fpFlashing = false;
+                        updateFlashState();
+                    }
+                    fuelPressureAlert.reset();
+                    bottomFpValue.setTextColor(COLOR_TEXT_NORMAL);
+                    bottomFpValue.setAlpha(1f);
                 }
 
                 // W.G Wastegate (PID 0x1A0 %)
@@ -1570,8 +1596,28 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 if (scaleBars[i] != null) scaleBars[i].setLiveColor(color);
             }
         }
-        if (auxiliaryViews != null) for (TextView view : auxiliaryViews) {
-            if (view != null) view.setTextColor(DashboardPalette.common(view.getCurrentTextColor()));
+        if (auxiliaryViews != null) {
+            long now = SystemClock.elapsedRealtime();
+            for (int i = 0; i < auxiliaryViews.length; i++) {
+                TextView view = auxiliaryViews[i];
+                if (view == null) continue;
+                int color = DashboardPalette.common(view.getCurrentTextColor());
+
+                // K.C normal (<55) is information, not a positive-status lamp.
+                // The existing 55~65 amber and >65 red-flash paths remain untouched.
+                if (i == 0 && color == DashboardPalette.GREEN) {
+                    color = DashboardPalette.PRIMARY;
+                }
+
+                // CYL counters are historical totals. Keep the stored number cold white
+                // once an event is over; only a new-count window stays amber and the
+                // existing rapid-accumulation condition stays flashing red.
+                if (i >= 1 && i <= 4 && auxiliaryValid[i] && !cylRedFlashing
+                        && now >= cylYellowEnd[i - 1]) {
+                    color = DashboardPalette.PRIMARY;
+                }
+                view.setTextColor(color);
+            }
         }
     }
 
@@ -1955,7 +2001,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private void setConnectionStatus(String label, int color) {
         if ("CONNECT".equals(label)) label = "CONNECTING";
         if ("RECONNECT".equals(label)) label = "RECONNECTING";
-        if ("LIVE".equals(label)) color = DashboardPalette.LIVE_RED;
+        if ("LIVE".equals(label)) color = DashboardPalette.LIVE;
         else if ("CONNECTING".equals(label) || "INITIALIZING".equals(label)
                 || "RECONNECTING".equals(label)) color = DashboardPalette.SECONDARY;
         else color = DashboardPalette.AMBER;
@@ -1968,14 +2014,15 @@ public class MainActivity extends Activity implements DataSource.Callback {
         }
     }
 
-    /** A/F target marker update: same λ×14.7 conversion as the digit colour path;
-     *  runs on every valid frame, including during the alarm flash. */
-    private void updateAfTargetMarker(int i, float targetLambda, int color) {
+    /** A/F target marker update: same λ×14.7 conversion as the digit path.
+     *  The marker is a structural ECU target, not an alarm lamp, so it stays in the
+     *  subdued OEM target colour while the main digit alone owns warning severity. */
+    private void updateAfTargetMarker(int i, float targetLambda) {
         if (scaleBars[i] == null) return;
         if (Float.isNaN(targetLambda) || targetLambda <= 0f) {
             scaleBars[i].clearTargetValue();
         } else {
-            scaleBars[i].setTargetValue(targetLambda * 14.7f, DashboardPalette.common(color));
+            scaleBars[i].setTargetValue(targetLambda * 14.7f, DashboardPalette.SCALE_TARGET);
         }
     }
 
@@ -2672,8 +2719,11 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
     private long getAfAttackMs(int severity, EngineSemanticState state) {
         if (severity <= 0) return 0L;
+        // WOT protection stays fast and unchanged. Ordinary closed-loop colour is
+        // deliberately slower so brief lambda-control activity does not train the
+        // driver to ignore amber/red warnings.
         if (state != null && state.isWot()) return severity >= 2 ? 100L : 150L;
-        return severity >= 2 ? 250L : 350L;
+        return severity >= 2 ? 1000L : 1500L;
     }
 
     private int severityColor(int severity) {

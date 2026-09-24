@@ -301,8 +301,8 @@ def validate_visual_contract():
     overlay = (JAVA / "StartupOverlayView.java").read_text()
     proguard = (ROOT / "app/proguard-rules.pro").read_text()
     checks = {
-        "two-level graphite surface": "#FF03070A" in colors and "#FF071014" in colors,
-        "single-pixel structure": 'android:layout_width="1dp"' in card and "#FF58727E" in colors,
+        "two-level graphite surface": "#FF030609" in colors and "#FF091017" in colors,
+        "single-pixel structure": 'android:layout_width="1dp"' in card and "#FF71808C" in colors,
         "condensed instrument type": styles.count("sans-serif-condensed") >= 7,
         "main value design ceiling": "MAIN_VALUE_SP = 106f" in main,
         "v2.9.3 extreme geometry retained": '@dimen/extreme_width' in card and 'name="extreme_width">56dp' in dims and 'name="extreme_value_reserve">37dp' in dims,
@@ -329,11 +329,14 @@ def validate_visual_contract():
         "flash latch retains stage five": "if (flashing)" in shift and "currentStage = 5" in shift,
         "af physical range widened": "{6.5f, 25.0f}" in main,
         "af target/actual gauge": "setTargetTracking(true)" in main and "targetLambda * 14.7f" in main,
-        "af target continues through alarm flash": "updateAfTargetMarker(i, targetLambda, color" in main
+        "af target remains structural through alarm flash": "updateAfTargetMarker(i, targetLambda);" in main
+            and "DashboardPalette.SCALE_TARGET" in method(main, "private void updateAfTargetMarker(")
             and "afFlashing" not in method(main, "private void updateAfTargetMarker("),
         "no 14.7 expansion on af": "setExpand(14.5f, 15.5f, 2.5f)" not in main,
-        "fp alarm gated on engine/semantics/persistence": "FuelPressureAlertTracker" in main
-            and "fuelPressureAlert.update(engineRunningStable, state" in main,
+        "fp display truthful; unverified target alarm disabled": 'String.format(Locale.US, "%.1f", fp)' in main
+            and 'String.format(Locale.US, "%.1f", fp / 100.0)' not in main
+            and "fuelPressureAlert.update(engineRunningStable, state" not in main
+            and "fuelPressureAlert.reset();" in main,
         "time-based recent decay": "RECENT_DECAY_TAU_MS" in main and "RECENT_DECAY_RATE" not in main,
         "independent recent max/min decay clocks": "recentMaxDecayTimeMs" in main and "recentMinDecayTimeMs" in main
             and "recentDecayTimeMs" not in main,
@@ -341,7 +344,7 @@ def validate_visual_contract():
         "runtime brand mark removed": "brandMark" not in activity,
         "startup brand renderer retained": "StartupBrandRenderer" in overlay,
         "gradient cached not rebuilt per frame": "trackGradient(barLeft, barW)" in scale and "zoneRevision++" in scale,
-        "consistent warning red": "DashboardPalette.RPM_PAIR" in lens and "RED = 0xFFFF3045" in palette and "applyOemPalette" in main,
+        "consistent warning red": "DashboardPalette.RPM_PAIR" in lens and "RED = 0xFFF34A43" in palette and "applyOemPalette" in main,
         "critical labels retain priority": "labelPriority" in scale and "heightFittedSize" in scale,
         "overflow cannot auto-rescale": "drawOverflow" in scale and "valToX(current" in scale,
         "full header status target": 'android:layout_width="108dp"' in activity and "@+id/statusDot" in activity,

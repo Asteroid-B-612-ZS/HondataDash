@@ -41,9 +41,9 @@ final class StartupBrandRenderer {
         float prefix = paint.measureText("Designed by ");
         paint.setTypeface(bold); float name = paint.measureText("ZhouQiZhi");
         float left = -(prefix + name) / 2f;
-        paint.setTypeface(regular); paint.setColor(alpha(0xFF8D999E, signature * brand));
+        paint.setTypeface(regular); paint.setColor(alpha(DashboardPalette.SECONDARY, signature * brand));
         c.drawText("Designed by ", left, baseline, paint);
-        paint.setTypeface(bold); paint.setColor(alpha(0xFFD6DDDF, signature * brand));
+        paint.setTypeface(bold); paint.setColor(alpha(DashboardPalette.PRIMARY, signature * brand));
         c.drawText("ZhouQiZhi", left + prefix, baseline, paint);
         c.restoreToCount(save);
     }
