@@ -33,27 +33,6 @@ jobs:
         env:
           GH_TOKEN: \${{ github.token }}
 
-      - name: Reconstruct pre-signed release APK
-        run: |
-          set -euxo pipefail
-          git fetch origin release-assets/v3.0.0:refs/remotes/origin/release-assets/v3.0.0
-          rm -rf /tmp/v3-release-assets
-          git worktree add /tmp/v3-release-assets refs/remotes/origin/release-assets/v3.0.0
-          cat /tmp/v3-release-assets/release-assets/v3.0.0/apk.b64.part-* | base64 -d > HondataDash_V3.0.0.apk
-          echo "d887e8a82f5e4286e0808aef72a75ca402ad2d9e87e4325830ddb7fd588d364b  HondataDash_V3.0.0.apk" | sha256sum -c -
-
-      - name: Install Android SDK signing verifier
-        run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;33.0.2"
-          bt="$ANDROID_HOME/build-tools/33.0.2"
-          "$bt/aapt" dump badging HondataDash_V3.0.0.apk | tee apk_badging.txt
-          grep -q "package: name='io.github.asteroidb612zs.hondatadash'" apk_badging.txt
-          grep -q "versionCode='57'" apk_badging.txt
-          grep -q "versionName='3.0.0'" apk_badging.txt
-          "$bt/apksigner" verify --verbose --print-certs HondataDash_V3.0.0.apk | tee apk_signature.txt
-          grep -qi "c188668e09838c5af6fe311065b4beff48e8be70d0502050e3866265ecaf675a" apk_signature.txt
-
       - name: Archive historical branch heads as tags
         run: |
           set -euxo pipefail
@@ -82,7 +61,6 @@ jobs:
             git push origin refs/tags/v3.0.0
           fi
           gh release create v3.0.0 \
-            HondataDash_V3.0.0.apk \
             release/V3.0_CHECKSUMS.txt \
             --title "HondataDash V3.0.0" \
             --notes-file docs/V3.0_RELEASE_NOTES.md \
