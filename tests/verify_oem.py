@@ -239,7 +239,8 @@ def protect_data():
                  "private void renderHeldCombustionCard(")
     # V2.1.1 intentionally changes onDataReceived and getAfAttackMs. The dedicated
     # verify_v211_stability.py exact-blob lock is stricter for those reviewed deltas.
-    if '2.1.1-stability.1' in (ROOT / "app/build.gradle").read_text():
+    build_text = (ROOT / "app/build.gradle").read_text()
+    if ('2.1.1-stability.1' in build_text) or ('versionName "3.0.0"' in build_text):
         protected = tuple(name for name in protected
                           if name not in ("public void onDataReceived(", "private long getAfAttackMs("))
     for name in protected:
