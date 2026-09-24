@@ -56,6 +56,8 @@ jobs:
       - name: Tag and publish V3.0.0
         run: |
           set -euxo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if ! git ls-remote --exit-code origin refs/tags/v3.0.0 >/dev/null 2>&1; then
             git tag -a v3.0.0 "$GITHUB_SHA" -m "HondataDash V3.0.0"
             git push origin refs/tags/v3.0.0
