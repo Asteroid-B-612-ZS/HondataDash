@@ -1,0 +1,11 @@
+HondataDash V3.0.0 Release Checksums
+====================================
+
+APK:
+c491c67767b6e81c0500dba4aefb863decc10787161b263531f499e62cdbd882  HondataDash_V3.0.0.apk
+
+Release signing certificate SHA-256:
+c188668e09838c5af6fe311065b4beff48e8be70d0502050e3866265ecaf675a
+
+Road-tested product-logic baseline:
+3e933e56a3ef4a8c3ba149bb91db822023da0777

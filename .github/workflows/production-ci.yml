@@ -1,9 +1,11 @@
-name: V2.1.1 Stability Candidate
+name: Production CI
 
 on:
   push:
     branches:
-      - stability/v2.1.1-final-candidate
+      - master
+      - release/v3.0.0
+      - 'maintenance/**'
   workflow_dispatch:
 
 permissions:
@@ -15,7 +17,7 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout stability candidate with history
+      - name: Checkout production with history
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -37,9 +39,11 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-33" "build-tools;33.0.2"
           test -f "$ANDROID_HOME/platforms/android-33/android.jar"
 
-      - name: Verify V2.1.1 approved delta and frozen semantics
+      - name: Verify production contracts
         run: |
-          python3 tests/verify_v211_stability.py
+          if grep -q 'versionName "3.0.0"' app/build.gradle; then
+            python3 tests/verify_v300_release.py
+          fi
           python3 tests/verify_v201_release.py
           python3 tests/verify_api17_rc7.py
           python3 tests/verify_semantics_rc7.py
@@ -58,36 +62,40 @@ jobs:
         run: |
           python3 tests/verify_oem.py
           python3 tests/verify_color_rc7.py
-          python3 tests/verify_text_fit.py --fonts             app/src/main/assets/fonts/RobotoCondensed-Regular.ttf             app/src/main/assets/fonts/RobotoCondensed-Bold.ttf             app/src/main/assets/fonts/RobotoCondensed-BoldItalic.ttf
+          python3 tests/verify_text_fit.py --fonts \
+            app/src/main/assets/fonts/RobotoCondensed-Regular.ttf \
+            app/src/main/assets/fonts/RobotoCondensed-Bold.ttf \
+            app/src/main/assets/fonts/RobotoCondensed-BoldItalic.ttf
           python3 tests/verify_instruments.py --font app/src/main/assets/fonts/RobotoCondensed-Regular.ttf
 
-      - name: Gradle release build
+      - name: Build unsigned production APK
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon clean assembleRelease
 
-      - name: Verify APK identity and signature
+      - name: Verify APK identity
         run: |
           set -euxo pipefail
-          apk='app/build/outputs/apk/release/app-release.apk'
+          apk="$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -1)"
+          test -n "$apk"
           test -s "$apk"
           bt="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           "$bt/aapt" dump badging "$apk" | tee apk_badging.txt
+          version_code="$(sed -n 's/.*versionCode \([0-9][0-9]*\).*/\1/p' app/build.gradle | head -1)"
+          version_name="$(sed -n 's/.*versionName "\([^"]*\)".*/\1/p' app/build.gradle | head -1)"
           grep -q "package: name='io.github.asteroidb612zs.hondatadash'" apk_badging.txt
-          grep -q "versionCode='56'" apk_badging.txt
-          grep -q "versionName='2.1.1-stability.1'" apk_badging.txt
-          "$bt/apksigner" verify --verbose --print-certs "$apk" | tee apk_signature.txt
-          sha256sum "$apk" | tee apk_sha256.txt
-          cp "$apk" HondataDash_V2.1.1-stability.1.apk
+          grep -q "versionCode='$version_code'" apk_badging.txt
+          grep -q "versionName='$version_name'" apk_badging.txt
+          sha256sum "$apk" | tee apk_unsigned_sha256.txt
+          cp "$apk" HondataDash-production-unsigned.apk
 
-      - name: Upload stability candidate
+      - name: Upload unsigned CI artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HondataDash_V2.1.1-stability.1
+          name: HondataDash-production-unsigned
           path: |
-            HondataDash_V2.1.1-stability.1.apk
+            HondataDash-production-unsigned.apk
             apk_badging.txt
-            apk_signature.txt
-            apk_sha256.txt
+            apk_unsigned_sha256.txt
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
