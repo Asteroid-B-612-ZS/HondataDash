@@ -92,7 +92,7 @@ jobs:
       - name: Upload unsigned CI artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HondataDash-production-unsigned-\${{ github.sha }}
+          name: HondataDash-production-unsigned
           path: |
             HondataDash-production-unsigned.apk
             apk_badging.txt
