@@ -18,6 +18,9 @@ identity_ok = (
 ) or (
     re.search(r'\bversionCode\s+56\b', BUILD)
     and re.search(r'versionName\s+["\']2\.1\.1-stability\.1["\']', BUILD)
+) or (
+    re.search(r'\bversionCode\s+57\b', BUILD)
+    and re.search(r'versionName\s+["\']3\.0\.0["\']', BUILD)
 )
 assert identity_ok
 for forbidden in ('java.time.','java.util.stream','java.util.function','.stream()','computeIfAbsent(',
