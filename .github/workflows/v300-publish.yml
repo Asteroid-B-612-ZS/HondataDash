@@ -1,0 +1,118 @@
+name: Publish V3.0.0
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout final source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard exact V3 release identity
+        run: |
+          set -euxo pipefail
+          grep -q 'versionCode 57' app/build.gradle
+          grep -q 'versionName "3.0.0"' app/build.gradle
+          python3 tests/verify_v300_release.py
+          if gh release view v3.0.0 >/dev/null 2>&1; then
+            echo "v3.0.0 already published; nothing to do."
+            exit 0
+          fi
+        env:
+          GH_TOKEN: \${{ github.token }}
+
+      - name: Reconstruct pre-signed release APK
+        run: |
+          set -euxo pipefail
+          git fetch origin release-assets/v3.0.0:refs/remotes/origin/release-assets/v3.0.0
+          rm -rf /tmp/v3-release-assets
+          git worktree add /tmp/v3-release-assets refs/remotes/origin/release-assets/v3.0.0
+          cat /tmp/v3-release-assets/release-assets/v3.0.0/apk.b64.part-* | base64 -d > HondataDash_V3.0.0.apk
+          echo "d887e8a82f5e4286e0808aef72a75ca402ad2d9e87e4325830ddb7fd588d364b  HondataDash_V3.0.0.apk" | sha256sum -c -
+
+      - name: Install Android SDK signing verifier
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;33.0.2"
+          bt="$ANDROID_HOME/build-tools/33.0.2"
+          "$bt/aapt" dump badging HondataDash_V3.0.0.apk | tee apk_badging.txt
+          grep -q "package: name='io.github.asteroidb612zs.hondatadash'" apk_badging.txt
+          grep -q "versionCode='57'" apk_badging.txt
+          grep -q "versionName='3.0.0'" apk_badging.txt
+          "$bt/apksigner" verify --verbose --print-certs HondataDash_V3.0.0.apk | tee apk_signature.txt
+          grep -qi "c188668e09838c5af6fe311065b4beff48e8be70d0502050e3866265ecaf675a" apk_signature.txt
+
+      - name: Archive historical branch heads as tags
+        run: |
+          set -euxo pipefail
+          archive_branch() {
+            branch="$1"
+            tag="$2"
+            sha="$(git ls-remote origin "refs/heads/$branch" | cut -f1)"
+            if [ -n "$sha" ]; then
+              if ! git ls-remote --exit-code origin "refs/tags/$tag" >/dev/null 2>&1; then
+                git tag "$tag" "$sha"
+                git push origin "refs/tags/$tag"
+              fi
+            fi
+          }
+          archive_branch "release/v2.0.1" "archive/v2.0.1-production"
+          archive_branch "internal/v2.0.1-diagnostic" "archive/v2.0.1-diagnostic"
+          archive_branch "feature/v2.1-oem-color" "archive/v2.1.0-oem-color"
+          archive_branch "feature/v2.1-oem-refinement" "archive/v2.1-oem-refinement"
+          archive_branch "stability/v2.1.1-final-candidate" "archive/v2.1.1-road-tested"
+
+      - name: Tag and publish V3.0.0
+        run: |
+          set -euxo pipefail
+          if ! git ls-remote --exit-code origin refs/tags/v3.0.0 >/dev/null 2>&1; then
+            git tag -a v3.0.0 "$GITHUB_SHA" -m "HondataDash V3.0.0"
+            git push origin refs/tags/v3.0.0
+          fi
+          gh release create v3.0.0 \
+            HondataDash_V3.0.0.apk \
+            release/V3.0_CHECKSUMS.txt \
+            --title "HondataDash V3.0.0" \
+            --notes-file docs/V3.0_RELEASE_NOTES.md \
+            --verify-tag
+        env:
+          GH_TOKEN: \${{ github.token }}
+
+      - name: Remove obsolete development branches
+        run: |
+          set -euxo pipefail
+          for branch in \
+            feature/v2.1-oem-color \
+            feature/v2.1-oem-refinement \
+            internal/v2.0.1-diagnostic \
+            release/v2.0.1 \
+            stability/v2.1.1-final-candidate \
+            release/v3.0.0 \
+            release-assets/v3.0.0
+          do
+            if git ls-remote --exit-code origin "refs/heads/$branch" >/dev/null 2>&1; then
+              git push origin --delete "$branch"
+            fi
+          done
+
+      - name: Remove obsolete Actions artifacts
+        run: |
+          set -euo pipefail
+          ids="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --jq '.artifacts[].id' || true)"
+          for id in $ids; do
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" || true
+          done
+        env:
+          GH_TOKEN: \${{ github.token }}
