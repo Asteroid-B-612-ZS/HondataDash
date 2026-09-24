@@ -76,7 +76,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Remove obsolete development branches
-        if: steps.guard.outputs.already_published != 'true'
         run: |
           set -euxo pipefail
           for branch in \
@@ -87,7 +86,8 @@ jobs:
             stability/v2.1.1-final-candidate \
             release/v3.0.0 \
             release-assets/v3.0.0 \
-            release/v3.0-publish-finalize
+            release/v3.0-publish-finalize \
+            release/v3-cleanup
           do
             if git ls-remote --exit-code origin "refs/heads/$branch" >/dev/null 2>&1; then
               git push origin --delete "$branch"
@@ -95,7 +95,6 @@ jobs:
           done
 
       - name: Remove obsolete Actions artifacts
-        if: steps.guard.outputs.already_published != 'true'
         run: |
           set -euo pipefail
           ids="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --jq '.artifacts[].id' || true)"
