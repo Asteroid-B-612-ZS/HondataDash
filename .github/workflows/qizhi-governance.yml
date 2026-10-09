@@ -1,0 +1,11 @@
+name: QiZhi Governance
+on:
+  pull_request:
+  push:
+  schedule:
+    - cron: '17 4 * * 1'
+permissions:
+  contents: read
+jobs:
+  governance:
+    uses: Asteroid-B-612-ZS/claude_code_public_skills/.github/workflows/qizhi-reusable.yml@1b6ec2336d3e80a589d69879b9bd5b8c63488701
