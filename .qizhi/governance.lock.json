@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "standards_version": "1.3.0",
+  "standards_tag": "v1.3.0",
+  "standards_commit": "a07f432d5cf645a281f54ff35a219b85f0234667",
+  "executor_repository": "Asteroid-B-612-ZS/claude_code_public_skills",
+  "executor_commit": "1b6ec2336d3e80a589d69879b9bd5b8c63488701",
+  "legacy_pr_numbers": [
+    5
+  ]
+}
