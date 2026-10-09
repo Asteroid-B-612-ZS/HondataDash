@@ -256,7 +256,7 @@ def main():
             path.write_text(content)
         (temp / "InstrumentProbe.java").write_text(PROBE.replace("CONFIGURE", configure))
         (temp / "ColorPolicyProbe.java").write_text(COLOR.replace("CONSTANTS", constants).replace("METHODS", methods))
-        sources = list(temp.rglob("*.java")) + [fit.JAVA / n for n in ("ScaleBarView.java", "ShiftLightView.java", "ShiftLightRenderer.java", "DashboardPalette.java", "DashboardTypeface.java")]
+        sources = list(temp.rglob("*.java")) + [fit.JAVA / n for n in ("ScaleBarView.java", "ShiftLightView.java", "ShiftLightRenderer.java", "DashboardPalette.java", "NightPalette.java", "DashboardTypeface.java")]
         subprocess.run(["java", "-m", "jdk.compiler/com.sun.tools.javac.Main", "--release", "11", "-d", str(temp / "classes"), *map(str, sources)], check=True)
         for name, probe_args in (("InstrumentProbe", [str(font_path)]), ("ColorPolicyProbe", [])):
             subprocess.run(["java", "-Djava.awt.headless=true", "-cp", str(temp / "classes"), "io.github.asteroidb612zs.hondatadash." + name, *probe_args], check=True)

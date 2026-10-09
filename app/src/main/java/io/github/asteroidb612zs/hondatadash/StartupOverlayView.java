@@ -91,13 +91,14 @@ public final class StartupOverlayView extends View {
     }
 
     private void color(int color, float alpha) {
-        paint.setColor(color); paint.setAlpha(Math.round(255 * Math.max(0, Math.min(1, alpha))));
+        paint.setColor(NightPalette.color(color)); paint.setAlpha(Math.round(255 * Math.max(0, Math.min(1, alpha))));
     }
 
     @Override protected void onDraw(Canvas c) {
         if (!running || dashboard == null) return;
         long elapsed = SystemClock.elapsedRealtime() - started;
         float wake = StartupSequence.ease(elapsed, 0, 450);
+        if (NightPalette.active) wake = 0f;
         paint.setColor(0xFF000000 | Math.round(3 * wake) << 16 | Math.round(6 * wake) << 8 | Math.round(9 * wake));
         c.drawRect(0, 0, getWidth(), getHeight(), paint);
         if (items.isEmpty() || cachedWidth != getWidth() || cachedHeight != getHeight()) {

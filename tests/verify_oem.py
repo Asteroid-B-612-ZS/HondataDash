@@ -243,6 +243,13 @@ def protect_data():
     if ('2.1.1-stability.1' in build_text) or ('versionName "3.0.0"' in build_text):
         protected = tuple(name for name in protected
                           if name not in ("public void onDataReceived(", "private long getAfAttackMs("))
+    if 'versionName "3.0.1-test.1"' in build_text:
+        # The candidate verifier reconstructs the entire V3 MainActivity exactly,
+        # except for the explicitly reviewed night/low-load integration.
+        from verify_v301_test import verify_scope
+        verify_scope()
+        protected = tuple(name for name in protected if name not in (
+            "public void onDataReceived(", "private long getAfAttackMs(", "private void updateMainColorState("))
     for name in protected:
         assert reg.method(previous, name) == reg.method(current, name), name
     print(f"PASS: all data-layer files and {len(protected)} protected parsing/formatting/threshold/state/display-admission methods unchanged")
