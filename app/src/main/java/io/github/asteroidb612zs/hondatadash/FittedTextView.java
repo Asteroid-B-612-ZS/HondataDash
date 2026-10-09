@@ -210,7 +210,7 @@ public class FittedTextView extends TextView {
                 compactSign ? .66f : .72f);
         if (fit.scaleX <= 0f || fit.scaleY <= 0f) return;
 
-        drawPaint.setColor(getCurrentTextColor());
+        drawPaint.setColor(NightPalette.color(getCurrentTextColor()));
         int save = canvas.save();
         // This uses the current measured width AND height on every draw, including
         // navigation-bar/configuration changes with no new telemetry frame.

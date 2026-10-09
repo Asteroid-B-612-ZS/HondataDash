@@ -8,6 +8,7 @@ import android.content.ActivityNotFoundException;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
 import android.os.Bundle;
 import android.graphics.PorterDuff;
 import android.provider.Settings;
@@ -60,6 +61,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private static final String PREF_DEVICE_NAME = "name";
 
     private DataSource dataSource;
+    private DashboardNightController nightController;
+    private final LowLoadDisplayContext lowLoadDisplay = new LowLoadDisplayContext();
     private TextView statusText;
     private TextView sourceName;
     private View connectionStatus;
@@ -432,6 +435,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         setContentView(R.layout.activity_main);
+        nightController = new DashboardNightController(this);
         extremeTextColor = getResources().getColor(R.color.dash_extreme_value);
 
         statusText = (TextView) findViewById(R.id.statusText);
@@ -760,6 +764,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
     @Override
     protected void onResume() {
         super.onResume();
+        nightController.start();
         foreground = true;
         lastAuxiliaryUpdateMs = 0L;
         freshnessHandler.removeCallbacks(freshnessRunnable);
@@ -797,6 +802,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
     @Override
     protected void onPause() {
         super.onPause();
+        nightController.stop();
         if (startupOverlay != null) startupOverlay.finish();
         foreground = false;
         freshnessHandler.removeCallbacks(freshnessRunnable);
@@ -807,6 +813,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
 
     @Override
     protected void onDestroy() {
+        if (nightController != null) nightController.stop();
         activityDestroyed = true;
         if (startupOverlay != null) startupOverlay.finish();
         super.onDestroy();
@@ -818,6 +825,12 @@ public class MainActivity extends Activity implements DataSource.Callback {
         // V2.6.9 (P2-3): 先解绑 callback, 防止 disconnect 异步回调到已销毁的 Activity
         dataSource.setCallback(null);
         dataSource.disconnect();
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration configuration) {
+        super.onConfigurationChanged(configuration);
+        if (nightController != null) nightController.refresh();
     }
 
     @Override
@@ -980,6 +993,7 @@ public class MainActivity extends Activity implements DataSource.Callback {
                 long now = SystemClock.elapsedRealtime();
                 CombustionDisplayAdmission.Snapshot admission = combustionAdmission.update(state, data, now);
                 diagnosticMemory.record(state, data, admission, now);
+                lowLoadDisplay.update(state, data, now);
 
                 // 更新 8 个主卡片
                 for (int i = 0; i < 8; i++) {
@@ -1287,7 +1301,8 @@ public class MainActivity extends Activity implements DataSource.Callback {
                                         ? getAfSeverity(measuredLambda, targetLambda, state) : 0;
                                 int shownAfSeverity;
                                 if (afColorContext) {
-                                    long afAttack = getAfAttackMs(afSeverity, state);
+                                    long afAttack = lowLoadDisplay.afAttackMs(afSeverity,
+                                            getAfAttackMs(afSeverity, state));
                                     shownAfSeverity = colorRecovery.update(5, afSeverity, now, afAttack);
                                 } else {
                                     colorRecovery.reset(5);
@@ -2610,6 +2625,14 @@ public class MainActivity extends Activity implements DataSource.Callback {
     private void updateMainColorState(int i, float value, long now,
             EngineSemanticState state, SensorData data) {
         if (!isSignedMainCard(i)) return;
+
+        // A negative absolute angle alone is not knock evidence during gentle
+        // low-speed torque control. Keep the live value; K.R/K.C/CYL remain live.
+        if (i == 6 && lowLoadDisplay.calmIgn()) {
+            colorRecovery.reset(i);
+            resolvedMainColors[i] = COLOR_TEXT_NORMAL;
+            return;
+        }
 
         // S.TRIM is a health/trend channel: transient acceleration/deceleration
         // numbers remain visible but do not paint the dashboard yellow/red. Only

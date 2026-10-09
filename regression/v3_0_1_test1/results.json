@@ -1,0 +1,704 @@
+{
+  "baseline_commit": "c077201222bb18c300ca4f10639c8063907aa2c3",
+  "candidate": "3.0.1-test.1",
+  "date": "2026-10-09",
+  "replay_model": "50Hz BT42 profile; no CSV clutch PID; extracted display methods; not Android event-loop/device replay",
+  "core_files": 14,
+  "core_raw_frames": 6458780,
+  "core_replay_frames": 2566979,
+  "core_source_seconds": 51339.435,
+  "source_sha256": {
+    "app/build.gradle": "2c1a7c0b188b0e5a6c9847becdb9b318b68249aaa3cfe03c43e645b2aff240c4",
+    "app/src/main/AndroidManifest.xml": "8565a59d28f7b14e4c5827a5dbc52d6a8d0c4cdb9408eb28939216afd09097fa",
+    "app/src/main/assets/fonts/LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "app/src/main/assets/fonts/README.txt": "134c821a25c942b5fdca687e5f020d1f0dae52bb8942d0d5b51c92076ec4821f",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/AlignedRowLayout.java": "ba34a5105e28e46fa9ea9e25ab02b1bbff0126ad680d9846e4cda036c30f72f9",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/ColorRecovery.java": "ec23a6a78467c8d6062f413f4d4651c7b433e85aeefb7a3df07b8442949a25d7",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/DashboardGridLayout.java": "9cd59f445bf6ab9222d2943ee1b7255f022513919718e76bc271a66bb39d5878",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/DashboardNightController.java": "1b359003f8281c08e7bc5420a10b6b9f3144d438d5d172f68566543a39b4cdab",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/DashboardPalette.java": "07c203633501b06331b9abfa2388da0d30aed4a66e2035c182752c8e7a5474b7",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/DashboardTypeface.java": "e9af9184a20f8aee24ca5926c4d88c21d560173968bdc835282cd56ef85c2996",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/FittedTextView.java": "9848ae0546bc9b2f29ee41f373942ac55cf4d18ee2781df8765d0f4bbb567f1d",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/HeaderLayout.java": "d821e0b15ebf8ef7eaaa341cdf8011250b1d726438e567fd4ccae2654875d961",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/HondaBrandView.java": "3cd610c969e41e4bdc7eb9ec6ec5c4081aa7fc6e6befdc53dfe3cd79e567a7e0",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/HondaMark.java": "6472fe5f275e73ec7d0432e26a1caae34c8004bd18ca3880ab6f721024f95e84",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/LowLoadDisplayContext.java": "6a5b0f0831ab704e322271546159c0b206a04827c13faba31c79fd2867cb9485",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/MainActivity.java": "fea6f4b98c0ae1e20289fe5b6f2ad8ac37ecbec009b1c187f8d0f7fa56c7d579",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/MiniIconView.java": "3dbf32d60f91ea436ef996d74160dd3f15cca58b9b54181552873afb439eb795",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/NightModePolicy.java": "6175551255b67777fca697c9c02b94986f8e6fc495f83cf27f37aa685926b25b",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/NightPalette.java": "0854ea9a2583e67737aba05622e5a2df4e0e29e9667200241abe0005f1bba903",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/ScaleBarView.java": "67bc30bf2383c0cc1e0d6403e0bb5bd01a9f4e839a6a8e31275edb791c30b264",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/ShiftLightRenderer.java": "fea604530daecdf5a79105a7da53fa847b8cc283137c41ead0496cb62482a01f",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/ShiftLightView.java": "f94e6e012dd8c06be4087d4b6d50fe3d7f42ff3d959b334fcebb542520ea6339",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/StartupBrandRenderer.java": "d45c8ad400a94e433567f304315cc30f0c065b9a717562d64b07c44507c1e24a",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/StartupOverlayView.java": "2e3f4db75f12bad14b398b108db52f63bca79835d77344e01494b36665c9cc66",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/StartupSequence.java": "b88d273f45d9825dfc46a3216e537c7a0c961555504c752e46d2be4c1ce13ad6",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/TextFitGeometry.java": "6e7ee1786f97dad51c197491e6565eae76a9b65937b5ef8e8b73d43dceed2420",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/data/BluetoothSource.java": "4c30803e5e4c76df4470f2d5b28eb89d7e4b7f839e9a86e5b84f9b66dbfca6bc",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/data/CombustionDisplayAdmission.java": "c6baefe1bf0843b5cc1bd4f58185188e78f9882ea7af582dee307fc55a5fe097",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/data/DataSource.java": "177a1731878b200f6204882ca1f693f2d087d4250487c67874a701ff56427f6a",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/data/DemoSource.java": "ab010dfb9c77c0e9100c27d55c0d8b1da962c4390a938c452e336a97c78d1a26",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/data/EngineSemanticState.java": "262a7599cd0eab987cbef0ddb158a2aacc0946cbfcb4ec5a60b3ec89b55f8654",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/data/EngineStateTracker.java": "b53546051acf1e659abffc37e2110b41dc6ec6f3c24ee4fc1b5b6f4a339e904a",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/data/EphemeralDiagnosticMemory.java": "793d9ff3e454eb41698432d3084407b5df490b50ff569bfa14519ebfb4bafaf8",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/data/FuelPressureAlertTracker.java": "a9a818a7ae2e4a6b282194dd68c5775bb87fb5f938a976f38dd41c425a7895a7",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/data/HondataProtocol.java": "ca68b1cf51bc8dbecb8ab8fca1d2a73b10c80140818280f9f40cb73abd3c504e",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/data/SensorData.java": "55839e4362248de9ff629472e72408243f5e4ca857223b5bc8c7459327940a9d",
+    "app/src/main/java/io/github/asteroidb612zs/hondatadash/data/TrustedDisplayMemory.java": "8f0442160bd4ab8f135a666105c2cb1df133f23e36e4eb2c5854501c8de516d4",
+    "app/src/main/res/drawable/bg_bottom_cell.xml": "2e40cd76a932a1fff93c54d98c953c4a9462c31528b3893a34faa1c1e9e3223d",
+    "app/src/main/res/drawable/bg_bottom_cell_night.xml": "ca6d6749770a833cf26e32dfc97e3d828ab40bb0dc17ebb9104fc60152674ac7",
+    "app/src/main/res/drawable/bg_card.xml": "57fd92d506f5635370b55d674cf016fd2b50b8e4797544405e59493fac2a39fa",
+    "app/src/main/res/drawable/bg_card_night.xml": "3db050be91baacb1d55e0a6c5acc45328a30591966128508baf9b96bd6065aba",
+    "app/src/main/res/drawable/bg_extreme_divider.xml": "8fa6a6afec42ad3fca986eddc8d0dd892fa6e4a16fa540874bcd3a93b929ac83",
+    "app/src/main/res/drawable/bg_header.xml": "d3403efff508b627e7e986b7cd4416f7087687e59d867b4843033b3bf1b7fbe1",
+    "app/src/main/res/drawable/bg_header_night.xml": "c7c999cb1a4b90d60cc2821d84806b2c828cf0ddb55aa8a710e2b60c62dc13fd",
+    "app/src/main/res/drawable/bg_status_dot.xml": "11dbc4c79245806230cc749bfbd702c5db3721ba228089fb59f75c6491595161",
+    "app/src/main/res/layout/activity_main.xml": "d3360388ccab7d9da68b57770ea9b1b64005fd2c5732a23adb3e8bf17052473d",
+    "app/src/main/res/layout/item_knock_cyl.xml": "72381417c48ae6dde4c65c7e5af2d623e57514c925d86ebbd32e164629fdb708",
+    "app/src/main/res/layout/item_sensor_card.xml": "b07f6330a81759651e5b2ddf96b693912700c2a67b7ebf97c456db39ea5c69a8",
+    "app/src/main/res/values/colors.xml": "d7b3ed54205e184aec395ab9efe1d8a380b63f92698a15278c41807bb359d884",
+    "app/src/main/res/values/dimens.xml": "8f207b23d44923b152cf4984455e028b14925055a875767298ad5177ccbb6355",
+    "app/src/main/res/values/strings.xml": "568b9d5bfc6cdaf43cf495d9dba2fd2470b4b2901cbe7955169e5bdbd2e4fcdf",
+    "app/src/main/res/values/styles.xml": "1fe9c71665961155d55d47733da13928581b91fc3db8a704bbc79a53ef4307db",
+    "app/src/roadTest/res/values/strings.xml": "bc829932327e623eb0983bd4867f32fdfe3273cab846b4b6d4a40fe5d215bc87",
+    "tests/replay_display.py": "9d2eb5937025d0a977ccb008c3e63177dcb5985f42e6a4988fb5585c23c8ef2d"
+  },
+  "files": [
+    {
+      "label": "20220724_OEM",
+      "core": true,
+      "frames": 119691,
+      "input_sha256": "7ffd14597e78c4e711e251403dbde10923f65eddf55a673b4fb48cd484bc3c7e",
+      "semantic_admission_numeric_delta_frames": 0,
+      "wot_af_red_delta_frames": 0,
+      "low_context_s": 937.94,
+      "all": {
+        "ign_red_before": 243.1,
+        "af_red_before": 4.3,
+        "ign_red_after": 168.0,
+        "af_red_after": 3.6
+      },
+      "low_window": {
+        "ign_red_before": 148.46,
+        "af_red_before": 0.7,
+        "ign_red_after": 74.86,
+        "af_red_after": 0.0
+      },
+      "qualified": {
+        "ign_red_before": 68.6,
+        "af_red_before": 0.7,
+        "ign_red_after": 2.38,
+        "af_red_after": 0.0
+      },
+      "ign_changed_outside_low_context_or_600ms_tail": 36,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
+      "source": {
+        "file_name": "20220724_30(OEM)℃.csv",
+        "label": "20220724_OEM",
+        "sha256": "62ff381859ddcaf76e18151bdd68de581e2eece4411ba05e95d13479123dd449",
+        "raw_frames": 523640,
+        "replay_frames": 119691,
+        "source_seconds": 2393.801,
+        "profile": "kpa-map-lambda"
+      }
+    },
+    {
+      "label": "20251101",
+      "core": true,
+      "frames": 72203,
+      "input_sha256": "f25556661cb61e38fd602dde69c92b745254cd3da8e58787faedc673d05c637b",
+      "semantic_admission_numeric_delta_frames": 0,
+      "wot_af_red_delta_frames": 0,
+      "low_context_s": 381.04,
+      "all": {
+        "ign_red_before": 53.0,
+        "af_red_before": 1.48,
+        "ign_red_after": 32.8,
+        "af_red_after": 1.48
+      },
+      "low_window": {
+        "ign_red_before": 21.64,
+        "af_red_before": 0.52,
+        "ign_red_after": 3.9,
+        "af_red_after": 0.52
+      },
+      "qualified": {
+        "ign_red_before": 20.0,
+        "af_red_before": 0.0,
+        "ign_red_after": 0.22,
+        "af_red_after": 0.0
+      },
+      "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
+      "source": {
+        "file_name": "20251101_11℃.csv",
+        "label": "20251101",
+        "sha256": "e2729f003805d559e8779ceb132fd55e776fc767c1dd521d8edaabd3c8795ee0",
+        "raw_frames": 316013,
+        "replay_frames": 72203,
+        "source_seconds": 1444.054,
+        "profile": "kpa-map-lambda"
+      }
+    },
+    {
+      "label": "20260518",
+      "core": true,
+      "frames": 220590,
+      "input_sha256": "3a94cf913161c0bc9c65ecc2297f52cc08d0e3cef5058395dd2835eb03247699",
+      "semantic_admission_numeric_delta_frames": 0,
+      "wot_af_red_delta_frames": 0,
+      "low_context_s": 394.88,
+      "all": {
+        "ign_red_before": 106.16,
+        "af_red_before": 0.1,
+        "ign_red_after": 77.66,
+        "af_red_after": 0.1
+      },
+      "low_window": {
+        "ign_red_before": 32.72,
+        "af_red_before": 0.0,
+        "ign_red_after": 5.26,
+        "af_red_after": 0.0
+      },
+      "qualified": {
+        "ign_red_before": 28.26,
+        "af_red_before": 0.0,
+        "ign_red_after": 0.26,
+        "af_red_after": 0.0
+      },
+      "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
+      "source": {
+        "file_name": "20260518_22℃.csv",
+        "label": "20260518",
+        "sha256": "55d953459fe30b5391f4b16d16e0c053793d3d9cd5e30766035838a7bf0fff0f",
+        "raw_frames": 530744,
+        "replay_frames": 220590,
+        "source_seconds": 4411.79,
+        "profile": "kpa-map-afr"
+      }
+    },
+    {
+      "label": "20260523",
+      "core": true,
+      "frames": 76096,
+      "input_sha256": "5668eb6b45ad9cc99f58e2829fb8f7dd59255f4afad49c01438b78a096870a70",
+      "semantic_admission_numeric_delta_frames": 0,
+      "wot_af_red_delta_frames": 0,
+      "low_context_s": 360.7,
+      "all": {
+        "ign_red_before": 30.26,
+        "af_red_before": 4.2,
+        "ign_red_after": 16.46,
+        "af_red_after": 1.1
+      },
+      "low_window": {
+        "ign_red_before": 18.14,
+        "af_red_before": 3.1,
+        "ign_red_after": 4.34,
+        "af_red_after": 0.0
+      },
+      "qualified": {
+        "ign_red_before": 13.74,
+        "af_red_before": 2.2,
+        "ign_red_after": 0.16,
+        "af_red_after": 0.0
+      },
+      "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
+      "source": {
+        "file_name": "20260523_26℃.csv",
+        "label": "20260523",
+        "sha256": "38c6d393cfcf29a332a5cab686e96aa968166377ccc5c900c79ab01dbd766c31",
+        "raw_frames": 194691,
+        "replay_frames": 76096,
+        "source_seconds": 1521.906,
+        "profile": "kpa-map-lambda"
+      }
+    },
+    {
+      "label": "20260524",
+      "core": true,
+      "frames": 215961,
+      "input_sha256": "92cc0c41eb8944905c24640c96cd4b414cf1ee8edfd65d0e1df48828ac50563c",
+      "semantic_admission_numeric_delta_frames": 0,
+      "wot_af_red_delta_frames": 0,
+      "low_context_s": 420.3,
+      "all": {
+        "ign_red_before": 75.26,
+        "af_red_before": 1.8,
+        "ign_red_after": 65.16,
+        "af_red_after": 1.0
+      },
+      "low_window": {
+        "ign_red_before": 11.78,
+        "af_red_before": 1.24,
+        "ign_red_after": 1.72,
+        "af_red_after": 0.44
+      },
+      "qualified": {
+        "ign_red_before": 9.66,
+        "af_red_before": 1.64,
+        "ign_red_after": 0.1,
+        "af_red_after": 0.84
+      },
+      "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
+      "source": {
+        "file_name": "20260524_22℃.csv",
+        "label": "20260524",
+        "sha256": "abc3d8588d99a8cc10fd8a4b2314fbb7041532d5b2c045397072b954a8d55cc8",
+        "raw_frames": 559566,
+        "replay_frames": 215961,
+        "source_seconds": 4319.216,
+        "profile": "kpa-map-lambda"
+      }
+    },
+    {
+      "label": "20260527",
+      "core": true,
+      "frames": 319575,
+      "input_sha256": "d33adea8fc29c2a653540cc3a593f4dcc99accaa9f7e6c755724a6f2c33e96a1",
+      "semantic_admission_numeric_delta_frames": 0,
+      "wot_af_red_delta_frames": 0,
+      "low_context_s": 291.22,
+      "all": {
+        "ign_red_before": 42.54,
+        "af_red_before": 0.1,
+        "ign_red_after": 37.64,
+        "af_red_after": 0.1
+      },
+      "low_window": {
+        "ign_red_before": 6.4,
+        "af_red_before": 0.0,
+        "ign_red_after": 1.5,
+        "af_red_after": 0.0
+      },
+      "qualified": {
+        "ign_red_before": 4.96,
+        "af_red_before": 0.0,
+        "ign_red_after": 0.06,
+        "af_red_after": 0.0
+      },
+      "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
+      "source": {
+        "file_name": "20260527_24℃.csv",
+        "label": "20260527",
+        "sha256": "c682240519812b733145df84f4849644369163c5d148b5734f30633499ecd0c7",
+        "raw_frames": 518488,
+        "replay_frames": 319575,
+        "source_seconds": 6391.489,
+        "profile": "kpa-map-lambda"
+      }
+    },
+    {
+      "label": "20260530",
+      "core": true,
+      "frames": 179377,
+      "input_sha256": "9f419d129511e0d3704f4a23a901c59ec3cfa9e8004414a05153ed869ce38f8c",
+      "semantic_admission_numeric_delta_frames": 0,
+      "wot_af_red_delta_frames": 0,
+      "low_context_s": 628.04,
+      "all": {
+        "ign_red_before": 241.36,
+        "af_red_before": 0.0,
+        "ign_red_after": 164.46,
+        "af_red_after": 0.0
+      },
+      "low_window": {
+        "ign_red_before": 89.94,
+        "af_red_before": 0.0,
+        "ign_red_after": 14.86,
+        "af_red_after": 0.0
+      },
+      "qualified": {
+        "ign_red_before": 75.02,
+        "af_red_before": 0.0,
+        "ign_red_after": 0.82,
+        "af_red_after": 0.0
+      },
+      "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
+      "source": {
+        "file_name": "20260530_28℃_001.csv",
+        "label": "20260530",
+        "sha256": "d65d4a38ca8e0f2c028229b829e86d54992f982edae9e8fc412c14094ba69119",
+        "raw_frames": 436751,
+        "replay_frames": 179377,
+        "source_seconds": 3587.523,
+        "profile": "kpa-map-lambda"
+      }
+    },
+    {
+      "label": "20260601",
+      "core": true,
+      "frames": 224252,
+      "input_sha256": "fb8d2587f2979e5fc8a851011894d2c7235bee20e02fc6cef0287eedcbb652c0",
+      "semantic_admission_numeric_delta_frames": 0,
+      "wot_af_red_delta_frames": 0,
+      "low_context_s": 312.04,
+      "all": {
+        "ign_red_before": 27.82,
+        "af_red_before": 1.3,
+        "ign_red_after": 20.32,
+        "af_red_after": 1.3
+      },
+      "low_window": {
+        "ign_red_before": 9.42,
+        "af_red_before": 0.1,
+        "ign_red_after": 1.92,
+        "af_red_after": 0.1
+      },
+      "qualified": {
+        "ign_red_before": 7.54,
+        "af_red_before": 0.0,
+        "ign_red_after": 0.04,
+        "af_red_after": 0.0
+      },
+      "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
+      "source": {
+        "file_name": "20260601_24℃_001.csv",
+        "label": "20260601",
+        "sha256": "b6d3aed4225e336b90a8d99502471b0e4462419dd9449e4937856f9ff5c71a67",
+        "raw_frames": 569822,
+        "replay_frames": 224252,
+        "source_seconds": 4485.034,
+        "profile": "kpa-map-lambda"
+      }
+    },
+    {
+      "label": "20260602",
+      "core": true,
+      "frames": 231387,
+      "input_sha256": "a49f2b5aa63e5e6f524cb5dfaf90e40b9b4929084a28d68898a8fc2a74a2973e",
+      "semantic_admission_numeric_delta_frames": 0,
+      "wot_af_red_delta_frames": 0,
+      "low_context_s": 448.66,
+      "all": {
+        "ign_red_before": 61.2,
+        "af_red_before": 1.9,
+        "ign_red_after": 41.3,
+        "af_red_after": 0.3
+      },
+      "low_window": {
+        "ign_red_before": 23.86,
+        "af_red_before": 1.6,
+        "ign_red_after": 3.96,
+        "af_red_after": 0.0
+      },
+      "qualified": {
+        "ign_red_before": 20.22,
+        "af_red_before": 1.6,
+        "ign_red_after": 0.4,
+        "af_red_after": 0.0
+      },
+      "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
+      "source": {
+        "file_name": "20260602_27℃.csv",
+        "label": "20260602",
+        "sha256": "42cb82ee847ab89e8447eaab29c18131526536ea783ba7568f9b8058ee05a825",
+        "raw_frames": 588906,
+        "replay_frames": 231387,
+        "source_seconds": 4627.728,
+        "profile": "kpa-map-lambda"
+      }
+    },
+    {
+      "label": "20260603_002",
+      "core": true,
+      "frames": 164905,
+      "input_sha256": "ef0269d0bf999090460b38671980016807d481b0d605e032f8b0f6c986e7c622",
+      "semantic_admission_numeric_delta_frames": 0,
+      "wot_af_red_delta_frames": 0,
+      "low_context_s": 456.8,
+      "all": {
+        "ign_red_before": 35.68,
+        "af_red_before": 3.8,
+        "ign_red_after": 26.48,
+        "af_red_after": 1.8
+      },
+      "low_window": {
+        "ign_red_before": 12.28,
+        "af_red_before": 2.7,
+        "ign_red_after": 3.08,
+        "af_red_after": 0.7
+      },
+      "qualified": {
+        "ign_red_before": 8.86,
+        "af_red_before": 2.6,
+        "ign_red_after": 0.1,
+        "af_red_after": 0.6
+      },
+      "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
+      "source": {
+        "file_name": "20260603_25℃_002.csv",
+        "label": "20260603_002",
+        "sha256": "f1ed9e46387a056d915acf6632e1d63d308a9c39177d45c8fa4b632798744557",
+        "raw_frames": 421170,
+        "replay_frames": 164905,
+        "source_seconds": 3298.098,
+        "profile": "psi-absolute-map-lambda"
+      }
+    },
+    {
+      "label": "20260603",
+      "core": true,
+      "frames": 261694,
+      "input_sha256": "53fe4b9340b09cbbaee8e743f8a8d2ed74439ed68a430fc115307d45b0b02f3b",
+      "semantic_admission_numeric_delta_frames": 0,
+      "wot_af_red_delta_frames": 0,
+      "low_context_s": 432.1,
+      "all": {
+        "ign_red_before": 58.92,
+        "af_red_before": 5.32,
+        "ign_red_after": 42.52,
+        "af_red_after": 4.22
+      },
+      "low_window": {
+        "ign_red_before": 19.06,
+        "af_red_before": 1.1,
+        "ign_red_after": 2.66,
+        "af_red_after": 0.0
+      },
+      "qualified": {
+        "ign_red_before": 16.58,
+        "af_red_before": 1.1,
+        "ign_red_after": 0.18,
+        "af_red_after": 0.0
+      },
+      "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
+      "source": {
+        "file_name": "20260603_25℃.csv",
+        "label": "20260603",
+        "sha256": "a8318912ac82101c8f2473a201a83dc23816adecc3d0d4211cfd895975975c27",
+        "raw_frames": 485160,
+        "replay_frames": 261694,
+        "source_seconds": 5233.872,
+        "profile": "kpa-map-lambda"
+      }
+    },
+    {
+      "label": "20260605",
+      "core": true,
+      "frames": 107498,
+      "input_sha256": "f6d37c02e90d4d7cd273681e10a63fbc2702549da98cd95dab0910a9d353fdbe",
+      "semantic_admission_numeric_delta_frames": 0,
+      "wot_af_red_delta_frames": 0,
+      "low_context_s": 941.36,
+      "all": {
+        "ign_red_before": 46.08,
+        "af_red_before": 0.0,
+        "ign_red_after": 34.48,
+        "af_red_after": 0.0
+      },
+      "low_window": {
+        "ign_red_before": 15.0,
+        "af_red_before": 0.0,
+        "ign_red_after": 3.64,
+        "af_red_after": 0.0
+      },
+      "qualified": {
+        "ign_red_before": 10.5,
+        "af_red_before": 0.0,
+        "ign_red_after": 0.24,
+        "af_red_after": 0.0
+      },
+      "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
+      "source": {
+        "file_name": "20260605_29℃_001.csv",
+        "label": "20260605",
+        "sha256": "5ce48cc7286df6b9d752ec3a5bededc58d97a1459d8e8a214c56469c64f520ef",
+        "raw_frames": 356931,
+        "replay_frames": 107498,
+        "source_seconds": 2149.951,
+        "profile": "psi-absolute-map-afr"
+      }
+    },
+    {
+      "label": "20260609",
+      "core": true,
+      "frames": 211985,
+      "input_sha256": "38e3910d4bd16732677118f64f1499ac1acd561172a641874dbc35c797630880",
+      "semantic_admission_numeric_delta_frames": 0,
+      "wot_af_red_delta_frames": 0,
+      "low_context_s": 385.94,
+      "all": {
+        "ign_red_before": 34.84,
+        "af_red_before": 0.7,
+        "ign_red_after": 22.44,
+        "af_red_after": 0.7
+      },
+      "low_window": {
+        "ign_red_before": 12.44,
+        "af_red_before": 0.0,
+        "ign_red_after": 0.2,
+        "af_red_after": 0.0
+      },
+      "qualified": {
+        "ign_red_before": 12.1,
+        "af_red_before": 0.0,
+        "ign_red_after": 0.1,
+        "af_red_after": 0.0
+      },
+      "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
+      "source": {
+        "file_name": "20260609_21℃.csv",
+        "label": "20260609",
+        "sha256": "8aed1aea4fe504ab29bb4073d4a7088a5e6e2b60d3efc2bbe9f43a23fc55bef5",
+        "raw_frames": 538829,
+        "replay_frames": 211985,
+        "source_seconds": 4239.688,
+        "profile": "kpa-map-afr"
+      }
+    },
+    {
+      "label": "20260611",
+      "core": true,
+      "frames": 161765,
+      "input_sha256": "03fe47845f20cfcfaff81224557877d25da305f5a7868e301c6f2c60a9c73e60",
+      "semantic_admission_numeric_delta_frames": 0,
+      "wot_af_red_delta_frames": 0,
+      "low_context_s": 216.58,
+      "all": {
+        "ign_red_before": 20.12,
+        "af_red_before": 3.8,
+        "ign_red_after": 19.32,
+        "af_red_after": 3.8
+      },
+      "low_window": {
+        "ign_red_before": 0.8,
+        "af_red_before": 0.0,
+        "ign_red_after": 0.0,
+        "af_red_after": 0.0
+      },
+      "qualified": {
+        "ign_red_before": 0.8,
+        "af_red_before": 0.0,
+        "ign_red_after": 0.0,
+        "af_red_after": 0.0
+      },
+      "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
+      "source": {
+        "file_name": "20260611_23℃.csv",
+        "label": "20260611",
+        "sha256": "1a9ec87933e9715da22641acf1b5cae14ffdc7d71dc6e4122dfab652bea5c9dd",
+        "raw_frames": 418069,
+        "replay_frames": 161765,
+        "source_seconds": 3235.285,
+        "profile": "kpa-map-afr"
+      }
+    },
+    {
+      "label": "20261007",
+      "core": false,
+      "frames": 172012,
+      "input_sha256": "d6b6a1ebed508cb292efa173baae9cd759f48a08949079e90ed79bda76f6da9a",
+      "semantic_admission_numeric_delta_frames": 0,
+      "wot_af_red_delta_frames": 0,
+      "low_context_s": 201.8,
+      "all": {
+        "ign_red_before": 15.36,
+        "af_red_before": 0.0,
+        "ign_red_after": 10.76,
+        "af_red_after": 0.0
+      },
+      "low_window": {
+        "ign_red_before": 5.84,
+        "af_red_before": 0.0,
+        "ign_red_after": 1.24,
+        "af_red_after": 0.0
+      },
+      "qualified": {
+        "ign_red_before": 4.68,
+        "af_red_before": 0.0,
+        "ign_red_after": 0.08,
+        "af_red_after": 0.0
+      },
+      "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform"
+    },
+    {
+      "label": "IT3_20260920",
+      "core": false,
+      "frames": 39496,
+      "input_sha256": "df37576ca8bb0b1fe6a3bafea0788fc67c26da594d89674679ead75a406cc9a0",
+      "semantic_admission_numeric_delta_frames": 0,
+      "wot_af_red_delta_frames": 0,
+      "low_context_s": 1605.56,
+      "all": {
+        "ign_red_before": 143.326,
+        "af_red_before": 0.0,
+        "ign_red_after": 40.189,
+        "af_red_after": 0.0
+      },
+      "low_window": {
+        "ign_red_before": 104.337,
+        "af_red_before": 0.0,
+        "ign_red_after": 4.27,
+        "af_red_after": 0.0
+      },
+      "qualified": {
+        "ign_red_before": 102.616,
+        "af_red_before": 0.0,
+        "ign_red_after": 0.413,
+        "af_red_after": 0.0
+      },
+      "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "next native row interval capped at 500ms; gaps excluded beyond freshness"
+    },
+    {
+      "label": "historical_undated",
+      "core": false,
+      "frames": 89678,
+      "input_sha256": "77b1562f4c284f26836d2fe47484451251e44997a70ae0cba0b4b92aef1b222e",
+      "semantic_admission_numeric_delta_frames": 0,
+      "wot_af_red_delta_frames": 0,
+      "low_context_s": 32.6,
+      "all": {
+        "ign_red_before": 1.14,
+        "af_red_before": 0.9,
+        "ign_red_after": 1.14,
+        "af_red_after": 0.9
+      },
+      "low_window": {
+        "ign_red_before": 0.0,
+        "af_red_before": 0.0,
+        "ign_red_after": 0.0,
+        "af_red_after": 0.0
+      },
+      "qualified": {
+        "ign_red_before": 0.0,
+        "af_red_before": 0.0,
+        "ign_red_after": 0.0,
+        "af_red_after": 0.0
+      },
+      "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform"
+    }
+  ]
+}

@@ -467,7 +467,7 @@ def main():
         (temp / "TextFitProbe.java").write_text(probe)
         (temp / "slots.tsv").write_text("\n".join("\t".join(map(str, row)) for row in slots))
         sources = [str(p) for p in temp.rglob("*.java")]
-        sources += [str(JAVA / p) for p in ("FittedTextView.java", "TextFitGeometry.java", "ScaleBarView.java", "DashboardTypeface.java", "DashboardPalette.java")]
+        sources += [str(JAVA / p) for p in ("FittedTextView.java", "TextFitGeometry.java", "ScaleBarView.java", "DashboardTypeface.java", "DashboardPalette.java", "NightPalette.java")]
         subprocess.run(["java", "-m", "jdk.compiler/com.sun.tools.javac.Main", "--release", "11", "-d", str(temp / "classes"), *sources], check=True)
         subprocess.run(["java", "-Djava.awt.headless=true", "-cp", str(temp / "classes"), "io.github.asteroidb612zs.hondatadash.TextFitProbe",
                         str(temp / "slots.tsv"), str(output), ";".join(map(str, fonts))], check=True)

@@ -579,6 +579,15 @@ public class ScaleBarView extends View {
     }
 
     private void drawTrackEdge(Canvas canvas, float left, float right, float top, float bottom) {
+        if (NightPalette.active) {
+            float stroke = Math.max(1, Math.round(density));
+            edgePaint.setColor(0xFF2A3540);
+            canvas.drawRect(left, top, right, top + stroke, edgePaint);
+            canvas.drawRect(left, top, left + stroke, bottom, edgePaint);
+            canvas.drawRect(right - stroke, top, right, bottom, edgePaint);
+            canvas.drawRect(left, bottom - stroke, right, bottom, edgePaint);
+            return;
+        }
         /*
          * V2.9.4 optical shell: directional light instead of four equally bright
          * sides.  Real-car LCD tests showed that symmetric multi-stroke borders
@@ -639,6 +648,7 @@ public class ScaleBarView extends View {
     void drawScaleOnly(Canvas canvas) { drawContents(canvas, false); }
 
     private void drawContents(Canvas canvas, boolean live) {
+        bgPaint.setColor(NightPalette.color(0xFF15222D));
         float pL = getPaddingLeft(), pR = getPaddingRight();
         float pT = getPaddingTop(), pB = getPaddingBottom();
         float barW = getWidth() - pL - pR;

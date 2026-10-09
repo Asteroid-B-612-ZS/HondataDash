@@ -173,7 +173,7 @@ public LinearGradient(float a,float b,float c,float d,int[] e,float[] f,TileMode
         (temp / "elements.tsv").write_text("\n".join("\t".join(map(str, e)) for e in elements))
         sources = list(temp.rglob("*.java")) + [fit.JAVA / n for n in
             ["FittedTextView.java", "TextFitGeometry.java", "ScaleBarView.java", "ShiftLightView.java",
-             "ColorRecovery.java", "data/EngineSemanticState.java", "DashboardTypeface.java", "DashboardPalette.java", "ShiftLightRenderer.java",
+             "ColorRecovery.java", "data/EngineSemanticState.java", "DashboardTypeface.java", "DashboardPalette.java", "NightPalette.java", "ShiftLightRenderer.java",
              "HondaMark.java", "HondaBrandView.java", "StartupSequence.java", "StartupBrandRenderer.java"]]
         subprocess.run(["java", "-m", "jdk.compiler/com.sun.tools.javac.Main", "--release", "11", "-d", str(temp / "classes"), *map(str, sources)], check=True)
         version = re.search(r'versionName "([^"]+)"', (ROOT / "app/build.gradle").read_text()).group(1)
