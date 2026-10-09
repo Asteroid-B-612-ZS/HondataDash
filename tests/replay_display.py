@@ -23,7 +23,7 @@ BODY=r'''
     CombustionDisplayAdmission gate=new CombustionDisplayAdmission();
     ColorRecovery colors=colorRecovery;
     float[] ema={Float.NaN,Float.NaN}; long[] update={0,0}; int[] shown={0,0};
-    long ignGuard=0, start=1000; boolean stale=false;
+    long ignGuard=0, start=1000, previousFrame=-1; boolean stale=false;
     BufferedReader in=new BufferedReader(new FileReader(file)); in.readLine();
     PrintWriter out=new PrintWriter(file.replace("_replay.csv",OUTPUT_SUFFIX));
     out.println("t_ms,main,modifier,combustion,shift,confidence,hold_af,hold_ign,af_context,af_red,ign_red,ign_ema,gray,plausible,low_context,calm_ign,af_level,ign_level");
@@ -32,6 +32,7 @@ BODY=r'''
       String[] v=line.split(",");double[] x=new double[v.length];
       for(int i=0;i<x.length;i++) x[i]=v[i].isEmpty()?Double.NaN:Double.parseDouble(v[i]);
       long now=(long)x[0]+1000;android.os.SystemClock.now=now;
+      if(previousFrame>=0 && now-previousFrame>500)stale=true;previousFrame=now;
       SensorData d=new SensorData();
       int[] ids={0,HondataProtocol.CID_RPM,HondataProtocol.CID_Speed,HondataProtocol.CID_Gear,HondataProtocol.CID_MAP,
         HondataProtocol.CID_ThrottlePlate,HondataProtocol.CID_Inj,HondataProtocol.CID_ClosedLoop,HondataProtocol.CID_TargetLambda,

@@ -61,7 +61,7 @@
     "app/src/main/res/values/strings.xml": "568b9d5bfc6cdaf43cf495d9dba2fd2470b4b2901cbe7955169e5bdbd2e4fcdf",
     "app/src/main/res/values/styles.xml": "1fe9c71665961155d55d47733da13928581b91fc3db8a704bbc79a53ef4307db",
     "app/src/roadTest/res/values/strings.xml": "bc829932327e623eb0983bd4867f32fdfe3273cab846b4b6d4a40fe5d215bc87",
-    "tests/replay_display.py": "86c7f0bfb01c7fcb36297967213c1345362a6fbc5580fd2af40167030f47ba5d"
+    "tests/replay_display.py": "9d2eb5937025d0a977ccb008c3e63177dcb5985f42e6a4988fb5585c23c8ef2d"
   },
   "files": [
     {
@@ -91,6 +91,8 @@
         "af_red_after": 0.0
       },
       "ign_changed_outside_low_context_or_600ms_tail": 36,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
       "source": {
         "file_name": "20220724_30(OEM)℃.csv",
         "label": "20220724_OEM",
@@ -128,6 +130,8 @@
         "af_red_after": 0.0
       },
       "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
       "source": {
         "file_name": "20251101_11℃.csv",
         "label": "20251101",
@@ -165,6 +169,8 @@
         "af_red_after": 0.0
       },
       "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
       "source": {
         "file_name": "20260518_22℃.csv",
         "label": "20260518",
@@ -202,6 +208,8 @@
         "af_red_after": 0.0
       },
       "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
       "source": {
         "file_name": "20260523_26℃.csv",
         "label": "20260523",
@@ -239,6 +247,8 @@
         "af_red_after": 0.84
       },
       "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
       "source": {
         "file_name": "20260524_22℃.csv",
         "label": "20260524",
@@ -276,6 +286,8 @@
         "af_red_after": 0.0
       },
       "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
       "source": {
         "file_name": "20260527_24℃.csv",
         "label": "20260527",
@@ -313,6 +325,8 @@
         "af_red_after": 0.0
       },
       "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
       "source": {
         "file_name": "20260530_28℃_001.csv",
         "label": "20260530",
@@ -350,6 +364,8 @@
         "af_red_after": 0.0
       },
       "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
       "source": {
         "file_name": "20260601_24℃_001.csv",
         "label": "20260601",
@@ -387,6 +403,8 @@
         "af_red_after": 0.0
       },
       "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
       "source": {
         "file_name": "20260602_27℃.csv",
         "label": "20260602",
@@ -424,6 +442,8 @@
         "af_red_after": 0.6
       },
       "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
       "source": {
         "file_name": "20260603_25℃_002.csv",
         "label": "20260603_002",
@@ -461,6 +481,8 @@
         "af_red_after": 0.0
       },
       "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
       "source": {
         "file_name": "20260603_25℃.csv",
         "label": "20260603",
@@ -498,6 +520,8 @@
         "af_red_after": 0.0
       },
       "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
       "source": {
         "file_name": "20260605_29℃_001.csv",
         "label": "20260605",
@@ -535,6 +559,8 @@
         "af_red_after": 0.0
       },
       "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
       "source": {
         "file_name": "20260609_21℃.csv",
         "label": "20260609",
@@ -572,6 +598,8 @@
         "af_red_after": 0.0
       },
       "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform",
       "source": {
         "file_name": "20260611_23℃.csv",
         "label": "20260611",
@@ -608,7 +636,9 @@
         "ign_red_after": 0.08,
         "af_red_after": 0.0
       },
-      "ign_changed_outside_low_context_or_600ms_tail": 0
+      "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform"
     },
     {
       "label": "IT3_20260920",
@@ -617,26 +647,28 @@
       "input_sha256": "df37576ca8bb0b1fe6a3bafea0788fc67c26da594d89674679ead75a406cc9a0",
       "semantic_admission_numeric_delta_frames": 0,
       "wot_af_red_delta_frames": 0,
-      "low_context_s": 344.3,
+      "low_context_s": 1605.56,
       "all": {
-        "ign_red_before": 30.1,
+        "ign_red_before": 143.326,
         "af_red_before": 0.0,
-        "ign_red_after": 8.14,
+        "ign_red_after": 40.189,
         "af_red_after": 0.0
       },
       "low_window": {
-        "ign_red_before": 22.14,
+        "ign_red_before": 104.337,
         "af_red_before": 0.0,
-        "ign_red_after": 0.9,
+        "ign_red_after": 4.27,
         "af_red_after": 0.0
       },
       "qualified": {
-        "ign_red_before": 21.86,
+        "ign_red_before": 102.616,
         "af_red_before": 0.0,
-        "ign_red_after": 0.1,
+        "ign_red_after": 0.413,
         "af_red_after": 0.0
       },
-      "ign_changed_outside_low_context_or_600ms_tail": 0
+      "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "next native row interval capped at 500ms; gaps excluded beyond freshness"
     },
     {
       "label": "historical_undated",
@@ -664,7 +696,9 @@
         "ign_red_after": 0.0,
         "af_red_after": 0.0
       },
-      "ign_changed_outside_low_context_or_600ms_tail": 0
+      "ign_changed_outside_low_context_or_600ms_tail": 0,
+      "remaining_tail_with_current_angle_below_minus5": 0,
+      "time_weight": "20ms uniform"
     }
   ]
 }

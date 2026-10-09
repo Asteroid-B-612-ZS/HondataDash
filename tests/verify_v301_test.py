@@ -98,8 +98,26 @@ public class CandidateProbe {
  }
 }'''
 
+def verify_replay_receipt():
+ import json,hashlib
+ r=json.loads((ROOT/'regression/v3_0_1_test1/results.json').read_text())
+ assert r['baseline_commit']==BASE
+ assert (r['core_files'],r['core_raw_frames'],r['core_replay_frames'])==(14,6458780,2566979)
+ for path,sha in r['source_sha256'].items():
+  assert hashlib.sha256((ROOT/path).read_bytes()).hexdigest()==sha,'stale replay receipt: '+path
+ manifest=json.loads((ROOT/'regression/v2/manifest_v1.0.json').read_text())
+ expected={x['file_name']:x['sha256'] for x in manifest['core_files']}
+ observed={x['source']['file_name']:x['source']['sha256'] for x in r['files'] if x['core']}
+ assert observed==expected
+ for row in r['files']:
+  assert row['semantic_admission_numeric_delta_frames']==0
+  assert row['wot_af_red_delta_frames']==0
+  assert row['remaining_tail_with_current_angle_below_minus5']==0
+ print('PASS: Core14 receipt matches frozen raw identities and current product source hashes')
+
 def main():
  verify_scope()
+ verify_replay_receipt()
  with tempfile.TemporaryDirectory(prefix='hondata-v301-') as tmp:
   p=Path(tmp);(p/'CandidateProbe.java').write_text(PROBE)
   (p/'SystemClock.java').write_text('package android.os; public class SystemClock { public static long elapsedRealtime(){return 0L;} }')
