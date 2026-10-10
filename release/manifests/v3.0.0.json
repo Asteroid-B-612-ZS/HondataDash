@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "repository": "Asteroid-B-612-ZS/HondataDash",
+  "tag": "v3.0.0",
+  "source_commit": "c077201222bb18c300ca4f10639c8063907aa2c3",
+  "application_id": "io.github.asteroidb612zs.hondatadash",
+  "version_name": "3.0.0",
+  "version_code": 57,
+  "min_sdk": 17,
+  "apk_name": "HondataDash_V3.0.0.apk",
+  "apk_size": 910744,
+  "apk_sha256": "c491c67767b6e81c0500dba4aefb863decc10787161b263531f499e62cdbd882",
+  "certificate_sha256": "c188668e09838c5af6fe311065b4beff48e8be70d0502050e3866265ecaf675a",
+  "checksums_path": "release/V3.0_CHECKSUMS.txt",
+  "checksums_sha256": "9c2eebadfb413fac90eb4a50418e9abc56a1eb44b59d9e6db75ed42abb391c9f",
+  "notes_path": "docs/V3.0_RELEASE_NOTES.md",
+  "ci_workflow": ".github/workflows/production-ci.yml",
+  "latest": true
+}

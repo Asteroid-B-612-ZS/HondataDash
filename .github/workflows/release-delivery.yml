@@ -1,0 +1,108 @@
+name: Release Delivery
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  release:
+    types: [published, edited]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'audit checks delivery; deliver is an explicitly authorized publication'
+        type: choice
+        options: [audit, deliver]
+        default: audit
+      tag:
+        description: 'Approved vX.Y.Z tag (mandatory for deliver; blank audit checks latest)'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  delivery-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Release events point at the old product tag; use maintained validation code.
+          ref: ${{ github.event_name == 'release' && github.event.repository.default_branch || github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restrict publication to the reviewed default branch
+        env:
+          MODE: ${{ inputs.mode }}
+          CURRENT_REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          python3 - <<'PY'
+          import os
+          if os.environ['MODE'] == 'deliver':
+              assert os.environ['CURRENT_REF'] == 'refs/heads/' + os.environ['DEFAULT_BRANCH'], 'Publish only from the reviewed default branch'
+          PY
+      - name: Release failure and recovery tests
+        run: python3 -m unittest discover -s tests -p 'test_release_delivery.py' -v
+
+  audit:
+    needs: delivery-tests
+    if: github.event_name != 'workflow_dispatch' || inputs.mode != 'deliver'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.repository.default_branch || github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install APK verification tools
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;33.0.2"
+          echo "$ANDROID_HOME/build-tools/33.0.2" >> "$GITHUB_PATH"
+      - name: Verify source CI, public APK download and signature
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: python3 scripts/release_delivery.py audit --tag "$RELEASE_TAG"
+
+  publish:
+    needs: delivery-tests
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'deliver'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: hondata-release-delivery-write
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install APK verification tools
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;33.0.2"
+          echo "$ANDROID_HOME/build-tools/33.0.2" >> "$GITHUB_PATH"
+      - name: Verify staged signed APK and complete authorized delivery
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        # Offline signed APK must already be attached to the draft. A missing APK fails.
+        # Local delivery/repair with --apk is documented in docs/RELEASE_DELIVERY.md.
+        run: python3 scripts/release_delivery.py deliver --tag "$RELEASE_TAG"
